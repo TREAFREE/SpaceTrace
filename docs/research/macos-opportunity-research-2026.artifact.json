@@ -1,0 +1,336 @@
+{
+  "surface": "report",
+  "manifest": {
+    "version": 1,
+    "surface": "report",
+    "title": "2026 年 macOS 开源小工具机会研究",
+    "description": "从近期用户痛点、现有解决方案、技术可行性和开源优势出发，筛选适合个人开发者的 macOS 小工具方向。",
+    "generatedAt": "2026-07-17T12:00:00+08:00",
+    "charts": [
+      {
+        "id": "opportunity_priority",
+        "title": "候选方向分析优先级",
+        "subtitle": "方向性评分，满分 25；每项由用户影响、未满足缺口、实现可行性、开源适配性和维护风险各 1–5 分相加",
+        "type": "bar",
+        "dataset": "shortlist_score",
+        "source": {
+          "id": "opportunity_scoring_values",
+          "label": "候选方向分析评分构造",
+          "path": "macos-opportunity-research-2026.md",
+          "query": {
+            "engine": "analyst-scoring",
+            "sql": "SELECT concept, score FROM (VALUES ('SpaceTrace / 空间增长记录', 22), ('Backup Canary / 恢复验证', 19), ('CloudGuard Dev / 云目录预警', 18), ('Mac Change Snapshot / 更新前后差异', 15), ('Finder Transfer Inspector / 传输解释', 11), ('Permission Repair / 权限修复', 10)) AS t(concept, score) ORDER BY score DESC",
+            "description": "将五个定性维度各 1–5 分相加，用于候选方向内部排序；不代表市场规模或用户发生率。",
+            "executed_at": "2026-07-17T12:00:00+08:00",
+            "language": "SQL",
+            "metric_definitions": [
+              "score = 用户影响 + 未满足缺口 + 实现可行性 + 开源适配性 + 维护风险，单项 1–5 分"
+            ]
+          }
+        },
+        "encodings": {
+          "x": { "field": "concept", "type": "nominal", "label": "候选方向" },
+          "y": { "field": "score", "type": "quantitative", "label": "分析优先级（0–25）", "format": "number" }
+        },
+        "xAxisTitle": "候选方向",
+        "yAxisTitle": "分析优先级（0–25）",
+        "valueFormat": "number",
+        "layout": "full",
+        "maxRows": 6
+      }
+    ],
+    "tables": [
+      {
+        "id": "landscape",
+        "title": "macOS 痛点与解决方案成熟度",
+        "subtitle": "成熟度与结论是基于 2026 年 7 月公开产品和近期用户证据的探索性判断",
+        "dataset": "landscape",
+        "source": {
+          "id": "landscape_snapshot_query",
+          "label": "公开证据综合：痛点与竞品矩阵",
+          "path": "macos-opportunity-research-2026.md",
+          "query": {
+            "engine": "embedded-snapshot",
+            "sql": "SELECT category, pain, solutions, maturity, gap, verdict FROM snapshot.landscape ORDER BY source_order",
+            "description": "从审阅后的嵌入式研究快照读取 17 个问题方向；source_order 保留报告中的人工审阅顺序。",
+            "executed_at": "2026-07-17T12:00:00+08:00",
+            "language": "SQL"
+          }
+        },
+        "density": "spacious",
+        "layout": "full",
+        "columns": [
+          { "field": "category", "label": "问题方向", "type": "text" },
+          { "field": "pain", "label": "用户痛点", "type": "text" },
+          { "field": "solutions", "label": "现有代表方案", "type": "text" },
+          { "field": "maturity", "label": "成熟度", "type": "text" },
+          { "field": "gap", "label": "仍有缺口", "type": "text" },
+          { "field": "verdict", "label": "建议", "type": "text" }
+        ]
+      },
+      {
+        "id": "shortlist",
+        "title": "候选产品优先级",
+        "subtitle": "按用户价值、差异化、可实现性、权限风险与开源传播性综合排序；不是市场规模统计",
+        "dataset": "shortlist",
+        "source": {
+          "id": "shortlist_snapshot_query",
+          "label": "公开证据综合：候选产品排序",
+          "path": "macos-opportunity-research-2026.md",
+          "query": {
+            "engine": "embedded-snapshot",
+            "sql": "SELECT rank, concept, promise, competition, feasibility, risk, recommendation FROM snapshot.shortlist ORDER BY CAST(rank AS INTEGER)",
+            "description": "从审阅后的嵌入式研究快照读取候选方向排序。",
+            "executed_at": "2026-07-17T12:00:00+08:00",
+            "language": "SQL"
+          }
+        },
+        "density": "spacious",
+        "layout": "full",
+        "columns": [
+          { "field": "rank", "label": "优先级", "type": "text" },
+          { "field": "concept", "label": "产品概念", "type": "text" },
+          { "field": "promise", "label": "一句话价值", "type": "text" },
+          { "field": "competition", "label": "竞争", "type": "text" },
+          { "field": "feasibility", "label": "可行性", "type": "text" },
+          { "field": "risk", "label": "主要风险", "type": "text" },
+          { "field": "recommendation", "label": "结论", "type": "text" }
+        ]
+      },
+      {
+        "id": "mvp_scope",
+        "title": "SpaceTrace 首版范围",
+        "subtitle": "目标是先可靠解释变化，不做自动清理",
+        "dataset": "mvp_scope",
+        "source": {
+          "id": "mvp_snapshot_query",
+          "label": "SpaceTrace MVP 范围建议",
+          "path": "macos-opportunity-research-2026.md",
+          "query": {
+            "engine": "embedded-snapshot",
+            "sql": "SELECT module, must, not_now, success FROM snapshot.mvp_scope ORDER BY source_order",
+            "description": "从产品建议快照读取首版范围和验收信号。",
+            "executed_at": "2026-07-17T12:00:00+08:00",
+            "language": "SQL"
+          }
+        },
+        "density": "spacious",
+        "layout": "full",
+        "columns": [
+          { "field": "module", "label": "模块", "type": "text" },
+          { "field": "must", "label": "首版必须做", "type": "text" },
+          { "field": "not_now", "label": "首版不做", "type": "text" },
+          { "field": "success", "label": "验收信号", "type": "text" }
+        ]
+      },
+      {
+        "id": "technical_plan",
+        "title": "建议技术实现",
+        "subtitle": "优先采用公开框架和只读系统命令；具体行为需在当前 macOS 稳定版原型验证",
+        "dataset": "technical_plan",
+        "source": {
+          "id": "technical_snapshot_query",
+          "label": "SpaceTrace 技术路线建议",
+          "path": "macos-opportunity-research-2026.md",
+          "query": {
+            "engine": "embedded-snapshot",
+            "sql": "SELECT layer, choice, why, caveat FROM snapshot.technical_plan ORDER BY source_order",
+            "description": "从产品建议快照读取技术路线及约束。",
+            "executed_at": "2026-07-17T12:00:00+08:00",
+            "language": "SQL"
+          }
+        },
+        "density": "spacious",
+        "layout": "full",
+        "columns": [
+          { "field": "layer", "label": "层", "type": "text" },
+          { "field": "choice", "label": "建议", "type": "text" },
+          { "field": "why", "label": "原因", "type": "text" },
+          { "field": "caveat", "label": "注意事项", "type": "text" }
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "id": "research_synthesis",
+        "label": "公开证据综合与竞品盘点（2026-07-17）",
+        "path": "macos-opportunity-research-2026.md"
+      },
+      {
+        "id": "analyst_recommendation",
+        "label": "基于证据的产品与技术建议",
+        "path": "macos-opportunity-research-2026.md"
+      },
+      { "id": "latest_annoyances", "label": "r/macapps：2026 年 7 月 macOS 小摩擦讨论", "href": "https://www.reddit.com/r/macapps/comments/1uw5fg3/what_is_the_one_tiny_macos_annoyance_you_would/" },
+      { "id": "agent_island", "label": "Agent Island 项目仓库", "href": "https://github.com/tristan666666/agent-island" },
+      { "id": "storage_2026", "label": "r/MacOS：System Data 占用巨大（2026）", "href": "https://www.reddit.com/r/MacOS/comments/1tg3dfu/system_data_size_is_huge/" },
+      { "id": "storage_regrowth", "label": "r/MacOS：System Data 一周内重新增长（2026）", "href": "https://www.reddit.com/r/MacOS/comments/1rj6xp9/system_data_is_expanded_to_over_half_of_storage/" },
+      { "id": "storage_trace_request", "label": "用户请求：跟踪 macOS 存储随时间变化", "href": "https://www.reddit.com/r/AskTechnology/comments/vsw9ye/i_need_an_app_for_macos_that_keeps_tracks_of/" },
+      { "id": "daisydisk", "label": "DaisyDisk 官方产品页", "href": "https://daisydiskapp.com/" },
+      { "id": "grandperspective", "label": "GrandPerspective 官方页", "href": "https://grandperspective.org/" },
+      { "id": "mole", "label": "Mole 开源清理工具", "href": "https://github.com/tw93/mole" },
+      { "id": "apple_tm_troubleshooting", "label": "Apple：Time Machine 无法备份或恢复时的排障", "href": "https://support.apple.com/en-us/102220" },
+      { "id": "tm_hidden_error", "label": "r/MacOS：Time Machine 失败但设置中没有错误", "href": "https://www.reddit.com/r/MacOS/comments/1shykzm/time_machine_backup_failed_but_theres_no_error/" },
+      { "id": "tm_status", "label": "TimeMachineStatus 产品信息", "href": "https://www.macupdate.com/app/mac/65001/timemachinestatus" },
+      { "id": "t2m2", "label": "The Time Machine Mechanic 产品信息", "href": "https://macupdater.net/app_updates/appinfo/co.eclecticlight.TheTimeMachineMechanic2/index.html" },
+      { "id": "apple_icloud", "label": "Apple：将 Desktop 与 Documents 加入 iCloud Drive", "href": "https://support.apple.com/en-us/109344" },
+      { "id": "icloud_dev_failure", "label": "r/MacOS：iCloud Drive 与 Python/GitHub 目录问题", "href": "https://www.reddit.com/r/MacOS/comments/1uj42n8/icloud_drive_and_github_problems/" },
+      { "id": "cloud_monitor", "label": "CloudMonitor App Store 页面", "href": "https://apps.apple.com/by/app/cloudmonitor/id6760430242?mt=12" },
+      { "id": "rectangle", "label": "Rectangle 官方页", "href": "https://rectangleapp.com/" },
+      { "id": "betterdisplay", "label": "BetterDisplay 官方页", "href": "https://betterdisplay.dev/" },
+      { "id": "finetune", "label": "FineTune 开源每应用音量工具", "href": "https://github.com/ronitsingh10/FineTune" },
+      { "id": "ejecta", "label": "Ejecta 官方页", "href": "https://www.ejecta.app/en/" },
+      { "id": "sloth", "label": "Sloth：开源 lsof GUI", "href": "https://github.com/sveinbjornt/Sloth" },
+      { "id": "input_switcher", "label": "InputSwitcher 官方页", "href": "https://inputswitcher.com/" },
+      { "id": "tccexplorer", "label": "TCCExplorer App Store 页面", "href": "https://apps.apple.com/us/app/tccexplorer/id6502870842?mt=12" },
+      { "id": "veil", "label": "Veil 隐私权限总览", "href": "https://spectrumzero.com/veil/" },
+      { "id": "apple_privacy", "label": "Apple：控制 Mac 上共享的权限", "href": "https://support.apple.com/guide/mac-help/control-what-you-share-mchl2b29231a/mac" }
+    ],
+    "blocks": [
+      {
+        "id": "title",
+        "type": "markdown",
+        "body": "# 2026 年 macOS 开源小工具机会研究"
+      },
+      {
+        "id": "executive_summary",
+        "type": "markdown",
+        "body": "## Executive Summary\n\n**最值得做的方向是一个“磁盘空间增长记录器”，而不是又一个清理器。** 暂名 **SpaceTrace**：它持续、低开销地记录哪些目录、快照和应用数据在增长，在用户发现“系统数据又多了几十 GB”时，直接回答“从什么时候开始、什么路径增长、可能属于哪个应用、下一步怎样安全处理”。\n\n推荐顺序：\n\n1. **SpaceTrace / System Data Flight Recorder**：受众广、问题持续、现有工具主要回答“现在有什么”，而不是“过去几天什么变了”。\n2. **Backup Canary / Time Machine 恢复信心检查**：不只显示备份状态，而是周期性验证一个测试文件能否从最近备份恢复并校验；价值很高，但现有诊断工具较多，且必须谨慎处理权限和责任边界。\n3. **CloudGuard Dev / 云同步开发目录预警**：在 `.venv`、`node_modules`、构建产物或 Git 仓库落入 iCloud/Dropbox/OneDrive 同步范围前发出警告；竞争少、实现较轻，但目标人群更窄。\n\n**不建议首做**窗口管理、剪贴板、每应用音量、外接显示器控制、输入法自动切换、应用卸载、磁盘弹出、睡眠保持或通用权限面板。这些痛点真实，但已有成熟或快速增多的方案。"
+      },
+      {
+        "id": "method",
+        "type": "markdown",
+        "body": "## 研究方法与判断口径\n\n本研究将近期用户讨论用于发现需求，将 Apple 官方资料、GitHub 仓库和产品官方页面用于核对系统能力与现有方案。判断维度包括：用户影响、现有替代成熟度、差异化空间、公开技术可行性、权限/维护风险和开源模式是否能带来额外信任。\n\n这不是抽样调查，不能从帖子数量推断 Mac 用户总体发生率。报告中的“高/中/低”和优先级是方向性判断，不是精确测量。因此主要采用表格做可审计对比，没有把主观评分包装成定量图表。"
+      },
+      {
+        "id": "landscape_intro",
+        "type": "markdown",
+        "body": "## 哪些问题已经解决得比较好，哪些仍有空白\n\n**市场已经从“缺一个开关”进入“缺解释和可信度”的阶段。** 大多数日常摩擦都有多个工具；真正的机会集中在跨时间观察、失败原因解释、风险预防和可恢复性验证。"
+      },
+      { "id": "landscape_table", "type": "table", "tableId": "landscape", "layout": "full" },
+      {
+        "id": "landscape_readout",
+        "type": "markdown",
+        "body": "## 从全景对比得到的三个结论\n\n1. **痛点大不等于值得进入。** 外接显示器、窗口管理、音频和剪贴板的用户抱怨很多，但成熟工具、免费方案和开源项目同样很多。\n2. **Apple 的信息不透明比功能缺失更稳定。** System Data、Time Machine、iCloud、睡眠阻塞和磁盘弹出都存在“系统知道更多，但只给用户一个模糊结果”的共同模式。\n3. **先做只读解释，比自动修复更适合开源首作。** 自动删除缓存、修改 TCC、强制弹盘、kill 系统进程会迅速放大权限、数据安全和维护风险；解释证据、给出安全路径更容易建立信任。"
+      },
+      {
+        "id": "shortlist_intro",
+        "type": "markdown",
+        "body": "## 候选产品排序\n\n下面的排序强调“小团队能做完并长期维护”。广而全的系统优化套件得分不会更高；能用一句话说清、能在两到四周做出可信 MVP、能让用户一眼看到价值的项目更优先。图中的 0–25 分是透明的分析性排序：用户影响、未满足缺口、实现可行性、开源适配性和维护风险各按 1–5 分判断后相加；它只用于比较方向，不代表市场规模或用户发生率。"
+      },
+      { "id": "shortlist_chart", "type": "chart", "chartId": "opportunity_priority", "layout": "full" },
+      { "id": "shortlist_table", "type": "table", "tableId": "shortlist", "layout": "full" },
+      {
+        "id": "top_choice",
+        "type": "markdown",
+        "body": "## 第一推荐：SpaceTrace（磁盘空间增长记录器）\n\n### 用户真正要解决的问题\n\n用户通常不是不知道 DaisyDisk，而是遇到以下情境：昨天还有 90GB，今天只剩 23GB；清理后过几天又长回来；System Data 显示数百 GB，但一次扫描无法说明是哪一天、哪个工作流导致。现有磁盘分析器擅长给出当前快照，SpaceTrace 应专门回答：\n\n> **过去 7 天是谁让磁盘少了 67GB？哪些是可清理缓存，哪些是项目数据、云端本地副本或 APFS 快照？**\n\n### 差异化边界\n\n- 记录“变化”，而不是再画一张当前磁盘占用图。\n- 给目录和变化做可解释分类：Xcode/Simulator、Docker/虚拟机、AI 模型、游戏资源、应用日志/缓存、iCloud 本地下载、Time Machine/APFS 快照、外置盘残留挂载点。\n- 默认只读：显示路径、增长量、首次出现时间、最后变化时间、可能的归属和安全建议。\n- 不承诺复制 Apple 的 System Data 数字；明确区分“可见文件”“快照/可清除空间”“无法读取的区域”。\n- 不做一键全删；首版只提供 Reveal in Finder、打开对应应用设置、复制诊断和受控的手动确认流程。"
+      },
+      { "id": "mvp_table", "type": "table", "tableId": "mvp_scope", "layout": "full" },
+      {
+        "id": "technical",
+        "type": "markdown",
+        "body": "## SpaceTrace 的技术路线\n\n建议采用原生 Swift/SwiftUI：菜单栏显示剩余空间和 24 小时变化，主窗口展示时间线、增长目录和解释。用 FSEvents 感知变化路径，用增量目录统计减少全盘重复扫描；对 APFS/Time Machine 快照使用系统提供的只读命令或可验证接口；用 SQLite 保存小型时间序列和目录摘要。\n\n**关键约束必须写进产品设计：**\n\n- Full Disk Access 应作为可选增强，并清楚解释为什么需要；不给权限时仍扫描用户明确选择的目录。\n- FSEvents 能告诉你路径发生变化，但不能可靠告诉你“哪个进程写入”；不要在首版承诺精确进程归因。\n- APFS clones、hard links、purgeable space、File Provider 占位文件会让逻辑大小与物理占用不同；UI 必须标注口径。\n- 后台服务要非常克制，避免一个“磁盘诊断工具”自己成为耗电和写盘来源。"
+      },
+      { "id": "technical_table", "type": "table", "tableId": "technical_plan", "layout": "full" },
+      {
+        "id": "second_choice",
+        "type": "markdown",
+        "body": "## 第二推荐：Backup Canary（Time Machine 恢复信心）\n\nTimeMachineStatus 已能展示状态，T2M2 已能分析日志，因此只做菜单栏状态会同质化。可验证的差异是：\n\n- 创建一个不含隐私的测试文件并记录哈希；\n- 确认它进入最近一次备份；\n- 在用户允许的临时目录做一次测试恢复；\n- 比较哈希并给出“最近成功备份时间、目的地可达性、测试恢复是否通过、错误证据”。\n\n这个方向的社会价值很高，因为“备份完成”不等于“能恢复”。但首版只能做只读诊断和显式测试恢复，不能承诺整机灾难恢复；对 NAS、外置盘和不同 macOS 版本的行为必须做真实设备测试。"
+      },
+      {
+        "id": "third_choice",
+        "type": "markdown",
+        "body": "## 第三推荐：CloudGuard Dev（云同步开发目录预警）\n\nCloudMonitor 已经覆盖一般 iCloud 同步进度和卡住检测，所以新的通用监视器价值有限。更明确的小工具是：\n\n- 检测 Git 仓库、`.venv`、`node_modules`、`DerivedData`、Docker/模型缓存是否位于 iCloud、Dropbox 或 OneDrive 同步范围；\n- 在文件数和变更速率异常前提示；\n- 解释为什么大量小文件、构建产物和数据库文件不适合云同步；\n- 生成可复制、可回滚的迁移计划，但不自行删除或移动。\n\n它非常适合开发者社区和 Codex/Claude Code 用户，也最容易做成一个两周 MVP；缺点是受众明显小于 SpaceTrace。"
+      },
+      {
+        "id": "agent_island_lessons",
+        "type": "markdown",
+        "body": "## 从 Agent Island 借鉴什么\n\nAgent Island 的价值不在于功能数量，而在于产品边界清楚：读取 Claude Code/Codex 已经写在本地的状态，把长任务是否在运行、是否需要用户处理变成持续可见的反馈；同时强调 local-first、无账户、无产品遥测。对你的项目最值得复制的是：\n\n- **一个可截图的一句话问题。** SpaceTrace 的首页应该直接显示“过去 24 小时增加 31.4GB，主要来自 Xcode Simulator 和一个 Docker 磁盘镜像”。\n- **被动观察、主动解释。** 不需要用户每次想起才扫描；但删除或修改永远由用户确认。\n- **隐私就是功能。** 本地路径和应用使用情况很敏感，开源、无遥测、诊断包主动导出会成为核心卖点。\n- **状态面 + 深入页。** 菜单栏负责一眼状态，主窗口负责证据、时间线和安全行动。\n- **先把一个平台做透。** 首版只做 macOS，不为了跨平台牺牲系统集成与低开销。"
+      },
+      {
+        "id": "validation_plan",
+        "type": "markdown",
+        "body": "## 建议的四周验证计划\n\n### 第 1 周：只验证问题，不做漂亮界面\n\n- 访谈 12–15 名用户：256GB Mac 用户、开发者、设计/视频用户各至少 4 名。\n- 让他们展示一次真实的存储异常或过去的截图，记录他们现在用什么办法、最后是否找到原因。\n- 做一个命令行原型：生成两次目录/快照摘要并输出差异。\n\n### 第 2 周：证明增量记录可行\n\n- FSEvents + 定期校准扫描，验证睡眠、重启、外置盘、权限不足时不会丢失或误报。\n- 先支持 6 类高价值来源：Xcode、Docker/VM、应用日志缓存、AI 模型、iCloud 本地副本、APFS/Time Machine 快照。\n- 测量空闲 CPU、内存、数据库增长和每日额外写盘。\n\n### 第 3 周：做可解释 UI\n\n- 菜单栏只显示“剩余空间 + 24h 变化 + 异常标记”。\n- 主窗口只做三个页面：时间线、增长来源、诊断详情。\n- 每个建议标注风险：安全查看、建议从原应用清理、需要专家确认。\n\n### 第 4 周：小范围公开测试\n\n- 招募 20–30 名测试者；目标是对大于 5GB 的空间变化给出有用解释，而不是追求与系统设置数字完全一致。\n- 记录无法解释的案例，优先扩充分类器和口径说明。\n- 在确认低开销和零误删后再做公开发布、Sparkle 更新和签名/公证。"
+      },
+      {
+        "id": "next_steps",
+        "type": "markdown",
+        "body": "## 推荐下一步\n\n1. **先选 SpaceTrace，不要同时做三个产品。** 用一句话锁定首版：记录并解释 Mac 磁盘空间在过去几天为什么增长。\n2. 建一个公开仓库，先提交 `PROBLEM.md`、数据口径、隐私承诺和 10 个真实案例，而不是先堆 UI。\n3. 用 Codex 开发时，把工作拆成可验证任务：FSEvents 采集、目录摘要、快照读取、SQLite 模型、分类器、菜单栏、主窗口、权限引导、性能测试；每一块都先写 fixture 和测试。\n4. 不让模型猜私有 API。凡涉及 TCC、APFS、File Provider、后台 helper 和代码签名，都要求 Codex 依据 Apple 文档或本机验证结果实现。\n5. 两周后用“是否能解释真实的 5GB+ 增长”决定继续、收窄或转向 Backup Canary。"
+      },
+      {
+        "id": "caveats",
+        "type": "markdown",
+        "body": "## Caveats & Assumptions\n\n- 本报告基于公开可访问资料，未进行大样本问卷、付费市场数据采购或真实 Mac 用户遥测。\n- Reddit 和社区帖子存在选择偏差；它们证明问题存在和表达方式，不证明发生率。\n- 新的 macOS 工具发布很快，竞品状态以 2026 年 7 月 17 日为截点。\n- 技术可行性是基于公开框架和系统工具的初步判断。FSEvents、APFS 快照、File Provider、Full Disk Access 和 `tmutil` 的具体行为需要在当前稳定版及下一版 macOS 上做原型验证。\n- 自动删除、强制停止进程、修改 TCC 或系统数据库不属于推荐 MVP；这些功能会显著改变安全、签名、公证和责任边界。"
+      },
+      {
+        "id": "further_questions",
+        "type": "markdown",
+        "body": "## Further Questions\n\n- 你更希望服务普通 256GB Mac 用户，还是开发者/AI 工具用户？这会影响默认分类器和传播渠道。\n- 你是否愿意购买 Apple Developer Program，用于 Developer ID 签名、公证和更顺畅的自动更新？\n- 首版是否接受 Full Disk Access 为可选权限，还是只扫描用户选择的目录以最大化信任？\n- 是否把中文用户作为首发核心人群？如果是，中文路径解释、微信社群反馈和中英双语 README 会形成明显优势。\n- 你能否获得 3–5 台不同 macOS 版本、不同容量和不同工作流的真实测试设备？"
+      },
+      {
+        "id": "sources_notes",
+        "type": "markdown",
+        "body": "## 主要来源\n\n完整证据索引和判定方法见同目录的 `macos-opportunity-research-2026.md`。关键资料包括：[近期 macOS 小摩擦讨论](https://www.reddit.com/r/macapps/comments/1uw5fg3/what_is_the_one_tiny_macos_annoyance_you_would/)、[System Data 近期案例](https://www.reddit.com/r/MacOS/comments/1tg3dfu/system_data_size_is_huge/)、[DaisyDisk](https://daisydiskapp.com/)、[Apple Time Machine 排障](https://support.apple.com/en-us/102220)、[Time Machine 模糊失败案例](https://www.reddit.com/r/MacOS/comments/1shykzm/time_machine_backup_failed_but_theres_no_error/)、[iCloud 开发目录事故](https://www.reddit.com/r/MacOS/comments/1uj42n8/icloud_drive_and_github_problems/)、[CloudMonitor](https://apps.apple.com/by/app/cloudmonitor/id6760430242?mt=12) 和 [Agent Island](https://github.com/tristan666666/agent-island)。"
+      }
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "generatedAt": "2026-07-17T12:00:00+08:00",
+    "status": "ready",
+    "datasets": {
+      "landscape": [
+        { "category": "窗口管理 / Alt-Tab / Spaces", "pain": "窗口切换与布局不符合部分用户习惯", "solutions": "Rectangle、AltTab、Loop、Moom、yabai、Raycast", "maturity": "很高", "gap": "多屏恢复仍不完美，但系统限制多", "verdict": "不建议进入通用窗口管理" },
+        { "category": "剪贴板历史", "pain": "系统能力有限、跨格式搜索需求高", "solutions": "Maccy、Paste、Raycast、Pasta 等", "maturity": "很高", "gap": "垂直隐私/团队工作流小众机会", "verdict": "不建议做通用剪贴板" },
+        { "category": "应用卸载与残留", "pain": "拖到废纸篓会留下 Support、Cache、LaunchAgent", "solutions": "Pearcleaner、AppCleaner、CleanMyMac、Mole", "maturity": "很高", "gap": "少量权限/后台项解释", "verdict": "基本解决" },
+        { "category": "每应用音量 / 音频路由", "pain": "macOS 缺少原生音量混音器", "solutions": "SoundSource、FineTune、eqMac、Sound Control 等", "maturity": "高且快速拥挤", "gap": "底层方案有延迟、指示器和兼容性权衡", "verdict": "不建议，技术维护重" },
+        { "category": "外接显示器控制", "pain": "HiDPI、亮度、DDC、唤醒和布局问题", "solutions": "BetterDisplay、Lunar、MonitorControl、DisplayBuddy", "maturity": "很高", "gap": "特定硬件诊断仍难", "verdict": "不建议做通用控制器" },
+        { "category": "外置磁盘无法弹出", "pain": "系统常不明确说明阻塞进程", "solutions": "Ejecta、Jettison、Ejectify、Sloth、What’s Keeping Me", "maturity": "高", "gap": "少量系统进程解释", "verdict": "2026 年已被直接解决" },
+        { "category": "睡眠阻塞 / 保持唤醒", "pain": "Mac 不睡或需要临时不睡", "solutions": "Amphetamine、KeepingYouAwake、Keepresso、系统 pmset", "maturity": "很高", "gap": "复杂电源事件诊断", "verdict": "不建议做通用工具" },
+        { "category": "输入法按应用切换", "pain": "中英文编码与聊天频繁切换", "solutions": "InputSwitcher、Input Source Pro、AutoSwitchInput", "maturity": "高", "gap": "输入框级规则和兼容性", "verdict": "基本解决" },
+        { "category": "快捷键冲突", "pain": "多个应用占用同一全局热键", "solutions": "HotkeyClash、KeyClu、KeyMinder 等", "maturity": "中高且有新开源方案", "gap": "动态注册和私有快捷键识别", "verdict": "不建议首做" },
+        { "category": "隐私权限总览", "pain": "需逐个进入 Camera、Mic、Accessibility、FDA 等分类", "solutions": "系统设置、TCCExplorer、Veil 等", "maturity": "中高，快速进入", "gap": "失效权限修复仍难且风险高", "verdict": "只读审计已有人做，修复不宜首作" },
+        { "category": "应用更新汇总", "pain": "App Store、Sparkle、Homebrew、GitHub 来源分散", "solutions": "Latest、Updatest、Applite、Cork、Topgrade", "maturity": "中高", "gap": "来源覆盖和安全更新判断", "verdict": "需求真实但正确性成本高" },
+        { "category": "通知优先级 / 历史", "pain": "所有通知听起来同样紧急、历史管理弱", "solutions": "Focus、Chirpy 及若干通知工具", "maturity": "中", "gap": "系统公开 API 限制访问全局历史", "verdict": "产品空间有限且受平台约束" },
+        { "category": "AirDrop / 跨平台传输", "pain": "发现和连接偶发失败、跨平台差", "solutions": "LocalSend、Blip、PairDrop、LANDrop", "maturity": "中高", "gap": "无法从第三方修复 Apple 私有协议", "verdict": "做替代品可以，修复 AirDrop 不现实" },
+        { "category": "System Data / 空间莫名增长", "pain": "数十到数百 GB，清理后复发，难找增长原因", "solutions": "DaisyDisk、GrandPerspective、OmniDiskSweeper、Mole、Trace", "maturity": "当前快照很成熟", "gap": "缺少跨时间增长归因、分类和事件解释", "verdict": "强机会：做增长记录器，不做清理器" },
+        { "category": "Time Machine 可靠性", "pain": "备份失败、错误不透明、完成不等于可恢复", "solutions": "系统设置、TimeMachineStatus、T2M2、BackupLoupe", "maturity": "状态/日志中高", "gap": "低风险自动测试恢复与信心报告", "verdict": "有机会，但需真实备份环境验证" },
+        { "category": "iCloud 同步故障", "pain": "卡住、反复下载、冲突和 Finder 冻结", "solutions": "Finder 状态、CloudMonitor、系统日志工具", "maturity": "通用监视正在成熟", "gap": "开发目录进入云同步范围前的预警", "verdict": "做风险预防，不做通用同步修复" },
+        { "category": "系统更新前后状态变化", "pain": "更新后权限、登录项、网络扩展或外设行为改变", "solutions": "系统信息、KnockKnock、若干管理员 CLI", "maturity": "分散", "gap": "面向普通人的更新前快照与差异解释", "verdict": "潜力中等，但需解决主动安装动机" }
+      ],
+      "shortlist": [
+        { "rank": "1", "concept": "SpaceTrace：磁盘空间增长记录器", "promise": "告诉你过去几天什么让磁盘空间减少，以及如何安全处理", "competition": "当前扫描高；时间归因低", "feasibility": "中高", "risk": "权限、APFS/云文件口径、后台开销", "recommendation": "最推荐，先做只读 MVP" },
+        { "rank": "2", "concept": "Backup Canary：Time Machine 恢复验证", "promise": "证明一个最近备份的测试文件真的能恢复", "competition": "状态/日志中高；Canary 低", "feasibility": "中", "risk": "NAS 差异、tmutil 变化、用户对备份承诺的理解", "recommendation": "高价值备选，先做技术 spike" },
+        { "rank": "3", "concept": "CloudGuard Dev：云同步开发目录预警", "promise": "在 node_modules/.venv/构建缓存拖垮云同步前提醒", "competition": "低", "feasibility": "高", "risk": "受众较窄、不同云盘路径识别", "recommendation": "最快可做，适合开发者首发" },
+        { "rank": "4", "concept": "Mac Change Snapshot：系统更新前后差异", "promise": "解释更新后哪些权限、后台项、扩展和设置发生变化", "competition": "低到中", "feasibility": "中", "risk": "需要用户提前安装，系统数据源分散", "recommendation": "可作为 SpaceTrace 后续诊断模块" },
+        { "rank": "5", "concept": "Finder Transfer Inspector：文件传输状态解释", "promise": "提供速度、剩余量和失败原因", "competition": "低", "feasibility": "低到中", "risk": "Finder 私有行为、难可靠获取进度", "recommendation": "除非先证明公开 API 可行，否则不做" },
+        { "rank": "6", "concept": "Permission Repair：权限失效检测/修复", "promise": "发现更新后看似已授权但实际失效的权限", "competition": "总览已有", "feasibility": "低到中", "risk": "TCC/SIP、安全边界和版本脆弱性", "recommendation": "不建议作为第一个项目" }
+      ],
+      "shortlist_score": [
+        { "concept": "SpaceTrace / 空间增长记录", "score": 22 },
+        { "concept": "Backup Canary / 恢复验证", "score": 19 },
+        { "concept": "CloudGuard Dev / 云目录预警", "score": 18 },
+        { "concept": "Mac Change Snapshot / 更新前后差异", "score": 15 },
+        { "concept": "Finder Transfer Inspector / 传输解释", "score": 11 },
+        { "concept": "Permission Repair / 权限修复", "score": 10 }
+      ],
+      "mvp_scope": [
+        { "module": "采集", "must": "记录卷剩余空间、重点目录摘要、FSEvents 变化路径、快照清单", "not_now": "逐文件永久索引、精确进程写入追踪", "success": "重启/睡眠后连续，漏报可被校准扫描纠正" },
+        { "module": "归因", "must": "识别 Xcode、Docker/VM、AI 模型、游戏资源、日志缓存、iCloud、本地快照", "not_now": "用大模型猜测未知路径", "success": "真实 5GB+ 变化能给出路径、类别和证据" },
+        { "module": "呈现", "must": "24h/7d 变化、Top 增长源、首次/最后变化、口径说明", "not_now": "复杂仪表盘和空间清理动画", "success": "用户 10 秒内回答‘什么长了’" },
+        { "module": "行动", "must": "Reveal in Finder、打开来源应用、复制诊断、安全说明", "not_now": "自动删除、强制 kill、修改系统数据库", "success": "零误删；每个行动都有风险等级" },
+        { "module": "隐私与分发", "must": "全本地、无遥测、主动导出、开源、签名更新", "not_now": "账户、云端同步、社区上传路径", "success": "权限用途可审计，更新包可验证" }
+      ],
+      "technical_plan": [
+        { "layer": "应用外壳", "choice": "SwiftUI + 少量 AppKit；MenuBarExtra/状态项 + 主窗口", "why": "原生、低内存、易融入 macOS", "caveat": "复杂表格/时间线需测试性能和可访问性" },
+        { "layer": "变化监听", "choice": "FSEvents 记录变更路径，定期做校准扫描", "why": "比固定频率全盘扫描低开销", "caveat": "不能可靠提供写入进程；事件可能合并" },
+        { "layer": "空间统计", "choice": "FileManager/URLResourceValues 增量汇总；按目录设置预算", "why": "公开 API、可测试", "caveat": "逻辑大小、物理大小、clone 和云占位符需分开表达" },
+        { "layer": "快照与卷", "choice": "只读读取 APFS/Time Machine 快照和卷信息", "why": "System Data 常包含不可见快照因素", "caveat": "系统命令输出和权限需跨版本验证；不自动删除快照" },
+        { "layer": "本地数据", "choice": "SQLite 保存时间点、目录摘要、分类结果和 schema 版本", "why": "便于增量、查询和迁移", "caveat": "限制保留期与数据库写入频率" },
+        { "layer": "分类器", "choice": "可审计的路径规则 + 应用 bundle 元数据 + 置信度", "why": "可解释、可由社区贡献", "caveat": "未知路径必须显示未知，不能强行归属" },
+        { "layer": "权限", "choice": "默认扫描用户选择目录；Full Disk Access 作为可选增强", "why": "先建立信任，再扩大覆盖", "caveat": "无 FDA 时必须明确覆盖盲区" },
+        { "layer": "质量", "choice": "fixture 驱动测试、性能基准、不同 macOS/磁盘场景矩阵", "why": "系统工具最怕版本和边界条件漂移", "caveat": "Beta 版和 NAS/外置盘需单独标记支持级别" }
+      ]
+    }
+  }
+}

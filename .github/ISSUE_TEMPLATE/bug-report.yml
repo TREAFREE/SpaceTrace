@@ -1,0 +1,141 @@
+name: Bug report
+description: Report a reproducible SpaceTrace defect without exposing private file-system data.
+title: "bug: "
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve SpaceTrace. Search existing issues first.
+
+        **Privacy:** Do not attach the SpaceTrace database, raw diagnostic archive, unredacted Console logs, absolute paths, usernames, volume names, client/project names, credentials, or file contents. Replace private path components with placeholders such as `~/REDACTED_A/REDACTED_B`. Use GitHub private vulnerability reporting for security/privacy vulnerabilities.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched open and closed issues for this problem.
+          required: true
+        - label: This is not a security vulnerability or private-data exposure report.
+          required: true
+        - label: I removed or replaced private file paths, names, identifiers, and file contents.
+          required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and its user impact in one or two paragraphs.
+      placeholder: SpaceTrace showed ...; as a result ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      placeholder: I expected ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Use synthetic folders where possible. Include starting state and exact actions.
+      placeholder: |
+        1. Create `~/SyntheticFixture/A` with ...
+        2. Launch SpaceTrace ...
+        3. Revoke Full Disk Access ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: Frequency
+      options:
+        - Every time
+        - Often (more than half of attempts)
+        - Sometimes
+        - Once
+        - Unknown
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: SpaceTrace version and source
+      description: For example, 0.2.1 via GitHub release, Sparkle update, or commit SHA from source.
+      placeholder: 0.0.1 / GitHub release
+    validations:
+      required: true
+
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version and hardware
+      description: Do not include the device serial number.
+      placeholder: macOS 15.6; Apple Silicon; 16 GB RAM
+    validations:
+      required: true
+
+  - type: dropdown
+    id: full-disk-access
+    attributes:
+      label: Full Disk Access state when the bug occurred
+      options:
+        - Not requested
+        - Denied
+        - Granted
+        - Revoked while running
+        - Re-granted while running
+        - Unknown
+    validations:
+      required: true
+
+  - type: dropdown
+    id: volume
+    attributes:
+      label: Affected storage
+      options:
+        - Internal APFS volume
+        - External APFS volume
+        - External non-APFS volume
+        - Network volume
+        - iCloud or other on-demand cloud files
+        - Multiple / unknown
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted evidence
+      description: Paste only the smallest relevant redacted messages. Prefer text over screenshots. Do not upload raw databases or diagnostics.
+      render: text
+
+  - type: textarea
+    id: regression
+    attributes:
+      label: Regression and workaround
+      description: Did this work in an earlier version? What workaround, if any, is safe and reliable?
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Include sleep/wake, low disk space, external volume removal, update/migration, or event burst context if relevant.
+
+  - type: checkboxes
+    id: final-consent
+    attributes:
+      label: Data handling confirmation
+      options:
+        - label: I understand this issue is public and have reviewed every attachment for private data.
+          required: true

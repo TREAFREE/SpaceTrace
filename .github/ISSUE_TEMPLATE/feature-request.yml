@@ -1,0 +1,126 @@
+name: Feature request
+description: Propose an outcome that helps Mac users understand storage growth.
+title: "feat: "
+labels:
+  - enhancement
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        SpaceTrace is intentionally focused: it explains **what grew, when, and why**, remains local-first, and does not become a general cleaner. Start with the user problem, not a preferred framework or UI.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and discussions for the same need.
+          required: true
+        - label: This request fits storage-growth attribution rather than generic cleaning, file search, or cloud sync monitoring.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: Who has the problem, what are they trying to do, and what observable harm occurs today?
+      placeholder: When ... users need to ... but today ... which causes ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-workaround
+    attributes:
+      label: Current workaround and its limitation
+      description: Include existing macOS features or tools you tried. Explain why they do not answer the need.
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe a verifiable result, not implementation details.
+      placeholder: A user can ... and can verify that ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: scenarios
+    attributes:
+      label: Key scenarios and edge cases
+      placeholder: |
+        - Given ..., when ..., then ...
+        - If Full Disk Access is denied, ...
+        - If a volume disappears during scanning, ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: How often does this problem occur?
+      options:
+        - Daily
+        - Weekly
+        - Monthly
+        - During macOS/app updates
+        - Rare but high impact
+        - Unknown
+    validations:
+      required: true
+
+  - type: dropdown
+    id: permission-impact
+    attributes:
+      label: Does the request appear to need broader access?
+      options:
+        - No new permission or data
+        - Full Disk Access behavior changes
+        - New macOS permission or entitlement
+        - Network access
+        - File content access
+        - Deletion, movement, or modification of user files
+        - Unsure
+    validations:
+      required: true
+
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Privacy and data considerations
+      description: What metadata would be read/stored/exported? How could the feature work with less data or no network?
+    validations:
+      required: true
+
+  - type: textarea
+    id: success
+    attributes:
+      label: Success and guardrail measures
+      description: Give at least one success signal and one thing that must not regress (accuracy, CPU, memory, privacy, permissions, etc.).
+      placeholder: |
+        Success: ...
+        Guardrail: idle CPU remains below ... / no file content is read / ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and non-goals
+      description: What should SpaceTrace deliberately not do as part of this request?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: Are you interested in contributing?
+      options:
+        - Yes, I can draft an RFC or design
+        - Yes, I can implement with maintainer guidance
+        - Yes, I can test or provide synthetic fixtures
+        - Not currently
+    validations:
+      required: true

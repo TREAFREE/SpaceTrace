@@ -4,6 +4,8 @@ Status: **Architecture spike; not user-visible production behavior**
 
 Last verified: 2026-07-18
 
+Chinese companion translation: [implementation-status.zh-CN.md](implementation-status.zh-CN.md). This English document remains the architecture source of truth.
+
 This document records what the first implementation slice proves and, equally importantly, what it does not prove. ADR-003 and ADR-004 remain **Proposed** until their complete validation plans and maintainer review are satisfied.
 
 ## Implemented evidence
@@ -11,21 +13,28 @@ This document records what the first implementation slice proves and, equally im
 | Area | Evidence now in the repository | Proven invariant |
 | --- | --- | --- |
 | Domain observations | Checked byte quantities, typed identities, coverage states, comparable observations, and metric-preserving deltas | Unknown or partial evidence cannot be presented as a complete zero-byte observation |
-| FSEvents bridge | Public flag interpretation, restart-safe full-history replay, root-change sentinel handling, and a single-consumer bounded `AsyncThrowingStream` adapter | Events are invalidation hints only; callback-buffer loss becomes an explicit calibration gap and sentinel ID zero never becomes a durable cursor |
-| Invalidation mapping | Adapter-to-application semantic mapping, lexical scope validation, file-to-parent projection, replay-overlap filtering, and ancestor coalescing | Ambiguous paths and continuity gaps sacrifice precision by falling back to scope calibration; they never manufacture narrow certainty |
+| FSEvents bridge | Per-device target resolution, persistent volume/journal identity, volume-relative path validation, application-path normalization, restart-safe full-history replay, fault-injectable stream construction, calibrated one-shot recovery from rejected persistent replay, root-change sentinel handling, lifecycle-safe native ownership, bounded single-consumer adapters, and host-live fallback for volumes without a journal UUID | Durable replay is tied to both volume UUID and FSEvents journal UUID; ephemeral `dev_t` is never persisted; a rejected stored replay atomically invalidates its checkpoint before live monitoring; and a non-persistent fallback stream is isolated to one mount generation |
+| Mount lifecycle | Read-only Disk Arbitration appeared/disappeared/mount-path observation, owned callback snapshots, bounded overflow signaling, exact configured mount-root matching, approved-scope UUID enrichment, a pure scope mount-generation state machine, and a transactional persistence port | Parent-volume enumeration cannot activate an external-volume scope; duplicate callbacks reuse one active generation; every observed remount opens a new generation; a different UUID at the same mount path cannot inherit history; a late unmount closes only its expected generation |
+| Non-UI monitoring composition | Actor-isolated Disk Arbitration consumption, bounded mount-readiness retry, transactional activation/closure, one owned FSEvents consumer task per scope, generation-conditional stop/restart, and overflow-driven source recreation | Native callback order cannot silently reorder concurrent generation work; transient mount visibility is retried within a fixed bound; loss of callback precision closes correlated streams before re-enumeration |
+| Invalidation mapping | Adapter-to-application semantic mapping, lexical scope validation, file-to-parent projection, replay-overlap filtering, event-ID generation invalidation, and ancestor coalescing | Ambiguous paths and continuity gaps sacrifice precision by falling back to scope calibration; an event-ID wrap invalidates the old checkpoint and makes the complete ingest batch cursor-free |
 | Metadata calibration scanner | Foundation/Darwin metadata-only traversal with explicit entry, depth, duration, batching, and cooperative-cancellation budgets; same-volume enforcement; no symlink traversal; hard-link allocation deduplication; typed coverage gaps | File contents are never opened; leaf paths do not cross the directory-aggregate boundary; budget exhaustion, permission loss, mount boundaries, and cancellation cannot become complete evidence |
 | Calibration pipeline | Actor-isolated ingestion and bounded reconciliation orchestration behind an application-owned scanner port, with structured asynchronous staging | Partial and cancelled scans discard staging and retain dirty work; a completed stale scan cannot publish data or clear work updated while it was running |
-| Event journal port | Application-owned stream, cursor, dirty-region, row-revision, reason, batch, and conditional-resolution contracts | A checkpoint cannot be accepted without durable dirty work in the same batch; cursor-free sentinels cannot move it |
-| SQLite prototype | Actor-owned SQLite3 connection, WAL, schema v3, big-endian `UInt64` cursors and revisions, scan-run and directory-stage tables, current directory aggregates, atomic publication, cursor-free calibration markers, and rollback fault seam | Durable cursor advancement is atomic with dirty-region persistence and cannot regress; only complete, revision-current scans publish and mark missing descendants deleted |
+| Event journal port | Application-owned persistent stream identity, continuity classification, cursor, dirty-region, row-revision, reason, batch, and conditional-resolution contracts | A checkpoint cannot be accepted without durable dirty work in the same batch; changing either the volume UUID or journal UUID selects a different durable stream generation |
+| SQLite prototype | Actor-owned SQLite3 connection, WAL, schema v4, big-endian `UInt64` cursors and revisions, persistent scope mount generations, scan-run and directory-stage tables, current directory aggregates, atomic publication, cursor-free calibration markers, checkpoint-generation invalidation, and rollback fault seams | Durable cursor advancement is atomic with dirty-region persistence and cannot regress; mount activation is classified and stored in one write transaction; generation closure is conditional; invalidating a journal generation atomically clears its checkpoint and every pending cursor while advancing work revisions |
 | Build integration | Local `SpaceTraceKit` package linked to the macOS application target | The application composition root can depend on modular non-UI targets without source duplication |
 
 ## Verification evidence
 
 The following gates passed on 2026-07-18 with Swift 6.2.1 and Xcode 26.1.1:
 
-- `swift test --package-path Packages/SpaceTraceKit`: 78 tests in 13 suites;
+- `swift test --package-path Packages/SpaceTraceKit`: 125 tests in 20 suites (the destructive-environment qualification remains opt-in and is reported as skipped here);
 - the same package tests with complete strict-concurrency diagnostics and compiler warnings treated as errors;
 - an adapter-to-application-to-real-SQLite integration test with an injected calibration scanner;
+- four serialized per-device FSEvents integration tests on a guarded disposable APFS directory, covering persistent identity resolution, live delivery, single-subscription failure, cancellation cleanup, explicit stop, restart, historical replay through `HistoryDone`, and a real callback-buffer overflow marker;
+- 100 consecutive per-device integration-suite runs without an intermittent failure after hardening the asynchronous overflow assertion; the tests use native synchronous flush as an observation boundary and do not use timing sleeps;
+- deterministic Disk Arbitration callback parsing, overflow, single-subscription, stop, and native-session lifecycle tests, plus mount state-machine and SQLite v3-to-v4 migration tests;
+- an opt-in controlled qualification using two 64 MiB same-name APFS images: normal detach, same-volume remount, different-UUID replacement at the same mount point, distinct generation/stream IDs, and live FSEvents dirty evidence on the first and replacement volumes; the passing run completed in 3.924 seconds;
+- deterministic client and resolver injection proving that both native stream creation and start rejection invalidate a stored replay checkpoint, persist scope-level calibration work, attempt exactly one `sinceNow` recovery, and remain inactive if that recovery also fails;
 - deterministic metadata fixtures for permission loss, symlinks, mount boundaries, hard links, budgets, and cancellation, plus a production-adapter test scoped to a disposable temporary directory;
 - `make verify`, including architecture checks, package tests, Xcode scheme discovery, Debug build, application unit tests, and Release build;
 - Xcode compile and link target `arm64-apple-macos15.6` with the local package resolved from this repository.
@@ -35,20 +44,21 @@ The strict-concurrency run is an audit for newly introduced package code. The ap
 ## Deliberately not claimed
 
 - No user-facing scan, history, explanation, menu-bar, permission, or export workflow is implemented.
-- The production scanner and schema-v3 staging path are not wired into the application composition root or any user-visible workflow yet.
+- The production scanner, schema-v3 staging path, schema-v4 mount mapping, Disk Arbitration source, and FSEvents supervisor are wired into a non-UI package composition runtime, but not into the application target or any user-visible workflow yet.
 - Scan scheduling does not yet react to thermal state, battery state, or system load. Hard-link deduplication is bounded by the entry budget but remains in memory for each scan run.
 - Permission scope acquisition, security-scoped bookmark lifecycle, cloud placeholder classification, and APFS snapshot reconciliation are not implemented.
 - No exact byte delta or process attribution is inferred from FSEvents.
-- The native FSEvents bridge has not yet passed an isolated APFS-volume lifecycle/integration suite.
+- Native qualification now includes controlled detach/remount and same-name replacement images on the development host. Oldest-supported-OS runtime behavior, genuine daemon `UserDropped`, `KernelDropped`, event-ID wrap, sleep/wake, and permission-revocation behavior remain unqualified.
+- Synchronous stream-start recovery is bounded and tested. An unexpected failure after a stream has started is recorded by the supervisor but is not yet automatically reopened; lifecycle-level recovery for that terminal condition remains an acceptance item.
 - The SQLite adapter is a dependency-free architecture prototype. ADR-004's GRDB, migration-fixture, retention, disk-full, corruption, and benchmark decisions are still open.
 - macOS 15.6 runtime qualification is not complete; compiling for the deployment target on a newer host is not runtime evidence.
 - Full Disk Access, App Sandbox removal, Developer ID signing, notarization, distribution, and update behavior are unchanged and remain governed by their proposed decisions.
 
 ## Next acceptance gates
 
-1. Run FSEvents create/start/replay/cancel/drop integration tests on a disposable APFS scope without scanning a developer home directory.
-2. Decide per-device stream identity and volume-generation behavior before persisting production cursors.
-3. Complete the ADR-004 GRDB-versus-raw-SQLite review, including license, build, migration, and notarization evidence.
-4. Expand the schema migration fixture matrix and add disk-full/corruption tests, retention behavior, and oldest-supported-OS qualification.
-5. Add permission-scope acquisition and production scan scheduling, then wire the accepted scanner and repository adapters into the composition root.
+1. Add lifecycle recovery for unexpected post-start stream termination, genuine daemon drop/wrap qualification where safely reproducible, and property-based mount/event state sequences.
+2. Complete the ADR-004 GRDB-versus-raw-SQLite review, including license, build, migration, and notarization evidence.
+3. Expand the schema migration fixture matrix and add disk-full/corruption tests, retention behavior, and oldest-supported-OS qualification.
+4. Implement user-selected security-scoped bookmark acquisition/restoration so `WatchedScope.root` and `mountPath` are derived from an explicit grant, then connect the non-UI runtime to application lifecycle without broadening scope.
+5. Add thermal, power, sleep/wake, permission-revocation, and production calibration scheduling policies.
 6. Keep all spike code unreachable from user-visible workflows until its corresponding ADR is accepted.

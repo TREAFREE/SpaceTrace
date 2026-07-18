@@ -48,4 +48,36 @@ struct FSEventInvalidationMapperTests {
         )
         #expect(result == nil)
     }
+
+    @Test("An event-ID wrap invalidates the stored cursor and schedules root recovery")
+    func invalidatesWrappedCursor() throws {
+        let mapped = try mapper.map(
+            FSEventObservation(
+                path: nil,
+                eventID: FSEventID(rawValue: 42),
+                reasons: [.eventIdentifiersWrapped],
+                rawFlags: 0
+            )
+        )
+        let result = try #require(mapped)
+        #expect(result.cursor == nil)
+        #expect(result.invalidatesStoredCursor)
+        #expect(result.reasons == [.droppedEvents, .requiresCalibration])
+    }
+
+    @Test("Callback loss cannot advance a checkpoint")
+    func suppressesOverflowCursor() throws {
+        let mapped = try mapper.map(
+            FSEventObservation(
+                path: nil,
+                eventID: FSEventID(rawValue: 42),
+                reasons: [.callbackBridgeOverflow],
+                rawFlags: 0
+            )
+        )
+        let result = try #require(mapped)
+        #expect(result.cursor == nil)
+        #expect(result.invalidatesStoredCursor == false)
+        #expect(result.reasons == [.droppedEvents, .requiresCalibration])
+    }
 }

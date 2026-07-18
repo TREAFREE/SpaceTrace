@@ -89,17 +89,50 @@ struct DirtyRegionPlannerTests {
         #expect(region.reasons.contains(.requiresCalibration))
     }
 
+    @Test("A journal generation reset makes the complete batch cursor-free")
+    func invalidatesCheckpointGeneration() throws {
+        let plan = try planner.plan(
+            watchRoot: DirtyRegionPath("/Users/example"),
+            invalidations: [
+                invalidation(
+                    nil,
+                    nil,
+                    [.droppedEvents, .requiresCalibration],
+                    .unknown,
+                    invalidatesStoredCursor: true
+                ),
+                invalidation(
+                    "/Users/example/Documents/a.txt",
+                    101,
+                    [.contentModified],
+                    .file
+                ),
+            ],
+            after: EventJournalCursor(100)
+        )
+
+        let region = try #require(plan.outOfBandRegions.first)
+        #expect(plan.invalidatesCheckpoint)
+        #expect(plan.checkpoint == nil)
+        #expect(plan.journaledRegions.isEmpty)
+        #expect(plan.outOfBandRegions.count == 1)
+        #expect(region.path.rawValue == "/Users/example")
+        #expect(region.maximumCursor == nil)
+    }
+
     private func invalidation(
         _ path: String?,
         _ cursor: UInt64?,
         _ reasons: DirtyRegionReason,
-        _ kind: FileSystemItemKind
+        _ kind: FileSystemItemKind,
+        invalidatesStoredCursor: Bool = false
     ) throws -> FileSystemInvalidation {
         try FileSystemInvalidation(
             path: path,
             cursor: cursor.map(EventJournalCursor.init),
             reasons: reasons,
-            itemKind: kind
+            itemKind: kind,
+            invalidatesStoredCursor: invalidatesStoredCursor
         )
     }
 }

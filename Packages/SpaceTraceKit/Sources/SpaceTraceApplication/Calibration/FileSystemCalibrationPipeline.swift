@@ -62,6 +62,14 @@ public actor FileSystemCalibrationPipeline {
             after: checkpoint
         )
 
+        if plan.invalidatesCheckpoint {
+            try await repository.invalidateCheckpointAndMarkDirty(
+                streamID: streamID,
+                regions: plan.outOfBandRegions
+            )
+            return
+        }
+
         if plan.outOfBandRegions.isEmpty == false {
             try await repository.markDirty(
                 streamID: streamID,

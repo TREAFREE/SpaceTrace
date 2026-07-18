@@ -7,11 +7,21 @@
 | Module | Responsibility | Platform coupling |
 | --- | --- | --- |
 | `SpaceTraceDomain` | Validated storage quantities, observation identities, coverage, and deltas | None |
-| `SpaceTraceApplication` | Dirty-region planning, calibration orchestration, ports, and crash-consistency contracts | Foundation |
-| `SpaceTraceFileSystem` | FSEvents callback bridge, conservative flag interpretation, semantic mapping, and a bounded metadata-only calibration scanner | CoreServices, Foundation, Darwin |
-| `SpaceTracePersistence` | Actor-isolated raw SQLite prototype for cursor, dirty work, staged directory aggregates, and revision-safe atomic publication | SQLite3 |
+| `SpaceTraceApplication` | Dirty-region planning, calibration orchestration, mount-generation state machine, ports, and crash-consistency contracts | Foundation |
+| `SpaceTraceFileSystem` | Per-device FSEvents identity/target resolution, callback bridge, conservative flag interpretation, semantic mapping, and a bounded metadata-only calibration scanner | CoreServices, Foundation, Darwin |
+| `SpaceTracePersistence` | Actor-isolated raw SQLite prototype for cursor, dirty work, scope mount generations, staged directory aggregates, and revision-safe atomic publication | SQLite3 |
+| `SpaceTracePlatform` | Read-only Disk Arbitration callback bridge with owned volume evidence, bounded buffering, and lifecycle-safe teardown | DiskArbitration, Dispatch |
+| `SpaceTraceMonitoring` | Non-UI composition of volume signals, exact mount-scope resolution, generation activation/closure, and FSEvents supervision | Application, filesystem, and platform adapters |
 
-The filesystem, application pipeline, and persistence modules are architecture-spike implementations for proposed ADR-003 and ADR-004. A production metadata adapter and schema-v3 staging path are implemented and tested, but they are not connected to a user-visible workflow while those decisions remain proposed.
+The filesystem, platform, monitoring, application pipeline, and persistence modules are architecture-spike implementations for proposed ADR-003 and ADR-004. Their non-UI composition is implemented and tested, but it is not connected to a user-visible workflow while those decisions remain proposed.
+
+The package test suite includes serialized per-device FSEvents tests. They create and remove only a UUID-named directory below the system temporary directory, fail closed unless that directory is on APFS and outside the user's home directory, and use a native flush boundary instead of timing sleeps. Durable replay requires both a persistent volume UUID and the current FSEvents journal UUID; otherwise the resolver permits only `sinceNow` monitoring.
+
+An opt-in qualification test creates two 64 MiB APFS images with the same volume name, mounts only at a UUID-named path below `/tmp`, performs normal detach/remount/replacement, verifies distinct mount generations and restarted FSEvents delivery, then removes the images. It is intentionally excluded from normal `make verify` runs:
+
+```bash
+make package-apfs-image-qualification
+```
 
 ## Verify
 

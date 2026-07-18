@@ -19,8 +19,7 @@ public struct FSEventInvalidationMapper: Sendable {
         }
 
         let cursor: EventJournalCursor?
-        if observation.reasons.contains(.watchedRootChanged),
-           observation.eventID?.rawValue == 0 {
+        if observation.reasons.isDisjoint(with: Self.cursorInvalidatingReasons) == false {
             cursor = nil
         } else {
             cursor = observation.eventID.map { EventJournalCursor($0.rawValue) }
@@ -30,9 +29,19 @@ public struct FSEventInvalidationMapper: Sendable {
             path: observation.path,
             cursor: cursor,
             reasons: reasons,
-            itemKind: itemKind(from: observation.reasons)
+            itemKind: itemKind(from: observation.reasons),
+            invalidatesStoredCursor: observation.reasons.contains(.eventIdentifiersWrapped)
         )
     }
+
+    private static let cursorInvalidatingReasons: Set<FSEventReason> = [
+        .eventsDroppedByUserSpace,
+        .eventsDroppedByKernel,
+        .eventIdentifiersWrapped,
+        .watchedRootChanged,
+        .callbackBridgeOverflow,
+        .unrecognizedFlags,
+    ]
 
     private func itemKind(from reasons: Set<FSEventReason>) -> FileSystemItemKind {
         let kinds: [(FSEventReason, FileSystemItemKind)] = [

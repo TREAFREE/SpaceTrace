@@ -71,6 +71,34 @@ struct FileSystemCalibrationPipelineTests {
         #expect(await repository.discardedDispositions == [.cancelled])
     }
 
+    @Test("A wrapped journal atomically clears its checkpoint and preserves recovery work")
+    func wrappedJournalResetsCheckpoint() async throws {
+        let repository = InMemoryEventJournalRepository()
+        let pipeline = try makePipeline(
+            repository: repository,
+            scanner: FakeCalibrationScanner(coverage: .complete)
+        )
+
+        try await pipeline.ingest([try fileInvalidation(cursor: 10)])
+        #expect(try await repository.checkpoint(for: streamID()) == EventJournalCursor(10))
+        try await pipeline.ingest([
+            try FileSystemInvalidation(
+                path: nil,
+                cursor: nil,
+                reasons: [.droppedEvents, .requiresCalibration],
+                invalidatesStoredCursor: true
+            ),
+        ])
+
+        #expect(try await repository.checkpoint(for: streamID()) == nil)
+        let recovery = try #require(
+            try await repository.dirtyRegions(for: streamID()).first
+        )
+        #expect(recovery.path.rawValue == "/Users/example")
+        #expect(recovery.maximumCursor == nil)
+        #expect(recovery.reasons.contains(.requiresCalibration))
+    }
+
     private func makePipeline(
         repository: InMemoryEventJournalRepository,
         scanner: FakeCalibrationScanner
@@ -153,6 +181,25 @@ private actor InMemoryEventJournalRepository: EventJournalRepository {
     }
 
     func markDirty(streamID: EventStreamID, regions: [DirtyRegion]) throws {
+        try merge(regions)
+    }
+
+    func invalidateCheckpointAndMarkDirty(
+        streamID: EventStreamID,
+        regions: [DirtyRegion]
+    ) throws {
+        guard regions.isEmpty == false else { throw EventJournalModelError.emptyBatch }
+        savedCheckpoint = nil
+        for (path, item) in work {
+            work[path] = DirtyRegionWorkItem(
+                region: try DirtyRegion(
+                    path: item.region.path,
+                    reasons: item.region.reasons,
+                    maximumCursor: nil
+                ),
+                revision: try DirtyRegionRevision(item.revision.rawValue + 1)
+            )
+        }
         try merge(regions)
     }
 

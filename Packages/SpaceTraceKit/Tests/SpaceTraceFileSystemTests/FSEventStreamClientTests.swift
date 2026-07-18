@@ -27,7 +27,7 @@ struct FSEventStreamClientTests {
         var iterator = streamPair.stream.makeAsyncIterator()
         let emitted = try #require(try await iterator.next())
         #expect(emitted.path == nil)
-        #expect(emitted.eventID == second.eventID)
+        #expect(emitted.eventID == nil)
         #expect(emitted.reasons == [.callbackBridgeOverflow])
         #expect(emitted.requiresCalibration)
         #expect(emitted.indicatesContinuityGap)
@@ -37,13 +37,34 @@ struct FSEventStreamClientTests {
     @Test("Historical replay requests the overlapping restart-safe chunk")
     func historicalReplayUsesFullHistory() {
         let configuration = FSEventStreamConfiguration(
-            watchedPaths: ["/watched"],
+            deviceTarget: FSEventDeviceTarget(
+                deviceID: 1,
+                mountPath: "/Volumes/Data",
+                relativePaths: ["watched"]
+            ),
             replayPosition: .after(FSEventID(rawValue: 42))
         )
 
         #expect(
             configuration.nativeCreateFlags
                 & FSEventStreamCreateFlags(kFSEventStreamCreateFlagFullHistory) != 0
+        )
+    }
+
+    @Test("Per-device callback paths are restored beneath the current mount root")
+    func restoresDeviceCallbackPaths() {
+        let transform = FSEventCallbackPathTransform.device(
+            mountPath: "/Volumes/External"
+        )
+
+        #expect(transform.absolutePath(for: "") == "/Volumes/External")
+        #expect(
+            transform.absolutePath(for: "Pictures/July/photo.heic")
+                == "/Volumes/External/Pictures/July/photo.heic"
+        )
+        #expect(
+            FSEventCallbackPathTransform.device(mountPath: "/")
+                .absolutePath(for: "Users/example") == "/Users/example"
         )
     }
 
@@ -59,6 +80,20 @@ struct FSEventStreamClientTests {
         #expect(observation.eventID == nil)
         #expect(observation.reasons.contains(.watchedRootChanged))
         #expect(observation.requiresCalibration)
+    }
+
+    @Test("An event-ID wrap never exposes the new generation as an old cursor")
+    func eventIDWrapSuppressesCursor() {
+        let observation = FSEventObservationFactory.make(
+            "/watched",
+            eventID: 42,
+            rawFlags: FSEventStreamEventFlags(kFSEventStreamEventFlagEventIdsWrapped)
+        )
+
+        #expect(observation.path == nil)
+        #expect(observation.eventID == nil)
+        #expect(observation.reasons.contains(.eventIdentifiersWrapped))
+        #expect(observation.indicatesContinuityGap)
     }
 
     private func observation(id: UInt64) -> FSEventObservation {
@@ -89,6 +124,47 @@ private let invalidConfigurations: [InvalidConfigurationCase] = [
         name: "relative path",
         configuration: FSEventStreamConfiguration(watchedPaths: ["relative/path"]),
         expectedError: .watchedPathMustBeAbsolute(index: 0)
+    ),
+    InvalidConfigurationCase(
+        name: "host replay cursor",
+        configuration: FSEventStreamConfiguration(
+            watchedPaths: ["/watched"],
+            replayPosition: .after(FSEventID(rawValue: 42))
+        ),
+        expectedError: .persistentReplayRequiresDeviceTarget
+    ),
+    InvalidConfigurationCase(
+        name: "zero device identifier",
+        configuration: FSEventStreamConfiguration(
+            deviceTarget: FSEventDeviceTarget(
+                deviceID: 0,
+                mountPath: "/Volumes/Data",
+                relativePaths: [""]
+            )
+        ),
+        expectedError: .deviceIdentifierMustBePositiveAndRepresentable
+    ),
+    InvalidConfigurationCase(
+        name: "non-normalized mount path",
+        configuration: FSEventStreamConfiguration(
+            deviceTarget: FSEventDeviceTarget(
+                deviceID: 1,
+                mountPath: "/Volumes/Data/",
+                relativePaths: [""]
+            )
+        ),
+        expectedError: .deviceMountPathMustBeNormalizedAbsolute
+    ),
+    InvalidConfigurationCase(
+        name: "absolute device-relative path",
+        configuration: FSEventStreamConfiguration(
+            deviceTarget: FSEventDeviceTarget(
+                deviceID: 1,
+                mountPath: "/Volumes/Data",
+                relativePaths: ["/Pictures"]
+            )
+        ),
+        expectedError: .devicePathMustBeNormalizedRelative(index: 0)
     ),
     InvalidConfigurationCase(
         name: "negative latency",

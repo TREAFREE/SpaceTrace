@@ -15,6 +15,8 @@ let package = Package(
                 "SpaceTraceApplication",
                 "SpaceTraceFileSystem",
                 "SpaceTracePersistence",
+                "SpaceTracePlatform",
+                "SpaceTraceMonitoring",
             ]
         ),
     ],
@@ -41,6 +43,21 @@ let package = Package(
                 .linkedLibrary("sqlite3"),
             ]
         ),
+        .target(
+            name: "SpaceTracePlatform",
+            dependencies: ["SpaceTraceApplication"],
+            linkerSettings: [
+                .linkedFramework("DiskArbitration"),
+            ]
+        ),
+        .target(
+            name: "SpaceTraceMonitoring",
+            dependencies: [
+                "SpaceTraceApplication",
+                "SpaceTraceFileSystem",
+                "SpaceTracePlatform",
+            ]
+        ),
         .testTarget(
             name: "SpaceTraceDomainTests",
             dependencies: ["SpaceTraceDomain"]
@@ -63,6 +80,20 @@ let package = Package(
                 "SpaceTraceDomain",
                 "SpaceTraceFileSystem",
                 "SpaceTracePersistence",
+            ]
+        ),
+        .testTarget(
+            name: "SpaceTracePlatformTests",
+            dependencies: ["SpaceTracePlatform"]
+        ),
+        .testTarget(
+            name: "SpaceTraceMonitoringTests",
+            dependencies: [
+                "SpaceTraceApplication",
+                "SpaceTraceFileSystem",
+                "SpaceTraceMonitoring",
+                "SpaceTracePersistence",
+                "SpaceTracePlatform",
             ]
         ),
     ],

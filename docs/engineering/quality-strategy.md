@@ -69,6 +69,8 @@ Coverage 不能替代场景测试。为达到数字而断言实现细节或大�
 
 CI 集成测试禁止扫描 runner 的真实主目录。任何测试 helper 若接收到 `/`、`$HOME` 或未解析的空路径 **MUST** fail closed。
 
+真实挂载生命周期使用显式 opt-in 的 `make package-apfs-image-qualification`。夹具只能在 UUID 命名的临时目录创建小型镜像，设备标识必须匹配受控 attach 响应和 `/dev/disk…` 白名单；正常路径使用普通 detach，强制 detach 仅可作为该临时设备的失败清理兜底。此测试不得进入通用并行 CI，也不得接触现有卷。
+
 ### 2.3 UI and accessibility tests
 
 UI 测试聚焦关键旅程：首次启动、权限拒绝、部分覆盖、首次扫描、查看增长来源、暂停/恢复、清除历史、导出诊断。每个旅程至少有一条 automated smoke test 和一条 release 手测记录。

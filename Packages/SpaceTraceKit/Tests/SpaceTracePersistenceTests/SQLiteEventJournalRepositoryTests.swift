@@ -36,6 +36,149 @@ struct SQLiteEventJournalRepositoryTests {
         fixture.remove()
     }
 
+    @Test("Schema version three migrates to persistent scope mount generations")
+    func migratesVersionThreeMountState() async throws {
+        let fixture = try TemporaryDatabase()
+        try createVersionThreeMountFixture(at: fixture.databaseURL)
+        let repository = try SQLiteEventJournalRepository(databaseURL: fixture.databaseURL)
+        let scopeID = try WatchedScopeID("scope-migrated")
+        let generationID = try MountGenerationID("mount-generation-migrated")
+        let volumeUUID = try #require(
+            UUID(uuidString: "11111111-2222-3333-4444-555555555555")
+        )
+        let evidence = try VolumeMountEvidence(
+            mountPath: DirtyRegionPath("/Volumes/Migrated"),
+            volumeUUID: volumeUUID
+        )
+
+        let transition = try await repository.activateScopeMount(
+            scopeID: scopeID,
+            evidence: evidence,
+            proposedGenerationID: generationID
+        )
+
+        #expect(transition.reason == .firstMount)
+        #expect(try await repository.scopeMountGeneration(for: scopeID) == transition.current)
+
+        try await repository.close()
+        fixture.remove()
+    }
+
+    @Test("Duplicate mount callbacks persist one active generation")
+    func deduplicatesPersistentMountActivation() async throws {
+        try await withRepository { repository in
+            let scopeID = try WatchedScopeID("scope-primary")
+            let firstGeneration = try MountGenerationID("mount-generation-1")
+            let ignoredGeneration = try MountGenerationID("mount-generation-ignored")
+            let volumeUUID = try #require(
+                UUID(uuidString: "11111111-2222-3333-4444-555555555555")
+            )
+            let evidence = try VolumeMountEvidence(
+                mountPath: DirtyRegionPath("/Volumes/Projects"),
+                volumeUUID: volumeUUID
+            )
+
+            let first = try await repository.activateScopeMount(
+                scopeID: scopeID,
+                evidence: evidence,
+                proposedGenerationID: firstGeneration
+            )
+            let duplicate = try await repository.activateScopeMount(
+                scopeID: scopeID,
+                evidence: evidence,
+                proposedGenerationID: ignoredGeneration
+            )
+
+            #expect(first.current.generationID == firstGeneration)
+            #expect(duplicate.reason == .duplicateNotification)
+            #expect(duplicate.current.generationID == firstGeneration)
+            #expect(try await repository.scopeMountGeneration(for: scopeID) == duplicate.current)
+        }
+    }
+
+    @Test("A process restart closes every previously active mount generation")
+    func closesActiveGenerationsWhenRepositoryReopens() async throws {
+        let fixture = try TemporaryDatabase()
+        let scopeID = try WatchedScopeID("scope-restart")
+        let firstGeneration = try MountGenerationID("mount-generation-before-restart")
+        let nextGeneration = try MountGenerationID("mount-generation-after-restart")
+        let volumeUUID = try #require(
+            UUID(uuidString: "11111111-2222-3333-4444-555555555555")
+        )
+        let evidence = try VolumeMountEvidence(
+            mountPath: DirtyRegionPath("/Volumes/Projects"),
+            volumeUUID: volumeUUID
+        )
+
+        let originalRepository = try SQLiteEventJournalRepository(
+            databaseURL: fixture.databaseURL
+        )
+        _ = try await originalRepository.activateScopeMount(
+            scopeID: scopeID,
+            evidence: evidence,
+            proposedGenerationID: firstGeneration
+        )
+        try await originalRepository.close()
+
+        let reopenedRepository = try SQLiteEventJournalRepository(
+            databaseURL: fixture.databaseURL
+        )
+        #expect(try await reopenedRepository.scopeMountGeneration(for: scopeID)?.isActive == false)
+        let transition = try await reopenedRepository.activateScopeMount(
+            scopeID: scopeID,
+            evidence: evidence,
+            proposedGenerationID: nextGeneration
+        )
+        #expect(transition.reason == .remountedSameVolume)
+        #expect(transition.current.generationID == nextGeneration)
+
+        try await reopenedRepository.close()
+        fixture.remove()
+    }
+
+    @Test("A late unmount callback cannot deactivate a replacement generation")
+    func conditionallyDeactivatesExpectedGeneration() async throws {
+        try await withRepository { repository in
+            let scopeID = try WatchedScopeID("scope-replacement")
+            let firstGeneration = try MountGenerationID("mount-generation-1")
+            let replacementGeneration = try MountGenerationID("mount-generation-2")
+            let volumeA = try #require(
+                UUID(uuidString: "11111111-2222-3333-4444-555555555555")
+            )
+            let volumeB = try #require(
+                UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+            )
+            let mountPath = try DirtyRegionPath("/Volumes/Projects")
+
+            _ = try await repository.activateScopeMount(
+                scopeID: scopeID,
+                evidence: VolumeMountEvidence(mountPath: mountPath, volumeUUID: volumeA),
+                proposedGenerationID: firstGeneration
+            )
+            let replacement = try await repository.activateScopeMount(
+                scopeID: scopeID,
+                evidence: VolumeMountEvidence(mountPath: mountPath, volumeUUID: volumeB),
+                proposedGenerationID: replacementGeneration
+            )
+
+            #expect(replacement.reason == .replacementVolume)
+            #expect(
+                try await repository.deactivateScopeMount(
+                    scopeID: scopeID,
+                    matching: firstGeneration
+                ) == false
+            )
+            #expect(try await repository.scopeMountGeneration(for: scopeID)?.isActive == true)
+            #expect(
+                try await repository.deactivateScopeMount(
+                    scopeID: scopeID,
+                    matching: replacementGeneration
+                )
+            )
+            #expect(try await repository.scopeMountGeneration(for: scopeID)?.isActive == false)
+        }
+    }
+
     @Test("A batch makes dirty work and its checkpoint visible atomically")
     func atomicCommit() async throws {
         try await withRepository { repository in
@@ -104,6 +247,81 @@ struct SQLiteEventJournalRepositoryTests {
 
             #expect(try await repository.checkpoint(for: streamID) == nil)
             #expect(try await repository.dirtyRegions(for: streamID) == [region])
+        }
+    }
+
+    @Test("Checkpoint invalidation atomically clears every dirty cursor and advances revisions")
+    func invalidatesCheckpointWithRecoveryWork() async throws {
+        try await withRepository { repository in
+            let streamID = try EventStreamID("volume-wrap:generation-1")
+            try await repository.commit(
+                makeBatch(
+                    streamID: streamID,
+                    path: "/Users/example/Documents",
+                    reasons: [.contentModified],
+                    cursor: 42
+                )
+            )
+            let original = try #require(
+                try await repository.pendingDirtyWork(for: streamID, limit: 1).first
+            )
+            let recovery = try DirtyRegion(
+                path: DirtyRegionPath("/Users/example"),
+                reasons: [.droppedEvents, .requiresCalibration],
+                maximumCursor: nil
+            )
+
+            try await repository.invalidateCheckpointAndMarkDirty(
+                streamID: streamID,
+                regions: [recovery]
+            )
+
+            #expect(try await repository.checkpoint(for: streamID) == nil)
+            let current = try #require(
+                try await repository.pendingDirtyWork(for: streamID, limit: 1).first
+            )
+            #expect(current.region.path.rawValue == "/Users/example")
+            #expect(current.region.maximumCursor == nil)
+            #expect(current.region.reasons.contains(.droppedEvents))
+            #expect(current.revision > original.revision)
+        }
+    }
+
+    @Test("Checkpoint invalidation rolls recovery work back on failure")
+    func checkpointInvalidationRollsBack() async throws {
+        try await withRepository(
+            failurePoint: .afterRecoveryWorkBeforeCheckpointInvalidation
+        ) { repository in
+            let streamID = try EventStreamID("volume-wrap-failure:generation-1")
+            try await repository.commit(
+                makeBatch(
+                    streamID: streamID,
+                    path: "/Users/example/Documents",
+                    reasons: [.contentModified],
+                    cursor: 42
+                )
+            )
+            let original = try #require(
+                try await repository.pendingDirtyWork(for: streamID, limit: 1).first
+            )
+            let recovery = try DirtyRegion(
+                path: DirtyRegionPath("/Users/example"),
+                reasons: [.droppedEvents, .requiresCalibration],
+                maximumCursor: nil
+            )
+
+            await #expect(throws: SQLiteEventJournalError.injectedFailure) {
+                try await repository.invalidateCheckpointAndMarkDirty(
+                    streamID: streamID,
+                    regions: [recovery]
+                )
+            }
+
+            #expect(try await repository.checkpoint(for: streamID) == EventJournalCursor(42))
+            #expect(
+                try await repository.pendingDirtyWork(for: streamID, limit: 1).first
+                    == original
+            )
         }
     }
 
@@ -625,6 +843,28 @@ private func createVersionOneFixture(at databaseURL: URL) throws {
         VALUES('volume-v1:generation-1', '/Users/example/Documents', 8,
             X'000000000000002A');
         PRAGMA user_version = 1;
+        """
+    guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else {
+        throw MigrationFixtureError.createFailed
+    }
+}
+
+private func createVersionThreeMountFixture(at databaseURL: URL) throws {
+    var database: OpaquePointer?
+    guard sqlite3_open(databaseURL.path, &database) == SQLITE_OK, let database else {
+        throw MigrationFixtureError.openFailed
+    }
+    defer { sqlite3_close(database) }
+
+    let sql = """
+        CREATE TABLE schema_migration (
+            version INTEGER PRIMARY KEY,
+            applied_at_ms INTEGER NOT NULL,
+            checksum TEXT NOT NULL
+        );
+        INSERT INTO schema_migration(version, applied_at_ms, checksum)
+        VALUES(3, 0, 'calibration-v3-staging-finalization');
+        PRAGMA user_version = 3;
         """
     guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else {
         throw MigrationFixtureError.createFailed

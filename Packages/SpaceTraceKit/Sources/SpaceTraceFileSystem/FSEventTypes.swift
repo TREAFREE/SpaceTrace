@@ -121,11 +121,35 @@ public struct FSEventObservation: Hashable, Codable, Sendable {
     ]
 }
 
-/// Immutable inputs for one host-level FSEvents stream.
+/// One volume-relative target for `FSEventStreamCreateRelativeToDevice`.
+public struct FSEventDeviceTarget: Hashable, Sendable {
+    /// Ephemeral device identifier used only for the current native stream.
+    public let deviceID: UInt64
+
+    /// Absolute root where the volume is currently mounted. Native callback
+    /// paths are relative to the device and are restored beneath this root.
+    public let mountPath: String
+
+    /// Paths relative to the device root. The empty string watches the root.
+    public let relativePaths: [String]
+
+    init(deviceID: UInt64, mountPath: String, relativePaths: [String]) {
+        self.deviceID = deviceID
+        self.mountPath = mountPath
+        self.relativePaths = relativePaths
+    }
+}
+
+/// Native FSEvents stream kind. Host streams are restricted to live,
+/// non-persistent observation; durable replay requires a per-device target.
+public enum FSEventStreamTarget: Hashable, Sendable {
+    case host(absolutePaths: [String])
+    case device(FSEventDeviceTarget)
+}
+
+/// Immutable inputs for one FSEvents stream.
 public struct FSEventStreamConfiguration: Hashable, Sendable {
-    /// Absolute paths watched by this stream. Validation is lexical and performs
-    /// no filesystem access.
-    public let watchedPaths: [String]
+    public let target: FSEventStreamTarget
 
     public let replayPosition: FSEventReplayPosition
 
@@ -145,7 +169,21 @@ public struct FSEventStreamConfiguration: Hashable, Sendable {
         bufferCapacity: Int = 512,
         excludeEventsFromThisProcess: Bool = true
     ) {
-        self.watchedPaths = watchedPaths
+        self.target = .host(absolutePaths: watchedPaths)
+        self.replayPosition = replayPosition
+        self.latency = latency
+        self.bufferCapacity = bufferCapacity
+        self.excludeEventsFromThisProcess = excludeEventsFromThisProcess
+    }
+
+    init(
+        deviceTarget: FSEventDeviceTarget,
+        replayPosition: FSEventReplayPosition = .sinceNow,
+        latency: TimeInterval = 1,
+        bufferCapacity: Int = 512,
+        excludeEventsFromThisProcess: Bool = true
+    ) {
+        self.target = .device(deviceTarget)
         self.replayPosition = replayPosition
         self.latency = latency
         self.bufferCapacity = bufferCapacity
@@ -156,6 +194,10 @@ public struct FSEventStreamConfiguration: Hashable, Sendable {
 public enum FSEventStreamConfigurationError: Error, Equatable, Sendable {
     case noWatchedPaths
     case watchedPathMustBeAbsolute(index: Int)
+    case persistentReplayRequiresDeviceTarget
+    case deviceIdentifierMustBePositiveAndRepresentable
+    case deviceMountPathMustBeNormalizedAbsolute
+    case devicePathMustBeNormalizedRelative(index: Int)
     case latencyMustBeFiniteAndNonnegative
     case bufferCapacityMustBePositive
 }

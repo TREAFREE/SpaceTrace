@@ -10,6 +10,7 @@ public struct DirtyRegionPlanner: Sendable {
         invalidations: [FileSystemInvalidation],
         after storedCheckpoint: EventJournalCursor?
     ) throws -> DirtyRegionPlan {
+        let invalidatesCheckpoint = invalidations.contains { $0.invalidatesStoredCursor }
         var journaled: [DirtyRegion] = []
         var outOfBand: [DirtyRegion] = []
 
@@ -28,7 +29,11 @@ public struct DirtyRegionPlanner: Sendable {
                 reasons.insert(.requiresCalibration)
             }
 
-            if let cursor = invalidation.cursor,
+            if invalidatesCheckpoint {
+                outOfBand.append(
+                    try DirtyRegion(path: target.path, reasons: reasons, maximumCursor: nil)
+                )
+            } else if let cursor = invalidation.cursor,
                storedCheckpoint.map({ cursor > $0 }) ?? true {
                 journaled.append(
                     try DirtyRegion(path: target.path, reasons: reasons, maximumCursor: cursor)
@@ -43,6 +48,7 @@ public struct DirtyRegionPlanner: Sendable {
         let coalescedJournaled = try coalesce(journaled)
         let coalescedOutOfBand = try coalesce(outOfBand)
         return DirtyRegionPlan(
+            invalidatesCheckpoint: invalidatesCheckpoint,
             checkpoint: coalescedJournaled.compactMap(\.maximumCursor).max(),
             journaledRegions: coalescedJournaled,
             outOfBandRegions: coalescedOutOfBand

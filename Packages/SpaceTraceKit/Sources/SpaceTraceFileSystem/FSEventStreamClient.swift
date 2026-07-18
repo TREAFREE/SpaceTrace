@@ -1,7 +1,19 @@
 import CoreServices
+import Darwin
 import Dispatch
 import Foundation
 import Synchronization
+
+/// Minimal lifecycle surface used by the application-owned supervisor.
+/// Keeping native construction behind this port makes startup and history
+/// recovery deterministic under fault injection without exposing callbacks to
+/// higher layers.
+public protocol FSEventStreamControlling: Sendable {
+    func start(
+        configuration: FSEventStreamConfiguration
+    ) throws -> FSEventStreamClient.ObservationStream
+    func stop()
+}
 
 /// A single-active-subscription bridge from the native FSEvents callback API
 /// to Swift concurrency.
@@ -20,7 +32,8 @@ public final class FSEventStreamClient: Sendable {
         stop()
     }
 
-    /// Creates, schedules, and starts one host-level FSEvents stream.
+    /// Creates, schedules, and starts one native FSEvents stream. Durable
+    /// replay configurations are restricted to resolved per-device targets.
     ///
     /// The method throws a concrete ``FSEventStreamError`` before returning if
     /// native creation or start fails. Cancelling iteration invokes the
@@ -44,7 +57,10 @@ public final class FSEventStreamClient: Sendable {
 
                 state.generation &+= 1
                 let generation = state.generation
-                let callbackBox = FSEventCallbackBox(continuation: streamPair.continuation)
+                let callbackBox = FSEventCallbackBox(
+                    continuation: streamPair.continuation,
+                    pathTransform: configuration.callbackPathTransform
+                )
                 let callbackInfo = Unmanaged.passUnretained(callbackBox).toOpaque()
                 var context = FSEventStreamContext(
                     version: 0,
@@ -56,17 +72,38 @@ public final class FSEventStreamClient: Sendable {
 
                 let createFlags = configuration.nativeCreateFlags
                 let sinceWhen = configuration.nativeReplayPosition
-                let paths = configuration.watchedPaths as CFArray
+                let paths = configuration.nativeWatchedPaths as CFArray
+                let nativeStream: FSEventStreamRef?
+                switch configuration.target {
+                case .host:
+                    nativeStream = FSEventStreamCreate(
+                        kCFAllocatorDefault,
+                        receiveFSEvents,
+                        &context,
+                        paths,
+                        sinceWhen,
+                        configuration.latency,
+                        createFlags
+                    )
+                case let .device(target):
+                    guard let deviceID = dev_t(exactly: target.deviceID) else {
+                        throw FSEventStreamError.invalidConfiguration(
+                            .deviceIdentifierMustBePositiveAndRepresentable
+                        )
+                    }
+                    nativeStream = FSEventStreamCreateRelativeToDevice(
+                        kCFAllocatorDefault,
+                        receiveFSEvents,
+                        &context,
+                        deviceID,
+                        paths,
+                        sinceWhen,
+                        configuration.latency,
+                        createFlags
+                    )
+                }
 
-                guard let nativeStream = FSEventStreamCreate(
-                    kCFAllocatorDefault,
-                    receiveFSEvents,
-                    &context,
-                    paths,
-                    sinceWhen,
-                    configuration.latency,
-                    createFlags
-                ) else {
+                guard let nativeStream else {
                     throw FSEventStreamError.creationFailed
                 }
 
@@ -105,6 +142,20 @@ public final class FSEventStreamClient: Sendable {
         stop(generation: nil)
     }
 
+    /// Synchronizes native callbacks for events that occurred before this
+    /// call. This blocking boundary is internal so integration tests can avoid
+    /// timing sleeps without exposing native stream control to the app layer.
+    /// It must never run on a UI-bound executor.
+    func flushSynchronously() -> Bool {
+        state.withLock { state in
+            guard state.started, let nativeStream = state.nativeStream else {
+                return false
+            }
+            FSEventStreamFlushSync(nativeStream)
+            return true
+        }
+    }
+
     private func stop(generation expectedGeneration: UInt64?) {
         let continuation = state.withLock { state -> ObservationStream.Continuation? in
             if let expectedGeneration, expectedGeneration != state.generation {
@@ -121,6 +172,8 @@ public final class FSEventStreamClient: Sendable {
         continuation?.finish()
     }
 }
+
+extension FSEventStreamClient: FSEventStreamControlling {}
 
 private extension FSEventStreamClient {
     struct State {
@@ -154,9 +207,14 @@ private extension FSEventStreamClient {
 
 private final class FSEventCallbackBox: Sendable {
     private let continuation: FSEventStreamClient.ObservationStream.Continuation
+    private let pathTransform: FSEventCallbackPathTransform
 
-    init(continuation: FSEventStreamClient.ObservationStream.Continuation) {
+    init(
+        continuation: FSEventStreamClient.ObservationStream.Continuation,
+        pathTransform: FSEventCallbackPathTransform
+    ) {
         self.continuation = continuation
+        self.pathTransform = pathTransform
     }
 
     func receive(
@@ -173,7 +231,7 @@ private final class FSEventCallbackBox: Sendable {
             }
 
             let observation = FSEventObservationFactory.make(
-                String(cString: pathBytes),
+                pathTransform.absolutePath(for: String(cString: pathBytes)),
                 eventID: eventIDs[index],
                 rawFlags: eventFlags[index]
             )
@@ -182,7 +240,40 @@ private final class FSEventCallbackBox: Sendable {
     }
 }
 
+enum FSEventCallbackPathTransform: Sendable, Equatable {
+    case host
+    case device(mountPath: String)
+
+    func absolutePath(for callbackPath: String) -> String {
+        let path: String
+        switch self {
+        case .host:
+            path = callbackPath
+        case let .device(mountPath):
+            guard callbackPath.isEmpty == false else {
+                return URL(fileURLWithPath: mountPath).standardizedFileURL.path
+            }
+            let relative = callbackPath.first == "/"
+                ? String(callbackPath.dropFirst())
+                : callbackPath
+            guard relative.isEmpty == false else {
+                return URL(fileURLWithPath: mountPath).standardizedFileURL.path
+            }
+            path = mountPath == "/" ? "/\(relative)" : "\(mountPath)/\(relative)"
+        }
+        return URL(fileURLWithPath: path).standardizedFileURL.path
+    }
+}
+
 enum FSEventObservationFactory {
+    private static let invalidCursorReasons: Set<FSEventReason> = [
+        .eventsDroppedByUserSpace,
+        .eventsDroppedByKernel,
+        .eventIdentifiersWrapped,
+        .watchedRootChanged,
+        .unrecognizedFlags,
+    ]
+
     static func make(
         _ path: String,
         eventID: FSEventStreamEventId,
@@ -218,7 +309,7 @@ enum FSEventObservationFactory {
         // FSEvents documents ID zero on RootChanged as a sentinel rather than
         // a replayable journal cursor. Exposing it as a real cursor could
         // regress the durable checkpoint or restart replay from the beginning.
-        guard reasons.contains(.watchedRootChanged) == false else {
+        guard reasons.isDisjoint(with: invalidCursorReasons) else {
             return nil
         }
         return FSEventID(rawValue: eventID)
@@ -240,7 +331,7 @@ enum FSEventCallbackBridge {
             _ = continuation.yield(
                 FSEventObservation(
                     path: nil,
-                    eventID: observation.eventID,
+                    eventID: nil,
                     reasons: [.callbackBridgeOverflow],
                     rawFlags: 0
                 )
@@ -299,12 +390,31 @@ private func releaseFSEventCallbackInfo(_ callbackInfo: UnsafeRawPointer?) {
 
 extension FSEventStreamConfiguration {
     var validationError: FSEventStreamConfigurationError? {
-        guard watchedPaths.isEmpty == false else {
-            return .noWatchedPaths
-        }
-
-        for (index, path) in watchedPaths.enumerated() where path.first != "/" {
-            return .watchedPathMustBeAbsolute(index: index)
+        switch target {
+        case let .host(absolutePaths):
+            guard absolutePaths.isEmpty == false else {
+                return .noWatchedPaths
+            }
+            for (index, path) in absolutePaths.enumerated() where path.first != "/" {
+                return .watchedPathMustBeAbsolute(index: index)
+            }
+            if case .after = replayPosition {
+                return .persistentReplayRequiresDeviceTarget
+            }
+        case let .device(target):
+            guard target.relativePaths.isEmpty == false else {
+                return .noWatchedPaths
+            }
+            guard target.deviceID > 0, dev_t(exactly: target.deviceID) != nil else {
+                return .deviceIdentifierMustBePositiveAndRepresentable
+            }
+            guard Self.isNormalizedAbsolutePath(target.mountPath) else {
+                return .deviceMountPathMustBeNormalizedAbsolute
+            }
+            for (index, path) in target.relativePaths.enumerated()
+            where Self.isNormalizedRelativeDevicePath(path) == false {
+                return .devicePathMustBeNormalizedRelative(index: index)
+            }
         }
 
         guard latency.isFinite, latency >= 0 else {
@@ -314,6 +424,48 @@ extension FSEventStreamConfiguration {
             return .bufferCapacityMustBePositive
         }
         return nil
+    }
+
+    var nativeWatchedPaths: [String] {
+        switch target {
+        case let .host(absolutePaths):
+            return absolutePaths
+        case let .device(target):
+            return target.relativePaths
+        }
+    }
+
+    var callbackPathTransform: FSEventCallbackPathTransform {
+        switch target {
+        case .host:
+            return .host
+        case let .device(target):
+            return .device(mountPath: target.mountPath)
+        }
+    }
+
+    private static func isNormalizedAbsolutePath(_ path: String) -> Bool {
+        guard path.first == "/", path.utf8.contains(0) == false else {
+            return false
+        }
+        if path == "/" {
+            return true
+        }
+        return path.last != "/"
+            && path.contains("//") == false
+            && path.split(separator: "/").allSatisfy { $0 != "." && $0 != ".." }
+    }
+
+    private static func isNormalizedRelativeDevicePath(_ path: String) -> Bool {
+        guard path.utf8.contains(0) == false, path.first != "/" else {
+            return false
+        }
+        if path.isEmpty {
+            return true
+        }
+        return path.last != "/"
+            && path.contains("//") == false
+            && path.split(separator: "/").allSatisfy { $0 != "." && $0 != ".." }
     }
 
     var nativeReplayPosition: FSEventStreamEventId {

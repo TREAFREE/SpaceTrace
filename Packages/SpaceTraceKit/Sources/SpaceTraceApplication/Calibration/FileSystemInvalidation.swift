@@ -14,12 +14,16 @@ public struct FileSystemInvalidation: Sendable, Equatable, Hashable, Codable {
     public let cursor: EventJournalCursor?
     public let reasons: DirtyRegionReason
     public let itemKind: FileSystemItemKind
+    /// Whether the adapter proved that the previously persisted journal
+    /// cursor belongs to an invalid event-ID generation.
+    public let invalidatesStoredCursor: Bool
 
     public init(
         path: String?,
         cursor: EventJournalCursor?,
         reasons: DirtyRegionReason,
-        itemKind: FileSystemItemKind = .unknown
+        itemKind: FileSystemItemKind = .unknown,
+        invalidatesStoredCursor: Bool = false
     ) throws(EventJournalModelError) {
         guard reasons.isEmpty == false else {
             throw .emptyDirtyRegionReasons
@@ -29,20 +33,24 @@ public struct FileSystemInvalidation: Sendable, Equatable, Hashable, Codable {
         self.cursor = cursor
         self.reasons = reasons
         self.itemKind = itemKind
+        self.invalidatesStoredCursor = invalidatesStoredCursor
     }
 }
 
 /// Durable work split by whether it can safely advance the journal cursor.
 public struct DirtyRegionPlan: Sendable, Equatable {
+    public let invalidatesCheckpoint: Bool
     public let checkpoint: EventJournalCursor?
     public let journaledRegions: [DirtyRegion]
     public let outOfBandRegions: [DirtyRegion]
 
     public init(
+        invalidatesCheckpoint: Bool = false,
         checkpoint: EventJournalCursor?,
         journaledRegions: [DirtyRegion],
         outOfBandRegions: [DirtyRegion]
     ) {
+        self.invalidatesCheckpoint = invalidatesCheckpoint
         self.checkpoint = checkpoint
         self.journaledRegions = journaledRegions
         self.outOfBandRegions = outOfBandRegions

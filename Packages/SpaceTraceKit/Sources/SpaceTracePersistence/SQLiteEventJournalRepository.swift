@@ -6,8 +6,8 @@ import Synchronization
 
 /// A dependency-free SQLite prototype for ADR-004. The actor is the sole
 /// owner of the connection and serializes every transaction and query.
-public actor SQLiteEventJournalRepository: EventJournalRepository {
-    private static let schemaVersion: Int32 = 3
+public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGenerationRepository {
+    private static let schemaVersion: Int32 = 4
 
     /// `Mutex` makes the non-Sendable C handle safe to release from the
     /// actor's nonisolated deinitializer. All operational access remains
@@ -96,6 +96,31 @@ public actor SQLiteEventJournalRepository: EventJournalRepository {
         }
     }
 
+    public func invalidateCheckpointAndMarkDirty(
+        streamID: EventStreamID,
+        regions: [DirtyRegion]
+    ) throws {
+        guard regions.isEmpty == false else {
+            throw EventJournalModelError.emptyBatch
+        }
+        try execute(
+            "BEGIN IMMEDIATE TRANSACTION",
+            operation: "begin checkpoint-invalidation transaction"
+        )
+        do {
+            try clearDirtyRegionCursors(for: streamID)
+            try merge(regions: regions, streamID: streamID)
+            try failIfRequested(at: .afterRecoveryWorkBeforeCheckpointInvalidation)
+            try deleteCheckpoint(for: streamID)
+            try execute(
+                "COMMIT TRANSACTION",
+                operation: "commit checkpoint-invalidation transaction"
+            )
+        } catch {
+            try rollback(after: error)
+        }
+    }
+
     public func checkpoint(for streamID: EventStreamID) throws -> EventJournalCursor? {
         try readCheckpoint(for: streamID)
     }
@@ -157,6 +182,68 @@ public actor SQLiteEventJournalRepository: EventJournalRepository {
                 }
             }
         }
+    }
+
+    public func activateScopeMount(
+        scopeID: WatchedScopeID,
+        evidence: VolumeMountEvidence,
+        proposedGenerationID: MountGenerationID
+    ) throws -> ScopeMountActivation {
+        try execute(
+            "BEGIN IMMEDIATE TRANSACTION",
+            operation: "begin scope-mount activation"
+        )
+        do {
+            let previous = try readScopeMountGeneration(for: scopeID)
+            let transition = ScopeMountGenerationStateMachine.activate(
+                previous: previous,
+                scopeID: scopeID,
+                evidence: evidence,
+                proposedGenerationID: proposedGenerationID
+            )
+            try upsertScopeMountGeneration(transition.current)
+            try execute(
+                "COMMIT TRANSACTION",
+                operation: "commit scope-mount activation"
+            )
+            return transition
+        } catch {
+            try rollback(after: error)
+        }
+    }
+
+    public func deactivateScopeMount(
+        scopeID: WatchedScopeID,
+        matching generationID: MountGenerationID
+    ) throws -> Bool {
+        let sql = """
+            UPDATE scope_mount_generation
+            SET is_active = 0,
+                updated_at_ms = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+            WHERE scope_id = ?1 AND mount_generation = ?2 AND is_active = 1
+            """
+        return try withStatement(sql, operation: "deactivate scope mount") { statement in
+            try scopeID.rawValue.withCString { scopeCString in
+                try generationID.rawValue.withCString { generationCString in
+                    try check(
+                        sqlite3_bind_text(statement, 1, scopeCString, -1, nil),
+                        operation: "bind scope ID for deactivation"
+                    )
+                    try check(
+                        sqlite3_bind_text(statement, 2, generationCString, -1, nil),
+                        operation: "bind mount generation for deactivation"
+                    )
+                    try stepExpectingDone(statement, operation: "update inactive scope mount")
+                    return sqlite3_changes(try databaseHandle()) == 1
+                }
+            }
+        }
+    }
+
+    public func scopeMountGeneration(
+        for scopeID: WatchedScopeID
+    ) throws -> ScopeMountGeneration? {
+        try readScopeMountGeneration(for: scopeID)
     }
 
     public func pendingDirtyWork(
@@ -500,18 +587,93 @@ public actor SQLiteEventJournalRepository: EventJournalRepository {
 
         switch currentVersion {
         case Self.schemaVersion:
-            return
+            break
         case 0:
             try migrateToVersionOne(database)
             try migrateToVersionTwo(database)
             try migrateToVersionThree(database)
+            try migrateToVersionFour(database)
         case 1:
             try migrateToVersionTwo(database)
             try migrateToVersionThree(database)
+            try migrateToVersionFour(database)
         case 2:
             try migrateToVersionThree(database)
+            try migrateToVersionFour(database)
+        case 3:
+            try migrateToVersionFour(database)
         default:
             throw SQLiteEventJournalError.unsupportedSchemaVersion(currentVersion)
+        }
+
+        // A persisted "active" row describes the previous process's last
+        // observation, not proof that the volume stayed mounted while the app
+        // was absent. Close it conservatively so the first callback in this
+        // process opens a new mount generation and visible continuity gap.
+        try execute(
+            on: database,
+            """
+            UPDATE scope_mount_generation
+            SET is_active = 0,
+                updated_at_ms = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+            WHERE is_active = 1
+            """,
+            operation: "close stale active mount generations"
+        )
+    }
+
+    private static func migrateToVersionFour(_ database: OpaquePointer) throws {
+        try execute(
+            on: database,
+            "BEGIN IMMEDIATE TRANSACTION",
+            operation: "begin schema migration v4"
+        )
+        do {
+            try execute(
+                on: database,
+                """
+                CREATE TABLE scope_mount_generation (
+                    scope_id TEXT PRIMARY KEY NOT NULL
+                        CHECK(length(scope_id) > 0 AND instr(scope_id, char(0)) = 0),
+                    mount_generation TEXT NOT NULL
+                        CHECK(length(mount_generation) > 0
+                            AND instr(mount_generation, char(0)) = 0),
+                    mount_path TEXT NOT NULL
+                        CHECK(length(mount_path) > 0
+                            AND substr(mount_path, 1, 1) = '/'
+                            AND instr(mount_path, char(0)) = 0),
+                    volume_uuid TEXT,
+                    is_active INTEGER NOT NULL CHECK(is_active IN (0, 1)),
+                    updated_at_ms INTEGER NOT NULL
+                ) WITHOUT ROWID;
+
+                INSERT INTO schema_migration(version, applied_at_ms, checksum)
+                VALUES(4, CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+                    'scope-mount-generation-v4');
+
+                PRAGMA user_version = 4;
+                """,
+                operation: "apply schema migration version 4"
+            )
+            try execute(
+                on: database,
+                "COMMIT TRANSACTION",
+                operation: "commit schema migration v4"
+            )
+        } catch let migrationError {
+            do {
+                try execute(
+                    on: database,
+                    "ROLLBACK TRANSACTION",
+                    operation: "roll back schema migration v4"
+                )
+            } catch let rollbackError {
+                throw SQLiteEventJournalError.rollbackFailed(
+                    original: String(describing: migrationError),
+                    rollback: String(describing: rollbackError)
+                )
+            }
+            throw migrationError
         }
     }
 
@@ -751,6 +913,134 @@ public actor SQLiteEventJournalRepository: EventJournalRepository {
         return sqlite3_column_int(statement, 0)
     }
 
+    private func readScopeMountGeneration(
+        for scopeID: WatchedScopeID
+    ) throws -> ScopeMountGeneration? {
+        let sql = """
+            SELECT mount_generation, mount_path, volume_uuid, is_active
+            FROM scope_mount_generation
+            WHERE scope_id = ?1
+            """
+        return try withStatement(sql, operation: "read scope mount generation") { statement in
+            try scopeID.rawValue.withCString { scopeCString in
+                try check(
+                    sqlite3_bind_text(statement, 1, scopeCString, -1, nil),
+                    operation: "bind scope ID for mount read"
+                )
+                let result = sqlite3_step(statement)
+                switch result {
+                case SQLITE_ROW:
+                    let generationRawValue = try readText(
+                        from: statement,
+                        column: 0,
+                        field: "scope_mount_generation.mount_generation"
+                    )
+                    let mountPathRawValue = try readText(
+                        from: statement,
+                        column: 1,
+                        field: "scope_mount_generation.mount_path"
+                    )
+                    let volumeUUIDRawValue = try readOptionalText(
+                        from: statement,
+                        column: 2,
+                        field: "scope_mount_generation.volume_uuid"
+                    )
+                    guard sqlite3_column_type(statement, 3) == SQLITE_INTEGER else {
+                        throw SQLiteEventJournalError.corruptStoredValue(
+                            field: "scope_mount_generation.is_active"
+                        )
+                    }
+                    let isActiveRawValue = sqlite3_column_int(statement, 3)
+                    guard isActiveRawValue == 0 || isActiveRawValue == 1 else {
+                        throw SQLiteEventJournalError.corruptStoredValue(
+                            field: "scope_mount_generation.is_active"
+                        )
+                    }
+                    do {
+                        let volumeUUID: UUID?
+                        if let volumeUUIDRawValue {
+                            guard let parsedUUID = UUID(uuidString: volumeUUIDRawValue) else {
+                                throw SQLiteEventJournalError.corruptStoredValue(
+                                    field: "scope_mount_generation.volume_uuid"
+                                )
+                            }
+                            volumeUUID = parsedUUID
+                        } else {
+                            volumeUUID = nil
+                        }
+                        return ScopeMountGeneration(
+                            scopeID: scopeID,
+                            generationID: try MountGenerationID(generationRawValue),
+                            mountPath: try DirtyRegionPath(mountPathRawValue),
+                            volumeUUID: volumeUUID,
+                            isActive: isActiveRawValue == 1
+                        )
+                    } catch let error as SQLiteEventJournalError {
+                        throw error
+                    } catch {
+                        throw SQLiteEventJournalError.corruptStoredValue(
+                            field: "scope_mount_generation"
+                        )
+                    }
+                case SQLITE_DONE:
+                    return nil
+                default:
+                    throw sqliteFailure(operation: "step scope mount query", code: result)
+                }
+            }
+        }
+    }
+
+    private func upsertScopeMountGeneration(_ generation: ScopeMountGeneration) throws {
+        let sql = """
+            INSERT INTO scope_mount_generation(
+                scope_id, mount_generation, mount_path, volume_uuid,
+                is_active, updated_at_ms
+            ) VALUES(
+                ?1, ?2, ?3, ?4, ?5,
+                CAST(strftime('%s', 'now') AS INTEGER) * 1000
+            )
+            ON CONFLICT(scope_id) DO UPDATE SET
+                mount_generation = excluded.mount_generation,
+                mount_path = excluded.mount_path,
+                volume_uuid = excluded.volume_uuid,
+                is_active = excluded.is_active,
+                updated_at_ms = excluded.updated_at_ms
+            """
+        let volumeUUID = generation.volumeUUID?.uuidString.lowercased()
+        try withStatement(sql, operation: "upsert scope mount generation") { statement in
+            try generation.scopeID.rawValue.withCString { scopeCString in
+                try generation.generationID.rawValue.withCString { generationCString in
+                    try generation.mountPath.rawValue.withCString { mountPathCString in
+                        try check(
+                            sqlite3_bind_text(statement, 1, scopeCString, -1, nil),
+                            operation: "bind scope ID for mount write"
+                        )
+                        try check(
+                            sqlite3_bind_text(statement, 2, generationCString, -1, nil),
+                            operation: "bind mount generation for write"
+                        )
+                        try check(
+                            sqlite3_bind_text(statement, 3, mountPathCString, -1, nil),
+                            operation: "bind mount path for write"
+                        )
+                        try bind(
+                            volumeUUID,
+                            to: statement,
+                            index: 4,
+                            operation: "bind volume UUID for mount write"
+                        )
+                        try check(
+                            sqlite3_bind_int(statement, 5, generation.isActive ? 1 : 0),
+                            operation: "bind mount active state"
+                        )
+                        try stepExpectingDone(statement, operation: "write scope mount generation")
+                    }
+                }
+            }
+        }
+    }
+
     private func readCheckpoint(for streamID: EventStreamID) throws -> EventJournalCursor? {
         let sql = "SELECT cursor_be FROM event_checkpoint WHERE stream_id = ?1"
 
@@ -775,6 +1065,40 @@ public actor SQLiteEventJournalRepository: EventJournalRepository {
                     throw sqliteFailure(operation: "step checkpoint query", code: result)
                 }
             }
+        }
+    }
+
+    private func deleteCheckpoint(for streamID: EventStreamID) throws {
+        let sql = "DELETE FROM event_checkpoint WHERE stream_id = ?1"
+        try withStatement(sql, operation: "delete invalid event checkpoint") { statement in
+            try streamID.rawValue.withCString { streamCString in
+                try check(
+                    sqlite3_bind_text(statement, 1, streamCString, -1, nil),
+                    operation: "bind invalid checkpoint stream ID"
+                )
+                try stepExpectingDone(statement, operation: "delete invalid checkpoint")
+            }
+        }
+    }
+
+    private func clearDirtyRegionCursors(for streamID: EventStreamID) throws {
+        let existing = try pendingDirtyWork(for: streamID, limit: Int.max)
+        for item in existing {
+            guard item.revision.rawValue < UInt64.max else {
+                throw SQLiteEventJournalError.revisionOverflow(
+                    path: item.region.path.rawValue
+                )
+            }
+            try delete(path: item.region.path, streamID: streamID)
+            try insert(
+                region: DirtyRegion(
+                    path: item.region.path,
+                    reasons: item.region.reasons,
+                    maximumCursor: nil
+                ),
+                revision: DirtyRegionRevision(item.revision.rawValue + 1),
+                streamID: streamID
+            )
         }
     }
 
@@ -1156,6 +1480,24 @@ public actor SQLiteEventJournalRepository: EventJournalRepository {
         }
     }
 
+    private func bind(
+        _ value: String?,
+        to statement: OpaquePointer,
+        index: Int32,
+        operation: String
+    ) throws {
+        if let value {
+            try value.withCString { valueCString in
+                try check(
+                    sqlite3_bind_text(statement, index, valueCString, -1, nil),
+                    operation: operation
+                )
+            }
+        } else {
+            try check(sqlite3_bind_null(statement, index), operation: operation)
+        }
+    }
+
     private func upsert(checkpoint: EventJournalCursor, streamID: EventStreamID) throws {
         let sql = """
             INSERT INTO event_checkpoint(stream_id, cursor_be)
@@ -1303,6 +1645,17 @@ public actor SQLiteEventJournalRepository: EventJournalRepository {
         return String(decoding: UnsafeBufferPointer(start: bytes, count: count), as: UTF8.self)
     }
 
+    private func readOptionalText(
+        from statement: OpaquePointer,
+        column: Int32,
+        field: String
+    ) throws -> String? {
+        if sqlite3_column_type(statement, column) == SQLITE_NULL {
+            return nil
+        }
+        return try readText(from: statement, column: column, field: field)
+    }
+
     private func readCursor(
         from statement: OpaquePointer,
         column: Int32,
@@ -1403,6 +1756,7 @@ private extension CalibrationCoverage {
 
 enum SQLiteEventJournalTestFailurePoint: Sendable, Equatable {
     case afterDirtyRegionsBeforeCheckpoint
+    case afterRecoveryWorkBeforeCheckpointInvalidation
 }
 
 public enum SQLiteEventJournalError: Error, Sendable, Equatable {

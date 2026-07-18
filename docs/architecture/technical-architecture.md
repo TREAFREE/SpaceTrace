@@ -198,6 +198,7 @@ SpaceTrace/
 │       │   ├── SpaceTracePersistence/
 │       │   ├── SpaceTraceAttribution/
 │       │   ├── SpaceTracePlatform/
+│       │   ├── SpaceTraceMonitoring/
 │       │   └── SpaceTraceUI/
 │       └── Tests/
 │           ├── SpaceTraceDomainTests/
@@ -218,6 +219,7 @@ SpaceTrace/
 | `SpaceTracePersistence` | Schema, migrations, repositories, staging/finalization, retention | Product policy beyond data integrity |
 | `SpaceTraceAttribution` | Versioned path classifiers and evidence generation | Running shell commands or guessing processes |
 | `SpaceTracePlatform` | Volume, mount, power, thermal, launch-at-login, optional commands | Domain decisions |
+| `SpaceTraceMonitoring` | Non-UI native composition and owned lifecycle tasks | UI state and user-visible policy |
 | `SpaceTraceUI` | Menu bar, timeline, findings, health, permission education | Filesystem scanning |
 | `SpaceTraceApp` | Composition root, signing settings, app lifecycle | Business logic |
 
@@ -321,11 +323,14 @@ FSEvents is an advisory, coalescing change journal. It tells SpaceTrace where ca
 ### 9.1 Stream strategy
 
 - Maintain one stream per observed volume and map one or more watch scopes to it.
-- Prefer per-device streams for durable cursors. Persist the volume UUID because device IDs may change across reboots.
+- Prefer per-device streams for durable cursors. Persist both the filesystem volume UUID and FSEvents journal UUID; the current `dev_t` may change across reboots and is never part of durable identity.
+- When the approved volume exposes no journal UUID, fall back to an absolute-path host live stream. Its stream ID is scoped to the active mount generation and is never replayed after remount.
 - Request file event flags when available to reduce dirty-region breadth, but correctness cannot depend on item-level delivery.
 - Use a default latency of 3 seconds. `NoDefer` is not enabled for background monitoring.
 - Never purge the system FSEvents journal.
 - An explicit mount generation separates observations across unmount/remount boundaries.
+
+Volume lifecycle composition is ordered and non-UI: Disk Arbitration callback → normalized application signal → exact configured mount-root match → approved-scope evidence resolution → transactional generation activation/closure → conditional FSEvents stop/restart. Disk Arbitration volume names and `dev_t` values are runtime evidence only. A callback-bridge overflow closes every correlated generation and recreates the observation session so enumeration repairs the lost callback interval.
 
 ### 9.2 Durable cursor protocol
 
@@ -351,7 +356,7 @@ The scanner leases a dirty region together with its current `max_event_id`. On s
 | `RootChanged` | Resolve scope and volume identity again; do not infer deletion |
 | `Mount` / `Unmount` | Pause affected scope, close generation, and revalidate on mount notification |
 | Event ID lower than persisted with same expected stream | Treat as journal reset/restore; invalidate cursor and calibrate |
-| Volume UUID mismatch | Create a new volume generation; never apply the old cursor or deltas |
+| Volume UUID or FSEvents journal UUID mismatch | Create a new stream generation; never apply the old cursor or deltas |
 | Stream start failure | Fall back to scheduled calibration and surface degraded freshness |
 
 ### 9.4 Reconciliation state machine
@@ -458,7 +463,7 @@ The UI must let users switch metric or clearly label it; metrics are never added
 | Type | Purpose |
 | --- | --- |
 | `WatchScope` | User-approved root, volume identity, inclusion/exclusion policy, lifecycle state |
-| `VolumeIdentity` | Stable volume UUID plus ephemeral device/mount generation |
+| `VolumeIdentity` | Stable volume UUID, durable mount generation, and current-process-only device identifier |
 | `EventCursor` | Last durably represented FSEvent ID for one stream generation |
 | `DirtyRegion` | Smallest safe path requiring reconciliation, reasons, priority, high-water mark |
 | `ScanPlan` | Scope, region set, mode, budget, coverage requirements, trigger |
@@ -779,6 +784,7 @@ protocol RuleCatalog { /* versioned classification rules */ }
 - **Persistence tests:** every schema migration from supported fixtures; power-loss simulation around dirty-row/cursor transaction and finalization.
 - **Filesystem integration tests:** temporary trees containing hard links, symlinks, sparse files, Unicode/case variants, packages, permission failures, concurrent rename/delete, and mount boundaries.
 - **FSEvents integration tests:** create/rename/delete storms, replay after process restart, callback overflow, `MustScanSubDirs`, and synthetic flag injection through the fake client.
+- **Mount lifecycle qualification:** an opt-in, serialized APFS image test performs true detach, same-volume remount, and different-UUID same-name replacement at one controlled mount point; normal CI does not mount images.
 - **Cloud/APFS fixtures:** placeholders are manual/lab fixtures; clone and snapshot tests run on disposable APFS volumes, not general CI disks.
 - **Performance tests:** generated million-entry metadata fixture plus representative real APFS tree; measure throughput, energy, DB growth, and memory.
 - **UI tests:** first-run, no-FDA partial coverage, stale data, permission revocation, recovery mode, export redaction, and VoiceOver labels.

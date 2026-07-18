@@ -16,6 +16,10 @@ public struct EventStreamID: Sendable, Equatable, Hashable, Codable {
         self.rawValue = rawValue
     }
 
+    init(validatedRawValue rawValue: String) {
+        self.rawValue = rawValue
+    }
+
     public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
         let rawValue = try container.decode(String.self)
@@ -288,6 +292,13 @@ public struct DirtyRegionWorkItem: Sendable, Equatable, Hashable, Codable {
 public protocol EventJournalRepository: Sendable {
     func commit(_ batch: EventJournalBatch) async throws
     func markDirty(streamID: EventStreamID, regions: [DirtyRegion]) async throws
+    /// Atomically invalidates an unusable journal generation and persists the
+    /// recovery work that makes the loss explicit. Existing dirty cursors must
+    /// also be cleared and their revisions advanced.
+    func invalidateCheckpointAndMarkDirty(
+        streamID: EventStreamID,
+        regions: [DirtyRegion]
+    ) async throws
     func checkpoint(for streamID: EventStreamID) async throws -> EventJournalCursor?
     func dirtyRegions(for streamID: EventStreamID) async throws -> [DirtyRegion]
     func pendingDirtyWork(

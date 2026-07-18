@@ -149,15 +149,15 @@ Golden 更新必须由语义变更驱动。PR **MUST** 同时给出 human-readab
 - 依赖方向和模块循环由架构检查约束；核心扫描/分类模块不得依赖 SwiftUI、Sparkle 或具体 OS 日志实现。
 - TODO/FIXME **MUST** 关联 issue；临时 suppressions 必须有 owner 与到期日期。
 
-本地与 CI **MUST** 暴露同一入口 `make verify`；在构建系统落地前，CI 配置是命令真相源。维护者不得让 README 与 CI 使用不同 flags。
+本地与 CI **MUST** 暴露同一入口 `make verify`；`Makefile` 是验证命令真相源，CI 只调用该入口。维护者不得让 README 与 CI 使用不同 flags。
 
-在 `make verify` 落地前，Xcode 工程的最低标准命令是：
+仓库和 CI 的完整验证入口是：
 
 ```bash
-xcodebuild -project SpaceTrace.xcodeproj -scheme SpaceTrace -configuration Debug -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
-xcodebuild -project SpaceTrace.xcodeproj -scheme SpaceTrace -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO test
-xcodebuild -project SpaceTrace.xcodeproj -scheme SpaceTrace -configuration Release -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+make verify
 ```
+
+`make verify` 包含 `make package-concurrency-audit`，对 local-package 代码启用完整并发诊断并将 compiler warning 视为错误。该 package-only 审计不表示应用 target 已完成 ADR-001 所述的全仓 Swift 6 迁移。
 
 CI **MUST** 先执行 `xcodebuild -list -project SpaceTrace.xcodeproj` 验证 shared scheme 可发现，并使用独立 DerivedData 目录；测试结果和 coverage 以 `.xcresult` 归档，不解析易变化的控制台文本作为唯一证据。
 

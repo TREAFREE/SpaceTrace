@@ -19,7 +19,8 @@ This directory is the durable source of truth for product, architecture, enginee
 4. [ADR Index](architecture/decisions/README.md)
 5. [Development Process](engineering/development-process.md)
 6. [Quality Strategy](engineering/quality-strategy.md)
-7. [Contributing](../CONTRIBUTING.md)
+7. [First Implementation Slice Status](engineering/implementation-status.md)
+8. [Contributing](../CONTRIBUTING.md)
 
 ### Product evidence
 

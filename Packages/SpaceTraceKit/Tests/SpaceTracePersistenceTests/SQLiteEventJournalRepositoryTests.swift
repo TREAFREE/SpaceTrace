@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import SpaceTraceApplication
+import SQLite3
 @testable import SpaceTracePersistence
 
 struct SQLiteEventJournalRepositoryTests {
@@ -12,6 +13,26 @@ struct SQLiteEventJournalRepositoryTests {
             #expect(try await repository.checkpoint(for: streamID) == nil)
             #expect(try await repository.dirtyRegions(for: streamID).isEmpty)
         }
+    }
+
+    @Test("Schema version one journal state migrates to revisioned work")
+    func migratesVersionOne() async throws {
+        let fixture = try TemporaryDatabase()
+        try createVersionOneFixture(at: fixture.databaseURL)
+        let repository = try SQLiteEventJournalRepository(databaseURL: fixture.databaseURL)
+        let streamID = try EventStreamID("volume-v1:generation-1")
+
+        #expect(try await repository.checkpoint(for: streamID) == EventJournalCursor(42))
+        let workItem = try #require(
+            try await repository.pendingDirtyWork(for: streamID, limit: 1).first
+        )
+        let initialRevision = try DirtyRegionRevision(1)
+        #expect(workItem.region.path.rawValue == "/Users/example/Documents")
+        #expect(workItem.region.maximumCursor == EventJournalCursor(42))
+        #expect(workItem.revision == initialRevision)
+
+        try await repository.close()
+        fixture.remove()
     }
 
     @Test("A batch makes dirty work and its checkpoint visible atomically")
@@ -66,6 +87,90 @@ struct SQLiteEventJournalRepositoryTests {
             #expect(region.reasons == [.created, .renamed, .metadataChanged])
             #expect(region.maximumCursor == EventJournalCursor(9))
             #expect(try await repository.checkpoint(for: streamID) == EventJournalCursor(9))
+        }
+    }
+
+    @Test("Cursor-free calibration work does not create or advance a checkpoint")
+    func marksDirtyWithoutCursor() async throws {
+        try await withRepository { repository in
+            let streamID = try EventStreamID("volume-root:generation-1")
+            let region = try DirtyRegion(
+                path: DirtyRegionPath("/Users/example"),
+                reasons: [.rootChanged, .requiresCalibration],
+                maximumCursor: nil
+            )
+            try await repository.markDirty(streamID: streamID, regions: [region])
+
+            #expect(try await repository.checkpoint(for: streamID) == nil)
+            #expect(try await repository.dirtyRegions(for: streamID) == [region])
+        }
+    }
+
+    @Test("An ancestor region absorbs durable descendant work")
+    func coalescesOverlappingPaths() async throws {
+        try await withRepository { repository in
+            let streamID = try EventStreamID("volume-overlap:generation-1")
+            try await repository.commit(
+                makeBatch(
+                    streamID: streamID,
+                    path: "/Users/example/Documents/Project",
+                    reasons: [.created],
+                    cursor: 3
+                )
+            )
+            try await repository.commit(
+                makeBatch(
+                    streamID: streamID,
+                    path: "/Users/example/Documents",
+                    reasons: [.mustScanSubdirectories],
+                    cursor: 4
+                )
+            )
+
+            let region = try #require(
+                try await repository.dirtyRegions(for: streamID).first
+            )
+            #expect(try await repository.dirtyRegions(for: streamID).count == 1)
+            #expect(region.path.rawValue == "/Users/example/Documents")
+            #expect(region.reasons == [.created, .mustScanSubdirectories])
+            #expect(region.maximumCursor == EventJournalCursor(4))
+        }
+    }
+
+    @Test("A stale scan token cannot clear work updated during calibration")
+    func conditionalResolutionPreservesNewerWork() async throws {
+        try await withRepository { repository in
+            let streamID = try EventStreamID("volume-race:generation-1")
+            try await repository.commit(
+                makeBatch(
+                    streamID: streamID,
+                    path: "/Users/example/Documents",
+                    reasons: [.contentModified],
+                    cursor: 1
+                )
+            )
+            let stale = try #require(
+                try await repository.pendingDirtyWork(for: streamID, limit: 1).first
+            )
+            try await repository.markDirty(
+                streamID: streamID,
+                regions: [
+                    try DirtyRegion(
+                        path: stale.region.path,
+                        reasons: [.removed],
+                        maximumCursor: nil
+                    ),
+                ]
+            )
+
+            #expect(try await repository.resolve(stale, for: streamID) == false)
+            let current = try #require(
+                try await repository.pendingDirtyWork(for: streamID, limit: 1).first
+            )
+            #expect(current.revision > stale.revision)
+            #expect(current.region.reasons == [.contentModified, .removed])
+            #expect(try await repository.resolve(current, for: streamID))
+            #expect(try await repository.dirtyRegions(for: streamID).isEmpty)
         }
     }
 
@@ -276,6 +381,50 @@ private func makeBatch(
         regionCursor: cursor,
         checkpoint: cursor
     )
+}
+
+private func createVersionOneFixture(at databaseURL: URL) throws {
+    var database: OpaquePointer?
+    guard sqlite3_open(databaseURL.path, &database) == SQLITE_OK, let database else {
+        throw MigrationFixtureError.openFailed
+    }
+    defer { sqlite3_close(database) }
+
+    let sql = """
+        CREATE TABLE schema_migration (
+            version INTEGER PRIMARY KEY,
+            applied_at_ms INTEGER NOT NULL,
+            checksum TEXT NOT NULL
+        );
+        CREATE TABLE event_checkpoint (
+            stream_id TEXT PRIMARY KEY NOT NULL,
+            cursor_be BLOB NOT NULL CHECK(length(cursor_be) = 8)
+        ) WITHOUT ROWID;
+        CREATE TABLE dirty_region (
+            stream_id TEXT NOT NULL,
+            path TEXT NOT NULL,
+            reasons INTEGER NOT NULL CHECK(reasons != 0),
+            maximum_cursor_be BLOB NOT NULL CHECK(length(maximum_cursor_be) = 8),
+            PRIMARY KEY(stream_id, path),
+            FOREIGN KEY(stream_id) REFERENCES event_checkpoint(stream_id)
+        ) WITHOUT ROWID;
+        INSERT INTO schema_migration(version, applied_at_ms, checksum)
+        VALUES(1, 0, 'event-journal-v1-big-endian-cursor');
+        INSERT INTO event_checkpoint(stream_id, cursor_be)
+        VALUES('volume-v1:generation-1', X'000000000000002A');
+        INSERT INTO dirty_region(stream_id, path, reasons, maximum_cursor_be)
+        VALUES('volume-v1:generation-1', '/Users/example/Documents', 8,
+            X'000000000000002A');
+        PRAGMA user_version = 1;
+        """
+    guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else {
+        throw MigrationFixtureError.createFailed
+    }
+}
+
+private enum MigrationFixtureError: Error {
+    case openFailed
+    case createFailed
 }
 
 private func makeBatch(

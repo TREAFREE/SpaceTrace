@@ -44,7 +44,7 @@ The MVP does **not** promise exact process attribution, reproduce Apple's System
 - Supported baseline: macOS 15.6+, Apple Silicon first
 - Minimum-version qualification: build/test configuration is aligned; a macOS 15.6 runtime matrix remains required before Public Beta
 - Proposed implementation: Swift, SwiftUI with targeted AppKit integration
-- Implemented foundation: local `SpaceTraceKit` modules for domain observations, application persistence ports, a bounded FSEvents bridge, and an actor-isolated SQLite journal prototype
+- Implemented foundation: local `SpaceTraceKit` modules for domain observations, a bounded FSEvents bridge, conservative dirty-region planning, actor-isolated calibration orchestration, and a revision-safe SQLite journal prototype
 - Proposed license: MIT (**TBD until explicitly approved**)
 - Distribution and signing: Developer ID, notarization, and update strategy remain release-blocking decisions
 

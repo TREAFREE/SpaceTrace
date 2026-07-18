@@ -55,4 +55,29 @@ struct EventJournalModelTests {
             )
         }
     }
+
+    @Test("Cursor-free work cannot be used to advance a checkpoint")
+    func rejectsCursorFreeBatch() throws {
+        let streamID = try EventStreamID("volume-a:generation-1")
+        let region = try DirtyRegion(
+            path: DirtyRegionPath("/Users/example"),
+            reasons: [.rootChanged, .requiresCalibration],
+            maximumCursor: nil
+        )
+
+        #expect(throws: EventJournalModelError.eventBatchRequiresCursors) {
+            try EventJournalBatch(
+                streamID: streamID,
+                checkpoint: EventJournalCursor(42),
+                dirtyRegions: [region]
+            )
+        }
+    }
+
+    @Test("Dirty row revisions start above zero")
+    func rejectsZeroRevision() {
+        #expect(throws: EventJournalModelError.invalidDirtyRegionRevision(0)) {
+            try DirtyRegionRevision(0)
+        }
+    }
 }

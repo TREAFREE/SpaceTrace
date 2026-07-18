@@ -51,6 +51,7 @@ let package = Package(
             name: "SpaceTracePersistenceTests",
             dependencies: [
                 "SpaceTraceApplication",
+                "SpaceTraceFileSystem",
                 "SpaceTracePersistence",
             ]
         ),

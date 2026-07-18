@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import SpaceTraceApplication
+import SpaceTraceDomain
 import SQLite3
 @testable import SpaceTracePersistence
 
@@ -171,6 +172,187 @@ struct SQLiteEventJournalRepositoryTests {
             #expect(current.region.reasons == [.contentModified, .removed])
             #expect(try await repository.resolve(current, for: streamID))
             #expect(try await repository.dirtyRegions(for: streamID).isEmpty)
+        }
+    }
+
+    @Test("Complete staged aggregates publish atomically and clear matching dirty work")
+    func finalizesCompleteCalibration() async throws {
+        try await withRepository { repository in
+            let streamID = try EventStreamID("volume-scan:generation-1")
+            let root = "/Users/example/Documents"
+            try await repository.commit(
+                makeBatch(streamID: streamID, path: root, reasons: [.contentModified], cursor: 1)
+            )
+            let workItem = try #require(
+                try await repository.pendingDirtyWork(for: streamID, limit: 1).first
+            )
+            let request = CalibrationRequest(streamID: streamID, workItem: workItem)
+            let runID = try await repository.beginCalibration(request)
+            let aggregates = try [
+                makeAggregate(path: root, logical: 30, allocated: 24, descendants: 2),
+                makeAggregate(path: root + "/Project", logical: 20, allocated: 16, descendants: 1),
+            ]
+            try await repository.stageCalibration(aggregates, in: runID)
+
+            let finalized = try await repository.finalizeCalibration(
+                runID,
+                report: completeReport(entries: 3, directories: 2),
+                workItem: workItem,
+                streamID: streamID
+            )
+
+            #expect(finalized)
+            #expect(try await repository.dirtyRegions(for: streamID).isEmpty)
+            #expect(try await repository.currentDirectoryAggregates(for: streamID) == aggregates)
+        }
+    }
+
+    @Test("Partial staging is discarded and cannot replace current truth")
+    func discardsPartialCalibration() async throws {
+        try await withRepository { repository in
+            let streamID = try EventStreamID("volume-partial:generation-1")
+            let root = try DirtyRegionPath("/Users/example/Documents")
+            try await repository.commit(
+                makeBatch(streamID: streamID, path: root.rawValue, reasons: [.created], cursor: 1)
+            )
+            let workItem = try #require(
+                try await repository.pendingDirtyWork(for: streamID, limit: 1).first
+            )
+            let runID = try await repository.beginCalibration(
+                CalibrationRequest(streamID: streamID, workItem: workItem)
+            )
+            try await repository.stageCalibration(
+                [
+                    try DirectoryMetadataAggregate(
+                        path: root,
+                        logicalBytes: try ByteCount(10),
+                        allocatedBytes: nil,
+                        descendantCount: 1,
+                        coverage: .partial
+                    ),
+                ],
+                in: runID
+            )
+            let report = try CalibrationReport(
+                coverage: .partial,
+                entriesVisited: 2,
+                directoriesStaged: 1,
+                gaps: [CalibrationGap(path: root, reason: .permissionDenied)]
+            )
+            try await repository.discardCalibration(
+                runID,
+                disposition: .partial,
+                report: report
+            )
+
+            #expect(try await repository.currentDirectoryAggregates(for: streamID).isEmpty)
+            #expect(try await repository.dirtyRegions(for: streamID).count == 1)
+        }
+    }
+
+    @Test("A stale calibration publishes nothing when its dirty revision changed")
+    func staleCalibrationDoesNotPublish() async throws {
+        try await withRepository { repository in
+            let streamID = try EventStreamID("volume-stale-scan:generation-1")
+            let root = "/Users/example/Documents"
+            try await repository.commit(
+                makeBatch(streamID: streamID, path: root, reasons: [.created], cursor: 1)
+            )
+            let staleWork = try #require(
+                try await repository.pendingDirtyWork(for: streamID, limit: 1).first
+            )
+            let runID = try await repository.beginCalibration(
+                CalibrationRequest(streamID: streamID, workItem: staleWork)
+            )
+            try await repository.stageCalibration(
+                [try makeAggregate(path: root, logical: 10, allocated: 8, descendants: 1)],
+                in: runID
+            )
+            try await repository.markDirty(
+                streamID: streamID,
+                regions: [
+                    try DirtyRegion(
+                        path: DirtyRegionPath(root),
+                        reasons: [.removed],
+                        maximumCursor: nil
+                    ),
+                ]
+            )
+
+            let finalized = try await repository.finalizeCalibration(
+                runID,
+                report: completeReport(entries: 2, directories: 1),
+                workItem: staleWork,
+                streamID: streamID
+            )
+            #expect(finalized == false)
+            #expect(try await repository.currentDirectoryAggregates(for: streamID).isEmpty)
+            #expect(try await repository.dirtyRegions(for: streamID).count == 1)
+        }
+    }
+
+    @Test("Only a complete rescan marks previously known descendants missing")
+    func completeRescanMarksMissingDirectoryDeleted() async throws {
+        try await withRepository { repository in
+            let streamID = try EventStreamID("volume-delete:generation-1")
+            let root = "/Users/example/Documents"
+            try await repository.commit(
+                makeBatch(streamID: streamID, path: root, reasons: [.created], cursor: 1)
+            )
+            var workItem = try #require(
+                try await repository.pendingDirtyWork(for: streamID, limit: 1).first
+            )
+            var runID = try await repository.beginCalibration(
+                CalibrationRequest(streamID: streamID, workItem: workItem)
+            )
+            try await repository.stageCalibration(
+                [
+                    try makeAggregate(path: root, logical: 20, allocated: 16, descendants: 1),
+                    try makeAggregate(path: root + "/Old", logical: 10, allocated: 8, descendants: 0),
+                ],
+                in: runID
+            )
+            _ = try await repository.finalizeCalibration(
+                runID,
+                report: completeReport(entries: 2, directories: 2),
+                workItem: workItem,
+                streamID: streamID
+            )
+
+            try await repository.markDirty(
+                streamID: streamID,
+                regions: [
+                    try DirtyRegion(
+                        path: DirtyRegionPath(root),
+                        reasons: [.removed],
+                        maximumCursor: nil
+                    ),
+                ]
+            )
+            workItem = try #require(
+                try await repository.pendingDirtyWork(for: streamID, limit: 1).first
+            )
+            runID = try await repository.beginCalibration(
+                CalibrationRequest(streamID: streamID, workItem: workItem)
+            )
+            let replacement = try makeAggregate(
+                path: root,
+                logical: 10,
+                allocated: 8,
+                descendants: 0
+            )
+            try await repository.stageCalibration([replacement], in: runID)
+            _ = try await repository.finalizeCalibration(
+                runID,
+                report: completeReport(entries: 1, directories: 1),
+                workItem: workItem,
+                streamID: streamID
+            )
+
+            #expect(
+                try await repository.currentDirectoryAggregates(for: streamID)
+                    == [replacement]
+            )
         }
     }
 
@@ -365,6 +547,33 @@ private func makeRegion(
         path: DirtyRegionPath(path),
         reasons: reasons,
         maximumCursor: EventJournalCursor(cursor)
+    )
+}
+
+private func makeAggregate(
+    path: String,
+    logical: Int64,
+    allocated: Int64,
+    descendants: Int64
+) throws -> DirectoryMetadataAggregate {
+    try DirectoryMetadataAggregate(
+        path: DirtyRegionPath(path),
+        logicalBytes: ByteCount(logical),
+        allocatedBytes: ByteCount(allocated),
+        descendantCount: descendants,
+        coverage: .complete
+    )
+}
+
+private func completeReport(
+    entries: Int64,
+    directories: Int64
+) throws -> CalibrationReport {
+    try CalibrationReport(
+        coverage: .complete,
+        entriesVisited: entries,
+        directoriesStaged: directories,
+        gaps: []
     )
 }
 

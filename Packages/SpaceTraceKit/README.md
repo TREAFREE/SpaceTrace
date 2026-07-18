@@ -8,10 +8,10 @@
 | --- | --- | --- |
 | `SpaceTraceDomain` | Validated storage quantities, observation identities, coverage, and deltas | None |
 | `SpaceTraceApplication` | Dirty-region planning, calibration orchestration, ports, and crash-consistency contracts | Foundation |
-| `SpaceTraceFileSystem` | FSEvents callback bridge, conservative flag interpretation, and application-semantic mapping | CoreServices |
-| `SpaceTracePersistence` | Actor-isolated raw SQLite prototype for cursor, dirty work, and conditional finalization | SQLite3 |
+| `SpaceTraceFileSystem` | FSEvents callback bridge, conservative flag interpretation, semantic mapping, and a bounded metadata-only calibration scanner | CoreServices, Foundation, Darwin |
+| `SpaceTracePersistence` | Actor-isolated raw SQLite prototype for cursor, dirty work, staged directory aggregates, and revision-safe atomic publication | SQLite3 |
 
-The filesystem, application pipeline, and persistence modules are architecture-spike implementations for proposed ADR-003 and ADR-004. The pipeline is validated with an injected scanner; a production metadata enumerator and user-visible workflow are not connected yet.
+The filesystem, application pipeline, and persistence modules are architecture-spike implementations for proposed ADR-003 and ADR-004. A production metadata adapter and schema-v3 staging path are implemented and tested, but they are not connected to a user-visible workflow while those decisions remain proposed.
 
 ## Verify
 

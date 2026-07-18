@@ -1,12 +1,13 @@
 import Foundation
 import SQLite3
 import SpaceTraceApplication
+import SpaceTraceDomain
 import Synchronization
 
 /// A dependency-free SQLite prototype for ADR-004. The actor is the sole
 /// owner of the connection and serializes every transaction and query.
 public actor SQLiteEventJournalRepository: EventJournalRepository {
-    private static let schemaVersion: Int32 = 2
+    private static let schemaVersion: Int32 = 3
 
     /// `Mutex` makes the non-Sendable C handle safe to release from the
     /// actor's nonisolated deinitializer. All operational access remains
@@ -272,6 +273,190 @@ public actor SQLiteEventJournalRepository: EventJournalRepository {
         }
     }
 
+    public func beginCalibration(_ request: CalibrationRequest) throws -> CalibrationRunID {
+        let runID = try CalibrationRunID(UUID().uuidString.lowercased())
+        let revisionBytes = Self.encode(request.workItem.revision.rawValue)
+        let startedAt = Int64(Date().timeIntervalSince1970 * 1_000)
+        let sql = """
+            INSERT INTO scan_run(
+                id, stream_id, region_path, dirty_revision_be, state, started_at_ms
+            ) VALUES(?1, ?2, ?3, ?4, 'running', ?5)
+            """
+        try withStatement(sql, operation: "begin calibration run") { statement in
+            try runID.rawValue.withCString { runCString in
+                try request.streamID.rawValue.withCString { streamCString in
+                    try request.workItem.region.path.rawValue.withCString { pathCString in
+                        try revisionBytes.withUnsafeBytes { revisionBuffer in
+                            try check(sqlite3_bind_text(statement, 1, runCString, -1, nil), operation: "bind scan run ID")
+                            try check(sqlite3_bind_text(statement, 2, streamCString, -1, nil), operation: "bind scan stream ID")
+                            try check(sqlite3_bind_text(statement, 3, pathCString, -1, nil), operation: "bind scan region")
+                            try check(
+                                sqlite3_bind_blob(statement, 4, revisionBuffer.baseAddress, Int32(revisionBuffer.count), nil),
+                                operation: "bind scan revision"
+                            )
+                            try check(sqlite3_bind_int64(statement, 5, startedAt), operation: "bind scan start time")
+                            try stepExpectingDone(statement, operation: "insert calibration run")
+                        }
+                    }
+                }
+            }
+        }
+        return runID
+    }
+
+    public func stageCalibration(
+        _ aggregates: [DirectoryMetadataAggregate],
+        in runID: CalibrationRunID
+    ) throws {
+        guard aggregates.isEmpty == false else { return }
+        try execute("BEGIN IMMEDIATE TRANSACTION", operation: "begin calibration staging")
+        do {
+            let context = try readScanRun(runID)
+            guard context.state == "running" else {
+                throw SQLiteEventJournalError.scanRunNotRunning(runID.rawValue)
+            }
+            for aggregate in aggregates {
+                guard Self.contains(aggregate.path.rawValue, in: context.regionPath.rawValue) else {
+                    throw SQLiteEventJournalError.aggregateOutsideScanRegion(
+                        aggregate.path.rawValue
+                    )
+                }
+                try upsertStagedAggregate(aggregate, runID: runID)
+            }
+            try execute("COMMIT TRANSACTION", operation: "commit calibration staging")
+        } catch {
+            try rollback(after: error)
+        }
+    }
+
+    public func finalizeCalibration(
+        _ runID: CalibrationRunID,
+        report: CalibrationReport,
+        workItem: DirtyRegionWorkItem,
+        streamID: EventStreamID
+    ) throws -> Bool {
+        guard report.coverage == .complete else {
+            throw SQLiteEventJournalError.incompleteReportCannotFinalize
+        }
+        try execute("BEGIN IMMEDIATE TRANSACTION", operation: "begin calibration finalization")
+        do {
+            let context = try readScanRun(runID)
+            guard context.state == "running" else {
+                throw SQLiteEventJournalError.scanRunNotRunning(runID.rawValue)
+            }
+            guard context.streamID == streamID,
+                  context.regionPath == workItem.region.path,
+                  context.revision == workItem.revision else {
+                throw SQLiteEventJournalError.scanRunContextMismatch(runID.rawValue)
+            }
+            let summary = try stagedSummary(runID: runID, root: context.regionPath)
+            guard summary.count == report.directoriesStaged,
+                  summary.containsRoot,
+                  summary.partialCount == 0 else {
+                throw SQLiteEventJournalError.stagedDirectoryCountMismatch(
+                    expected: report.directoriesStaged,
+                    actual: summary.count
+                )
+            }
+
+            guard try dirtyRevision(
+                streamID: streamID,
+                path: workItem.region.path
+            ) == workItem.revision else {
+                try finishScanRun(runID, state: "superseded", report: report)
+                try deleteStagedRows(runID)
+                try execute("COMMIT TRANSACTION", operation: "commit superseded scan")
+                return false
+            }
+
+            try markMissingDirectoriesDeleted(
+                streamID: streamID,
+                region: context.regionPath,
+                runID: runID
+            )
+            try publishStagedDirectories(streamID: streamID, runID: runID)
+            guard try resolve(workItem, for: streamID) else {
+                throw SQLiteEventJournalError.dirtyRevisionChangedDuringFinalization
+            }
+            try finishScanRun(runID, state: "completed", report: report)
+            try deleteStagedRows(runID)
+            try execute("COMMIT TRANSACTION", operation: "commit calibration finalization")
+            return true
+        } catch {
+            try rollback(after: error)
+        }
+    }
+
+    public func discardCalibration(
+        _ runID: CalibrationRunID,
+        disposition: CalibrationRunDisposition,
+        report: CalibrationReport?
+    ) throws {
+        try execute("BEGIN IMMEDIATE TRANSACTION", operation: "begin calibration discard")
+        do {
+            let context = try readScanRun(runID)
+            guard context.state == "running" else {
+                try execute("COMMIT TRANSACTION", operation: "commit idempotent calibration discard")
+                return
+            }
+            try finishScanRun(
+                runID,
+                state: disposition.rawValue,
+                report: report
+            )
+            try deleteStagedRows(runID)
+            try execute("COMMIT TRANSACTION", operation: "commit calibration discard")
+        } catch {
+            try rollback(after: error)
+        }
+    }
+
+    public func currentDirectoryAggregates(
+        for streamID: EventStreamID
+    ) throws -> [DirectoryMetadataAggregate] {
+        let sql = """
+            SELECT path, logical_bytes, allocated_bytes, descendant_count, coverage
+            FROM node_current
+            WHERE stream_id = ?1 AND deleted = 0
+            ORDER BY path ASC
+            """
+        return try withStatement(sql, operation: "read current directory aggregates") { statement in
+            try streamID.rawValue.withCString { streamCString in
+                try check(sqlite3_bind_text(statement, 1, streamCString, -1, nil), operation: "bind aggregate stream ID")
+                var aggregates: [DirectoryMetadataAggregate] = []
+                while true {
+                    let result = sqlite3_step(statement)
+                    switch result {
+                    case SQLITE_ROW:
+                        let path = try readText(from: statement, column: 0, field: "node_current.path")
+                        let logical = try readOptionalByteCount(from: statement, column: 1, field: "node_current.logical_bytes")
+                        let allocated = try readOptionalByteCount(from: statement, column: 2, field: "node_current.allocated_bytes")
+                        let descendantCount = sqlite3_column_int64(statement, 3)
+                        let coverageText = try readText(from: statement, column: 4, field: "node_current.coverage")
+                        let coverage: CalibrationCoverage = coverageText == "complete" ? .complete : .partial
+                        do {
+                            aggregates.append(
+                                try DirectoryMetadataAggregate(
+                                    path: DirtyRegionPath(path),
+                                    logicalBytes: logical,
+                                    allocatedBytes: allocated,
+                                    descendantCount: descendantCount,
+                                    coverage: coverage
+                                )
+                            )
+                        } catch {
+                            throw SQLiteEventJournalError.corruptStoredValue(field: "node_current")
+                        }
+                    case SQLITE_DONE:
+                        return aggregates
+                    default:
+                        throw sqliteFailure(operation: "step aggregate query", code: result)
+                    }
+                }
+            }
+        }
+    }
+
     /// Explicitly releases SQLite resources. Calling close repeatedly is safe;
     /// repository operations after closing report `databaseClosed`.
     public func close() throws {
@@ -319,10 +504,100 @@ public actor SQLiteEventJournalRepository: EventJournalRepository {
         case 0:
             try migrateToVersionOne(database)
             try migrateToVersionTwo(database)
+            try migrateToVersionThree(database)
         case 1:
             try migrateToVersionTwo(database)
+            try migrateToVersionThree(database)
+        case 2:
+            try migrateToVersionThree(database)
         default:
             throw SQLiteEventJournalError.unsupportedSchemaVersion(currentVersion)
+        }
+    }
+
+    private static func migrateToVersionThree(_ database: OpaquePointer) throws {
+        try execute(
+            on: database,
+            "BEGIN IMMEDIATE TRANSACTION",
+            operation: "begin schema migration v3"
+        )
+        do {
+            try execute(
+                on: database,
+                """
+                CREATE TABLE scan_run (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    stream_id TEXT NOT NULL,
+                    region_path TEXT NOT NULL,
+                    dirty_revision_be BLOB NOT NULL CHECK(length(dirty_revision_be) = 8),
+                    state TEXT NOT NULL CHECK(state IN (
+                        'running', 'completed', 'partial', 'cancelled',
+                        'failed', 'superseded'
+                    )),
+                    coverage TEXT CHECK(coverage IN ('complete', 'partial')),
+                    entries_seen INTEGER NOT NULL DEFAULT 0 CHECK(entries_seen >= 0),
+                    directories_staged INTEGER NOT NULL DEFAULT 0
+                        CHECK(directories_staged >= 0),
+                    started_at_ms INTEGER NOT NULL,
+                    finished_at_ms INTEGER
+                ) WITHOUT ROWID;
+
+                CREATE TABLE scan_node_stage (
+                    scan_run_id TEXT NOT NULL REFERENCES scan_run(id) ON DELETE CASCADE,
+                    path TEXT NOT NULL,
+                    logical_bytes INTEGER CHECK(logical_bytes IS NULL OR logical_bytes >= 0),
+                    allocated_bytes INTEGER CHECK(
+                        allocated_bytes IS NULL OR allocated_bytes >= 0
+                    ),
+                    descendant_count INTEGER NOT NULL CHECK(descendant_count >= 0),
+                    coverage TEXT NOT NULL CHECK(coverage IN ('complete', 'partial')),
+                    PRIMARY KEY(scan_run_id, path)
+                ) WITHOUT ROWID;
+
+                CREATE TABLE node_current (
+                    stream_id TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    logical_bytes INTEGER CHECK(logical_bytes IS NULL OR logical_bytes >= 0),
+                    allocated_bytes INTEGER CHECK(
+                        allocated_bytes IS NULL OR allocated_bytes >= 0
+                    ),
+                    descendant_count INTEGER NOT NULL CHECK(descendant_count >= 0),
+                    coverage TEXT NOT NULL CHECK(coverage IN ('complete', 'partial')),
+                    last_scan_run_id TEXT NOT NULL REFERENCES scan_run(id),
+                    deleted INTEGER NOT NULL DEFAULT 0 CHECK(deleted IN (0, 1)),
+                    PRIMARY KEY(stream_id, path)
+                ) WITHOUT ROWID;
+
+                CREATE INDEX node_current_scan_region
+                    ON node_current(stream_id, path, deleted);
+
+                INSERT INTO schema_migration(version, applied_at_ms, checksum)
+                VALUES(3, CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+                    'calibration-v3-staging-finalization');
+
+                PRAGMA user_version = 3;
+                """,
+                operation: "apply schema migration version 3"
+            )
+            try execute(
+                on: database,
+                "COMMIT TRANSACTION",
+                operation: "commit schema migration v3"
+            )
+        } catch let migrationError {
+            do {
+                try execute(
+                    on: database,
+                    "ROLLBACK TRANSACTION",
+                    operation: "roll back schema migration v3"
+                )
+            } catch let rollbackError {
+                throw SQLiteEventJournalError.rollbackFailed(
+                    original: String(describing: migrationError),
+                    rollback: String(describing: rollbackError)
+                )
+            }
+            throw migrationError
         }
     }
 
@@ -630,6 +905,257 @@ public actor SQLiteEventJournalRepository: EventJournalRepository {
         root == "/" || candidate == root || candidate.hasPrefix(root + "/")
     }
 
+    private func readScanRun(_ runID: CalibrationRunID) throws -> ScanRunContext {
+        let sql = """
+            SELECT stream_id, region_path, dirty_revision_be, state
+            FROM scan_run WHERE id = ?1
+            """
+        return try withStatement(sql, operation: "read calibration run") { statement in
+            try runID.rawValue.withCString { runCString in
+                try check(sqlite3_bind_text(statement, 1, runCString, -1, nil), operation: "bind scan run lookup")
+                let result = sqlite3_step(statement)
+                guard result == SQLITE_ROW else {
+                    if result == SQLITE_DONE {
+                        throw SQLiteEventJournalError.scanRunNotFound(runID.rawValue)
+                    }
+                    throw sqliteFailure(operation: "step scan run query", code: result)
+                }
+                do {
+                    return ScanRunContext(
+                        streamID: try EventStreamID(
+                            readText(from: statement, column: 0, field: "scan_run.stream_id")
+                        ),
+                        regionPath: try DirtyRegionPath(
+                            readText(from: statement, column: 1, field: "scan_run.region_path")
+                        ),
+                        revision: try DirtyRegionRevision(
+                            readUInt64(from: statement, column: 2, field: "scan_run.dirty_revision_be")
+                        ),
+                        state: try readText(from: statement, column: 3, field: "scan_run.state")
+                    )
+                } catch let error as SQLiteEventJournalError {
+                    throw error
+                } catch {
+                    throw SQLiteEventJournalError.corruptStoredValue(field: "scan_run")
+                }
+            }
+        }
+    }
+
+    private func upsertStagedAggregate(
+        _ aggregate: DirectoryMetadataAggregate,
+        runID: CalibrationRunID
+    ) throws {
+        let sql = """
+            INSERT INTO scan_node_stage(
+                scan_run_id, path, logical_bytes, allocated_bytes,
+                descendant_count, coverage
+            ) VALUES(?1, ?2, ?3, ?4, ?5, ?6)
+            ON CONFLICT(scan_run_id, path) DO UPDATE SET
+                logical_bytes = excluded.logical_bytes,
+                allocated_bytes = excluded.allocated_bytes,
+                descendant_count = excluded.descendant_count,
+                coverage = excluded.coverage
+            """
+        try withStatement(sql, operation: "stage directory aggregate") { statement in
+            try runID.rawValue.withCString { runCString in
+                try aggregate.path.rawValue.withCString { pathCString in
+                    try aggregate.coverage.storageValue.withCString { coverageCString in
+                        try check(sqlite3_bind_text(statement, 1, runCString, -1, nil), operation: "bind stage run ID")
+                        try check(sqlite3_bind_text(statement, 2, pathCString, -1, nil), operation: "bind stage path")
+                        try bind(aggregate.logicalBytes?.value, to: statement, index: 3, operation: "bind stage logical bytes")
+                        try bind(aggregate.allocatedBytes?.value, to: statement, index: 4, operation: "bind stage allocated bytes")
+                        try check(sqlite3_bind_int64(statement, 5, aggregate.descendantCount), operation: "bind stage descendant count")
+                        try check(sqlite3_bind_text(statement, 6, coverageCString, -1, nil), operation: "bind stage coverage")
+                        try stepExpectingDone(statement, operation: "write staged aggregate")
+                    }
+                }
+            }
+        }
+    }
+
+    private func stagedSummary(
+        runID: CalibrationRunID,
+        root: DirtyRegionPath
+    ) throws -> (count: Int64, containsRoot: Bool, partialCount: Int64) {
+        let sql = """
+            SELECT COUNT(*),
+                COALESCE(SUM(CASE WHEN path = ?2 THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN coverage = 'partial' THEN 1 ELSE 0 END), 0)
+            FROM scan_node_stage WHERE scan_run_id = ?1
+            """
+        return try withStatement(sql, operation: "summarize staged calibration") { statement in
+            try runID.rawValue.withCString { runCString in
+                try root.rawValue.withCString { rootCString in
+                    try check(sqlite3_bind_text(statement, 1, runCString, -1, nil), operation: "bind stage summary run ID")
+                    try check(sqlite3_bind_text(statement, 2, rootCString, -1, nil), operation: "bind stage summary root")
+                    let result = sqlite3_step(statement)
+                    guard result == SQLITE_ROW else {
+                        throw sqliteFailure(operation: "step stage summary", code: result)
+                    }
+                    return (
+                        sqlite3_column_int64(statement, 0),
+                        sqlite3_column_int64(statement, 1) == 1,
+                        sqlite3_column_int64(statement, 2)
+                    )
+                }
+            }
+        }
+    }
+
+    private func dirtyRevision(
+        streamID: EventStreamID,
+        path: DirtyRegionPath
+    ) throws -> DirtyRegionRevision? {
+        let sql = """
+            SELECT revision_be FROM dirty_region
+            WHERE stream_id = ?1 AND path = ?2
+            """
+        return try withStatement(sql, operation: "read dirty revision") { statement in
+            try streamID.rawValue.withCString { streamCString in
+                try path.rawValue.withCString { pathCString in
+                    try check(sqlite3_bind_text(statement, 1, streamCString, -1, nil), operation: "bind dirty revision stream")
+                    try check(sqlite3_bind_text(statement, 2, pathCString, -1, nil), operation: "bind dirty revision path")
+                    let result = sqlite3_step(statement)
+                    switch result {
+                    case SQLITE_ROW:
+                        return try DirtyRegionRevision(
+                            readUInt64(from: statement, column: 0, field: "dirty_region.revision_be")
+                        )
+                    case SQLITE_DONE:
+                        return nil
+                    default:
+                        throw sqliteFailure(operation: "step dirty revision query", code: result)
+                    }
+                }
+            }
+        }
+    }
+
+    private func markMissingDirectoriesDeleted(
+        streamID: EventStreamID,
+        region: DirtyRegionPath,
+        runID: CalibrationRunID
+    ) throws {
+        let sql = """
+            UPDATE node_current
+            SET deleted = 1, last_scan_run_id = ?1
+            WHERE stream_id = ?2
+                AND (?3 = '/' OR path = ?3 OR substr(path, 1, length(?3) + 1) = ?3 || '/')
+                AND NOT EXISTS (
+                    SELECT 1 FROM scan_node_stage staged
+                    WHERE staged.scan_run_id = ?1 AND staged.path = node_current.path
+                )
+            """
+        try withStatement(sql, operation: "mark missing directories deleted") { statement in
+            try runID.rawValue.withCString { runCString in
+                try streamID.rawValue.withCString { streamCString in
+                    try region.rawValue.withCString { regionCString in
+                        try check(sqlite3_bind_text(statement, 1, runCString, -1, nil), operation: "bind deletion scan run")
+                        try check(sqlite3_bind_text(statement, 2, streamCString, -1, nil), operation: "bind deletion stream")
+                        try check(sqlite3_bind_text(statement, 3, regionCString, -1, nil), operation: "bind deletion region")
+                        try stepExpectingDone(statement, operation: "mark missing directories deleted")
+                    }
+                }
+            }
+        }
+    }
+
+    private func publishStagedDirectories(
+        streamID: EventStreamID,
+        runID: CalibrationRunID
+    ) throws {
+        let sql = """
+            INSERT INTO node_current(
+                stream_id, path, logical_bytes, allocated_bytes,
+                descendant_count, coverage, last_scan_run_id, deleted
+            )
+            SELECT ?1, path, logical_bytes, allocated_bytes,
+                descendant_count, coverage, scan_run_id, 0
+            FROM scan_node_stage
+            WHERE scan_run_id = ?2
+            ON CONFLICT(stream_id, path) DO UPDATE SET
+                logical_bytes = excluded.logical_bytes,
+                allocated_bytes = excluded.allocated_bytes,
+                descendant_count = excluded.descendant_count,
+                coverage = excluded.coverage,
+                last_scan_run_id = excluded.last_scan_run_id,
+                deleted = 0
+            """
+        try withStatement(sql, operation: "publish staged directories") { statement in
+            try streamID.rawValue.withCString { streamCString in
+                try runID.rawValue.withCString { runCString in
+                    try check(sqlite3_bind_text(statement, 1, streamCString, -1, nil), operation: "bind publish stream")
+                    try check(sqlite3_bind_text(statement, 2, runCString, -1, nil), operation: "bind publish run")
+                    try stepExpectingDone(statement, operation: "publish staged directories")
+                }
+            }
+        }
+    }
+
+    private func finishScanRun(
+        _ runID: CalibrationRunID,
+        state: String,
+        report: CalibrationReport?
+    ) throws {
+        let sql = """
+            UPDATE scan_run SET
+                state = ?2,
+                coverage = ?3,
+                entries_seen = ?4,
+                directories_staged = ?5,
+                finished_at_ms = ?6
+            WHERE id = ?1
+            """
+        let finishedAt = Int64(Date().timeIntervalSince1970 * 1_000)
+        try withStatement(sql, operation: "finish calibration run") { statement in
+            try runID.rawValue.withCString { runCString in
+                try state.withCString { stateCString in
+                    try check(sqlite3_bind_text(statement, 1, runCString, -1, nil), operation: "bind finished run ID")
+                    try check(sqlite3_bind_text(statement, 2, stateCString, -1, nil), operation: "bind finished run state")
+                    if let report {
+                        try report.coverage.storageValue.withCString { coverageCString in
+                            try check(sqlite3_bind_text(statement, 3, coverageCString, -1, nil), operation: "bind finished coverage")
+                            try check(sqlite3_bind_int64(statement, 4, report.entriesVisited), operation: "bind finished entries")
+                            try check(sqlite3_bind_int64(statement, 5, report.directoriesStaged), operation: "bind finished directories")
+                            try check(sqlite3_bind_int64(statement, 6, finishedAt), operation: "bind finished time")
+                            try stepExpectingDone(statement, operation: "update calibration run")
+                        }
+                    } else {
+                        try check(sqlite3_bind_null(statement, 3), operation: "bind null finished coverage")
+                        try check(sqlite3_bind_int64(statement, 4, 0), operation: "bind zero finished entries")
+                        try check(sqlite3_bind_int64(statement, 5, 0), operation: "bind zero finished directories")
+                        try check(sqlite3_bind_int64(statement, 6, finishedAt), operation: "bind finished time")
+                        try stepExpectingDone(statement, operation: "update calibration run")
+                    }
+                }
+            }
+        }
+    }
+
+    private func deleteStagedRows(_ runID: CalibrationRunID) throws {
+        let sql = "DELETE FROM scan_node_stage WHERE scan_run_id = ?1"
+        try withStatement(sql, operation: "delete staged calibration rows") { statement in
+            try runID.rawValue.withCString { runCString in
+                try check(sqlite3_bind_text(statement, 1, runCString, -1, nil), operation: "bind staged deletion run")
+                try stepExpectingDone(statement, operation: "delete staged calibration rows")
+            }
+        }
+    }
+
+    private func bind(
+        _ value: Int64?,
+        to statement: OpaquePointer,
+        index: Int32,
+        operation: String
+    ) throws {
+        if let value {
+            try check(sqlite3_bind_int64(statement, index, value), operation: operation)
+        } else {
+            try check(sqlite3_bind_null(statement, index), operation: operation)
+        }
+    }
+
     private func upsert(checkpoint: EventJournalCursor, streamID: EventStreamID) throws {
         let sql = """
             INSERT INTO event_checkpoint(stream_id, cursor_be)
@@ -821,6 +1347,25 @@ public actor SQLiteEventJournalRepository: EventJournalRepository {
         try readCursor(from: statement, column: column, field: field).rawValue
     }
 
+    private func readOptionalByteCount(
+        from statement: OpaquePointer,
+        column: Int32,
+        field: String
+    ) throws -> ByteCount? {
+        if sqlite3_column_type(statement, column) == SQLITE_NULL {
+            return nil
+        }
+        guard sqlite3_column_type(statement, column) == SQLITE_INTEGER else {
+            throw SQLiteEventJournalError.corruptStoredValue(field: field)
+        }
+        let value = sqlite3_column_int64(statement, column)
+        do {
+            return try ByteCount(value)
+        } catch {
+            throw SQLiteEventJournalError.corruptStoredValue(field: field)
+        }
+    }
+
     private static func encode(_ cursor: EventJournalCursor) -> [UInt8] {
         encode(cursor.rawValue)
     }
@@ -840,6 +1385,22 @@ public actor SQLiteEventJournalRepository: EventJournalRepository {
     }
 }
 
+private struct ScanRunContext {
+    let streamID: EventStreamID
+    let regionPath: DirtyRegionPath
+    let revision: DirtyRegionRevision
+    let state: String
+}
+
+private extension CalibrationCoverage {
+    var storageValue: String {
+        switch self {
+        case .complete: "complete"
+        case .partial: "partial"
+        }
+    }
+}
+
 enum SQLiteEventJournalTestFailurePoint: Sendable, Equatable {
     case afterDirtyRegionsBeforeCheckpoint
 }
@@ -851,6 +1412,13 @@ public enum SQLiteEventJournalError: Error, Sendable, Equatable {
     case unsupportedSchemaVersion(Int32)
     case cursorRegression(stored: UInt64, attempted: UInt64)
     case revisionOverflow(path: String)
+    case scanRunNotFound(String)
+    case scanRunNotRunning(String)
+    case scanRunContextMismatch(String)
+    case aggregateOutsideScanRegion(String)
+    case incompleteReportCannotFinalize
+    case stagedDirectoryCountMismatch(expected: Int64, actual: Int64)
+    case dirtyRevisionChangedDuringFinalization
     case invalidCursorEncoding(field: String, actualByteCount: Int)
     case corruptStoredValue(field: String)
     case sqliteFailure(operation: String, code: Int32, message: String)

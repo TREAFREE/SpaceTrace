@@ -48,6 +48,29 @@ struct FileSystemCalibrationPipelineTests {
         #expect(remaining.reasons == [.contentModified, .removed])
     }
 
+    @Test("Cancellation discards staged data and preserves durable dirty work")
+    func cancellationRollsBackStaging() async throws {
+        let repository = InMemoryEventJournalRepository()
+        let scanner = FakeCalibrationScanner(coverage: .complete) { _ in
+            throw CancellationError()
+        }
+        let pipeline = try makePipeline(repository: repository, scanner: scanner)
+
+        try await pipeline.ingest([try fileInvalidation(cursor: 1)])
+        do {
+            _ = try await pipeline.calibratePending(limit: 1)
+            Issue.record("Expected cancellation to escape the pipeline.")
+        } catch is CancellationError {
+            // Expected.
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        #expect(try await repository.dirtyRegions(for: streamID()).count == 1)
+        #expect(try await repository.currentDirectoryAggregates(for: streamID()).isEmpty)
+        #expect(await repository.discardedDispositions == [.cancelled])
+    }
+
     private func makePipeline(
         repository: InMemoryEventJournalRepository,
         scanner: FakeCalibrationScanner
@@ -87,16 +110,39 @@ private actor FakeCalibrationScanner: CalibrationScanner {
         self.beforeReturn = beforeReturn
     }
 
-    func scan(_ request: CalibrationRequest) async throws -> CalibrationCoverage {
+    func scan(
+        _ request: CalibrationRequest,
+        stage: @escaping @Sendable ([DirectoryMetadataAggregate]) async throws -> Void
+    ) async throws -> CalibrationReport {
         requestCount += 1
+        let aggregate = try DirectoryMetadataAggregate(
+            path: request.workItem.region.path,
+            logicalBytes: .zero,
+            allocatedBytes: .zero,
+            descendantCount: 0,
+            coverage: coverage
+        )
+        try await stage([aggregate])
         try await beforeReturn(request)
-        return coverage
+        return try CalibrationReport(
+            coverage: coverage,
+            entriesVisited: 1,
+            directoriesStaged: 1,
+            gaps: coverage == .complete
+                ? []
+                : [CalibrationGap(path: request.workItem.region.path, reason: .metadataUnavailable)]
+        )
     }
 }
 
 private actor InMemoryEventJournalRepository: EventJournalRepository {
     private var savedCheckpoint: EventJournalCursor?
     private var work: [DirtyRegionPath: DirtyRegionWorkItem] = [:]
+    private var nextRunID = 1
+    private var runs: [CalibrationRunID: CalibrationRequest] = [:]
+    private var staged: [CalibrationRunID: [DirectoryMetadataAggregate]] = [:]
+    private var current: [DirtyRegionPath: DirectoryMetadataAggregate] = [:]
+    private(set) var discardedDispositions: [CalibrationRunDisposition] = []
 
     func commit(_ batch: EventJournalBatch) throws {
         if let savedCheckpoint, batch.checkpoint < savedCheckpoint {
@@ -128,12 +174,56 @@ private actor InMemoryEventJournalRepository: EventJournalRepository {
         )
     }
 
-    func resolve(_ workItem: DirtyRegionWorkItem, for streamID: EventStreamID) -> Bool {
-        guard work[workItem.region.path]?.revision == workItem.revision else {
+    func beginCalibration(_ request: CalibrationRequest) throws -> CalibrationRunID {
+        let runID = try CalibrationRunID("run-\(nextRunID)")
+        nextRunID += 1
+        runs[runID] = request
+        staged[runID] = []
+        return runID
+    }
+
+    func stageCalibration(
+        _ aggregates: [DirectoryMetadataAggregate],
+        in runID: CalibrationRunID
+    ) {
+        staged[runID, default: []].append(contentsOf: aggregates)
+    }
+
+    func finalizeCalibration(
+        _ runID: CalibrationRunID,
+        report: CalibrationReport,
+        workItem: DirtyRegionWorkItem,
+        streamID: EventStreamID
+    ) -> Bool {
+        guard work[workItem.region.path]?.revision == workItem.revision,
+              report.coverage == .complete else {
+            staged[runID] = nil
+            runs[runID] = nil
             return false
         }
+        for aggregate in staged[runID] ?? [] {
+            current[aggregate.path] = aggregate
+        }
         work[workItem.region.path] = nil
+        staged[runID] = nil
+        runs[runID] = nil
         return true
+    }
+
+    func discardCalibration(
+        _ runID: CalibrationRunID,
+        disposition: CalibrationRunDisposition,
+        report: CalibrationReport?
+    ) {
+        discardedDispositions.append(disposition)
+        staged[runID] = nil
+        runs[runID] = nil
+    }
+
+    func currentDirectoryAggregates(
+        for streamID: EventStreamID
+    ) -> [DirectoryMetadataAggregate] {
+        current.values.sorted { $0.path.rawValue < $1.path.rawValue }
     }
 
     private func merge(_ regions: [DirtyRegion]) throws {

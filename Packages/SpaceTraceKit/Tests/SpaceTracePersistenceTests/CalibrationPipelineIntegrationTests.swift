@@ -46,9 +46,26 @@ struct CalibrationPipelineIntegrationTests {
 private actor IntegrationScanner: CalibrationScanner {
     private(set) var requests: [CalibrationRequest] = []
 
-    func scan(_ request: CalibrationRequest) -> CalibrationCoverage {
+    func scan(
+        _ request: CalibrationRequest,
+        stage: @escaping @Sendable ([DirectoryMetadataAggregate]) async throws -> Void
+    ) async throws -> CalibrationReport {
         requests.append(request)
-        return .complete
+        try await stage([
+            try DirectoryMetadataAggregate(
+                path: request.workItem.region.path,
+                logicalBytes: .zero,
+                allocatedBytes: .zero,
+                descendantCount: 0,
+                coverage: .complete
+            ),
+        ])
+        return try CalibrationReport(
+            coverage: .complete,
+            entriesVisited: 1,
+            directoriesStaged: 1,
+            gaps: []
+        )
     }
 }
 

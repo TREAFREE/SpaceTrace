@@ -294,8 +294,23 @@ public protocol EventJournalRepository: Sendable {
         for streamID: EventStreamID,
         limit: Int
     ) async throws -> [DirtyRegionWorkItem]
-    func resolve(
-        _ workItem: DirtyRegionWorkItem,
-        for streamID: EventStreamID
+    func beginCalibration(_ request: CalibrationRequest) async throws -> CalibrationRunID
+    func stageCalibration(
+        _ aggregates: [DirectoryMetadataAggregate],
+        in runID: CalibrationRunID
+    ) async throws
+    func finalizeCalibration(
+        _ runID: CalibrationRunID,
+        report: CalibrationReport,
+        workItem: DirtyRegionWorkItem,
+        streamID: EventStreamID
     ) async throws -> Bool
+    func discardCalibration(
+        _ runID: CalibrationRunID,
+        disposition: CalibrationRunDisposition,
+        report: CalibrationReport?
+    ) async throws
+    func currentDirectoryAggregates(
+        for streamID: EventStreamID
+    ) async throws -> [DirectoryMetadataAggregate]
 }

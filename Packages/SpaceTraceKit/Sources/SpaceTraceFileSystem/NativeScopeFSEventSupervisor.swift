@@ -72,32 +72,8 @@ public enum FSEventStreamRecoveryPolicyError: Error, Sendable, Equatable {
     case stabilityThresholdMustBeNonnegative
 }
 
-public struct ActiveScopeFSEventStatus: Sendable, Equatable {
-    public let scopeID: WatchedScopeID
-    public let generationID: MountGenerationID
-    public let streamID: EventStreamID
-    public let persistentIdentity: PersistentEventStreamIdentity?
-
-    public init(
-        scopeID: WatchedScopeID,
-        generationID: MountGenerationID,
-        streamID: EventStreamID,
-        persistentIdentity: PersistentEventStreamIdentity?
-    ) {
-        self.scopeID = scopeID
-        self.generationID = generationID
-        self.streamID = streamID
-        self.persistentIdentity = persistentIdentity
-    }
-}
-
-public struct ScopeFSEventRecoveryStatus: Sendable, Equatable {
-    public let scopeID: WatchedScopeID
-    public let generationID: MountGenerationID
-    public let attempt: Int
-    public let maximumAttempts: Int
-    public let lastFailure: String
-}
+public typealias ActiveScopeFSEventStatus = ScopeEventStreamActiveState
+public typealias ScopeFSEventRecoveryStatus = ScopeEventStreamRecoveryState
 
 /// Native implementation of the application-owned stream lifecycle port.
 /// One scope owns one client and one consumer task; replacement is conditional
@@ -130,6 +106,11 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
         let task: Task<Void, Never>
     }
 
+    private struct LifecycleObserver {
+        let scopeID: WatchedScopeID
+        let continuation: AsyncStream<ScopeEventStreamLifecycleState>.Continuation
+    }
+
     private struct ConsumptionOutcome: Sendable {
         let failure: String?
         let processedObservation: Bool
@@ -153,6 +134,8 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
     private var recoveries: [WatchedScopeID: RecoveryTask] = [:]
     private var revisions: [WatchedScopeID: UInt64] = [:]
     private var failures: [WatchedScopeID: String] = [:]
+    private var finalFailures: [WatchedScopeID: ScopeEventStreamFailureState] = [:]
+    private var lifecycleObservers: [UUID: LifecycleObserver] = [:]
 
     public init(
         repository: any EventJournalRepository,
@@ -267,13 +250,16 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
     ) async {
         let activeMatches = streams[scopeID]?.status.generationID == generationID
         let recoveryMatches = recoveries[scopeID]?.generationID == generationID
-        guard activeMatches || recoveryMatches else { return }
+        let failureMatches = finalFailures[scopeID]?.generationID == generationID
+        guard activeMatches || recoveryMatches || failureMatches else { return }
         _ = nextRevision(for: scopeID)
         await stopCurrent(scopeID: scopeID)
     }
 
     public func stopAll() async {
-        let scopeIDs = Set(streams.keys).union(recoveries.keys)
+        let scopeIDs = Set(streams.keys)
+            .union(recoveries.keys)
+            .union(finalFailures.keys)
         for scopeID in scopeIDs.sorted(by: { $0.rawValue < $1.rawValue }) {
             _ = nextRevision(for: scopeID)
             await stopCurrent(scopeID: scopeID)
@@ -301,6 +287,46 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
             maximumAttempts: recoveryPolicy.maximumAttempts,
             lastFailure: recovery.lastFailure
         )
+    }
+
+    public func lifecycleState(
+        for scopeID: WatchedScopeID
+    ) -> ScopeEventStreamLifecycleState {
+        if let active = streams[scopeID] {
+            return .active(active.status)
+        }
+        if let recovery = recoveryStatus(for: scopeID) {
+            return .recovering(recovery)
+        }
+        if let failure = finalFailures[scopeID] {
+            return .failed(failure)
+        }
+        return .inactive(scopeID: scopeID)
+    }
+
+    public func lifecycleUpdates(
+        for scopeID: WatchedScopeID,
+        bufferCapacity: Int = 16
+    ) throws(ScopeEventStreamLifecycleObservationError) -> AsyncStream<ScopeEventStreamLifecycleState> {
+        guard bufferCapacity > 0 else {
+            throw .invalidBufferCapacity
+        }
+
+        let observerID = UUID()
+        let pair = AsyncStream<ScopeEventStreamLifecycleState>.makeStream(
+            bufferingPolicy: .bufferingNewest(bufferCapacity)
+        )
+        pair.continuation.onTermination = { @Sendable [weak self] _ in
+            Task { @concurrent [weak self] in
+                await self?.removeLifecycleObserver(observerID)
+            }
+        }
+        lifecycleObservers[observerID] = LifecycleObserver(
+            scopeID: scopeID,
+            continuation: pair.continuation
+        )
+        pair.continuation.yield(lifecycleState(for: scopeID))
+        return pair.stream
     }
 
     /// Test seam for observing one already-scheduled recovery cycle without
@@ -449,11 +475,13 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
             client: opened.client,
             task: task
         )
+        publishLifecycleState(for: scope.id)
     }
 
     private func stopCurrent(scopeID: WatchedScopeID) async {
         let active = streams.removeValue(forKey: scopeID)
         let recovery = recoveries.removeValue(forKey: scopeID)
+        let failure = finalFailures.removeValue(forKey: scopeID)
 
         active?.client.stop()
         active?.task.cancel()
@@ -464,6 +492,10 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
         }
         if let recovery {
             await recovery.task.value
+        }
+        failures.removeValue(forKey: scopeID)
+        if active != nil || recovery != nil || failure != nil {
+            publishLifecycleState(for: scopeID)
         }
     }
 
@@ -507,6 +539,7 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
             lastFailure: failure,
             task: task
         )
+        publishLifecycleState(for: scopeID)
     }
 
     private func recover(
@@ -612,6 +645,7 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
                     pipeline: pipeline
                 )
                 failures.removeValue(forKey: context.scope.id)
+                finalFailures.removeValue(forKey: context.scope.id)
                 return
             } catch is CancellationError {
                 return
@@ -681,6 +715,7 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
         recovery.attempt = attempt
         recovery.lastFailure = lastFailure
         recoveries[context.scope.id] = recovery
+        publishLifecycleState(for: context.scope.id)
     }
 
     private func finishExhaustedRecovery(
@@ -689,8 +724,27 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
     ) {
         guard recoveries[context.scope.id]?.revision == context.revision else { return }
         recoveries.removeValue(forKey: context.scope.id)
-        failures[context.scope.id] = "FSEvents automatic recovery exhausted after "
+        let message = "FSEvents automatic recovery exhausted after "
             + "\(recoveryPolicy.maximumAttempts) attempts. Last failure: \(lastFailure)"
+        failures[context.scope.id] = message
+        finalFailures[context.scope.id] = ScopeEventStreamFailureState(
+            scopeID: context.scope.id,
+            generationID: context.generationID,
+            attempts: recoveryPolicy.maximumAttempts,
+            message: message
+        )
+        publishLifecycleState(for: context.scope.id)
+    }
+
+    private func publishLifecycleState(for scopeID: WatchedScopeID) {
+        let state = lifecycleState(for: scopeID)
+        for observer in lifecycleObservers.values where observer.scopeID == scopeID {
+            observer.continuation.yield(state)
+        }
+    }
+
+    private func removeLifecycleObserver(_ observerID: UUID) {
+        lifecycleObservers.removeValue(forKey: observerID)
     }
 
     private nonisolated static func consume(

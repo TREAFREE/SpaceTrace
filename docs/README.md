@@ -20,7 +20,8 @@ This directory is the durable source of truth for product, architecture, enginee
 5. [Development Process](engineering/development-process.md)
 6. [Quality Strategy](engineering/quality-strategy.md)
 7. [First Implementation Slice Status](engineering/implementation-status.md)
-8. [Contributing](../CONTRIBUTING.md)
+8. [FSEvents Continuity-Loss Qualification](engineering/fsevents-continuity-qualification.md) · [中文](engineering/fsevents-continuity-qualification.zh-CN.md)
+9. [Contributing](../CONTRIBUTING.md)
 
 ### Product evidence
 

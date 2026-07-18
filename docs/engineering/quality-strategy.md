@@ -64,6 +64,8 @@ Coverage 不能替代场景测试。为达到数字而断言实现细节或大�
 - 稀疏文件、package、超长路径、组合/分解 Unicode、同名不同大小写；
 - 事件丢失/overflow 后触发受控 rescan，而不是静默继续；
 - FSEvents 启动后意外终止必须先持久化连续性丢失，再按 generation 有界恢复；连续失败触发熔断，卸载/替换必须取消退避任务；
+- 生命周期观测必须发布有界的 `inactive`、`active`、`recovering`、`failed` 应用状态；消费者压力可以合并中间快照，但不得丢失当前最终状态；
+- 真实守护进程 drop/wrap 只能按 [FSEvents 连续性丢失资格验证](./fsevents-continuity-qualification.zh-CN.md) 记录；注入标志与应用缓冲区溢出不得冒充系统守护进程证据；
 - 用户取消、系统睡眠/唤醒、应用终止后恢复 checkpoint；
 - SQLite busy、磁盘空间不足、数据库损坏副本和只读文件系统；
 - 诊断包默认不包含原始路径、文件名或文件内容。

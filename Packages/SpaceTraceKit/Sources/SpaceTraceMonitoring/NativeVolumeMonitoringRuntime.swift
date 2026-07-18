@@ -90,6 +90,22 @@ public actor NativeVolumeMonitoringRuntime {
         await supervisor.recoveryStatus(for: scopeID)
     }
 
+    public func streamLifecycleState(
+        for scopeID: WatchedScopeID
+    ) async -> ScopeEventStreamLifecycleState {
+        await supervisor.lifecycleState(for: scopeID)
+    }
+
+    public func streamLifecycleUpdates(
+        for scopeID: WatchedScopeID,
+        bufferCapacity: Int = 16
+    ) async throws(ScopeEventStreamLifecycleObservationError) -> AsyncStream<ScopeEventStreamLifecycleState> {
+        try await supervisor.lifecycleUpdates(
+            for: scopeID,
+            bufferCapacity: bufferCapacity
+        )
+    }
+
     public func isObservingVolumeEvents() -> Bool {
         isObservingEvents
     }

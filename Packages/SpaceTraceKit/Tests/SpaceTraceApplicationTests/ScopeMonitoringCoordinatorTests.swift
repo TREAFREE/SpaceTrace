@@ -218,6 +218,150 @@ struct ScopeMonitoringCoordinatorTests {
         }
     }
 
+    @Test(
+        "Every four-signal mount sequence preserves runtime and generation ownership",
+        .timeLimit(.minutes(1))
+    )
+    func exhaustiveLifecycleSequencesPreserveOwnership() async throws {
+        let sequences = lifecycleSequences(length: 4)
+        #expect(sequences.count == 2_401)
+
+        for (sequenceIndex, sequence) in sequences.enumerated() {
+            try await verifyLifecycleSequence(sequence, index: sequenceIndex)
+        }
+    }
+
+    private func verifyLifecycleSequence(
+        _ sequence: [LifecycleCommand],
+        index: Int
+    ) async throws {
+        let watched = try scope("sequence-scope", root: "/Volumes/Sequence/Scope")
+        let repository = ScopeGenerationRepositorySpy()
+        let supervisor = ScopeSupervisorSpy()
+        let proposedGenerationIDs = (0..<sequence.count).map {
+            "sequence-\(index)-proposal-\($0)"
+        }
+        let coordinator = ScopeMonitoringCoordinator(
+            catalog: FixedScopeCatalog(scopes: [watched]),
+            repository: repository,
+            supervisor: supervisor,
+            makeGenerationID: try generationFactory(proposedGenerationIDs)
+        )
+        let firstVolumeUUID = try #require(
+            UUID(uuidString: "11111111-1111-1111-1111-111111111111")
+        )
+        let secondVolumeUUID = try #require(
+            UUID(uuidString: "22222222-2222-2222-2222-222222222222")
+        )
+        var expectedRuntime: LifecycleRuntime?
+        var expectedVolumeUUID: UUID?
+        var expectedGeneration: MountGenerationID?
+
+        for command in sequence {
+            let restartCountBefore = await supervisor.restarts().count
+            let stopCountBefore = await supervisor.stops().count
+            let result: ScopeMonitoringResult
+
+            switch command {
+            case let .mount(runtime, volume):
+                let volumeUUID = volume == .first ? firstVolumeUUID : secondVolumeUUID
+                let observation = try mountedObservation(
+                    runtimeID: runtime.rawValue,
+                    mountPath: watched.mountPath.rawValue,
+                    volumeUUID: volumeUUID
+                )
+                result = try await coordinator.process(.changed(observation))
+                let activation = try #require(result.activations.first)
+                let reusesGeneration = expectedGeneration != nil
+                    && expectedVolumeUUID == volumeUUID
+
+                if reusesGeneration {
+                    #expect(activation.reason == .duplicateNotification, "Sequence: \(sequence)")
+                    #expect(activation.current.generationID == expectedGeneration, "Sequence: \(sequence)")
+                    #expect(await supervisor.restarts().count == restartCountBefore, "Sequence: \(sequence)")
+                } else {
+                    #expect(activation.reason != .duplicateNotification, "Sequence: \(sequence)")
+                    #expect(await supervisor.restarts().count == restartCountBefore + 1, "Sequence: \(sequence)")
+                }
+                expectedRuntime = runtime
+                expectedVolumeUUID = volumeUUID
+                expectedGeneration = activation.current.generationID
+                #expect(result.deactivatedScopeIDs.isEmpty, "Sequence: \(sequence)")
+                #expect(result.requiresVolumeEventSourceRestart == false, "Sequence: \(sequence)")
+
+            case let .unmount(runtime):
+                let volumeUUID = runtime.volume == .first
+                    ? firstVolumeUUID
+                    : secondVolumeUUID
+                result = try await coordinator.process(
+                    .unavailable(
+                        try unmountedObservation(
+                            runtimeID: runtime.rawValue,
+                            volumeUUID: volumeUUID
+                        )
+                    )
+                )
+                let matches = expectedRuntime == runtime
+                #expect(
+                    result.deactivatedScopeIDs == (matches ? [watched.id] : []),
+                    "Sequence: \(sequence)"
+                )
+                #expect(
+                    await supervisor.stops().count == stopCountBefore + (matches ? 1 : 0),
+                    "Sequence: \(sequence)"
+                )
+                #expect(result.requiresVolumeEventSourceRestart == false, "Sequence: \(sequence)")
+                if matches {
+                    expectedRuntime = nil
+                    expectedVolumeUUID = nil
+                    expectedGeneration = nil
+                }
+
+            case .continuityLost:
+                result = try await coordinator.process(.continuityLost)
+                let hadActiveGeneration = expectedGeneration != nil
+                #expect(result.requiresVolumeEventSourceRestart, "Sequence: \(sequence)")
+                #expect(
+                    result.deactivatedScopeIDs == (hadActiveGeneration ? [watched.id] : []),
+                    "Sequence: \(sequence)"
+                )
+                #expect(
+                    await supervisor.stops().count == stopCountBefore + (hadActiveGeneration ? 1 : 0),
+                    "Sequence: \(sequence)"
+                )
+                expectedRuntime = nil
+                expectedVolumeUUID = nil
+                expectedGeneration = nil
+            }
+
+            let stored = try await repository.scopeMountGeneration(for: watched.id)
+            #expect(
+                await coordinator.activeGeneration(for: watched.id) == expectedGeneration,
+                "Sequence: \(sequence)"
+            )
+            #expect(
+                (stored?.isActive ?? false) == (expectedGeneration != nil),
+                "Sequence: \(sequence)"
+            )
+            if let expectedGeneration {
+                #expect(stored?.generationID == expectedGeneration, "Sequence: \(sequence)")
+                #expect(stored?.volumeUUID == expectedVolumeUUID, "Sequence: \(sequence)")
+            }
+        }
+
+        let restartedGenerations = await supervisor.restarts()
+            .map(\.activation.current.generationID)
+        let stoppedGenerations = await supervisor.stops().map(\.generationID)
+        #expect(
+            Set(restartedGenerations).count == restartedGenerations.count,
+            "Sequence: \(sequence)"
+        )
+        #expect(
+            stoppedGenerations.allSatisfy { restartedGenerations.contains($0) },
+            "Sequence: \(sequence)"
+        )
+    }
+
     private func scope(_ id: String, root: String) throws -> WatchedScope {
         let components = root.split(separator: "/")
         let mountPath = "/" + components.prefix(2).joined(separator: "/")
@@ -260,6 +404,60 @@ struct ScopeMonitoringCoordinatorTests {
     ) throws -> @Sendable () -> MountGenerationID {
         let state = GenerationFactoryState(values: try values.map(MountGenerationID.init))
         return { state.next() }
+    }
+}
+
+private enum LifecycleVolume: Sendable, Equatable {
+    case first
+    case second
+}
+
+private enum LifecycleRuntime: String, Sendable, Equatable {
+    case firstPrimary = "disk9s1"
+    case firstAlternate = "disk11s1"
+    case second = "disk10s1"
+
+    var volume: LifecycleVolume {
+        switch self {
+        case .firstPrimary, .firstAlternate:
+            .first
+        case .second:
+            .second
+        }
+    }
+}
+
+private enum LifecycleCommand: Sendable, CustomStringConvertible {
+    case mount(LifecycleRuntime, LifecycleVolume)
+    case unmount(LifecycleRuntime)
+    case continuityLost
+
+    static let all: [Self] = [
+        .mount(.firstPrimary, .first),
+        .mount(.firstAlternate, .first),
+        .mount(.second, .second),
+        .unmount(.firstPrimary),
+        .unmount(.firstAlternate),
+        .unmount(.second),
+        .continuityLost,
+    ]
+
+    var description: String {
+        switch self {
+        case let .mount(runtime, volume):
+            "mount(\(runtime.rawValue), \(volume))"
+        case let .unmount(runtime):
+            "unmount(\(runtime.rawValue))"
+        case .continuityLost:
+            "continuityLost"
+        }
+    }
+}
+
+private func lifecycleSequences(length: Int) -> [[LifecycleCommand]] {
+    guard length > 0 else { return [[]] }
+    return lifecycleSequences(length: length - 1).flatMap { prefix in
+        LifecycleCommand.all.map { prefix + [$0] }
     }
 }
 

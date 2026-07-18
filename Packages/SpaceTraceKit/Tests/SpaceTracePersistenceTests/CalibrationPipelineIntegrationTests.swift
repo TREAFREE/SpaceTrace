@@ -41,6 +41,79 @@ struct CalibrationPipelineIntegrationTests {
         #expect(request.workItem.region.path.rawValue == "/Users/example/Documents")
         try await repository.close()
     }
+
+    @Test(
+        "Every continuity-loss signal becomes durable root calibration work",
+        arguments: ContinuityLossCase.all
+    )
+    func continuityLossSchedulesDurableRecovery(
+        testCase: ContinuityLossCase
+    ) async throws {
+        let fixture = try PipelineTemporaryDatabase()
+        let repository = try SQLiteEventJournalRepository(databaseURL: fixture.databaseURL)
+        defer { fixture.remove() }
+
+        let streamID = try EventStreamID("continuity-loss-integration")
+        let watchRoot = try DirtyRegionPath("/Users/example")
+        let pipeline = FileSystemCalibrationPipeline(
+            streamID: streamID,
+            watchRoot: watchRoot,
+            repository: repository,
+            scanner: IntegrationScanner()
+        )
+        let ordinary = FSEventObservation(
+            path: "/Users/example/seed.txt",
+            eventID: FSEventID(rawValue: 42),
+            reasons: [.itemContentModified, .itemIsFile],
+            rawFlags: 0
+        )
+        try await pipeline.ingest([
+            try #require(try FSEventInvalidationMapper().map(ordinary)),
+        ])
+        #expect(try await pipeline.calibratePending(limit: 1) == 1)
+        #expect(try await repository.checkpoint(for: streamID) == EventJournalCursor(42))
+
+        let continuityLoss = FSEventObservation(
+            path: nil,
+            eventID: FSEventID(rawValue: 99),
+            reasons: [testCase.reason],
+            rawFlags: 0
+        )
+        try await pipeline.ingest([
+            try #require(try FSEventInvalidationMapper().map(continuityLoss)),
+        ])
+
+        let dirty = try #require(
+            try await repository.dirtyRegions(for: streamID).first
+        )
+        #expect(dirty.path == watchRoot)
+        #expect(dirty.maximumCursor == nil)
+        #expect(dirty.reasons.contains(.droppedEvents))
+        #expect(dirty.reasons.contains(.requiresCalibration))
+        #expect(
+            try await repository.checkpoint(for: streamID)
+                == (testCase.invalidatesCheckpoint ? nil : EventJournalCursor(42))
+        )
+        #expect(try await pipeline.calibratePending(limit: 1) == 1)
+        #expect(try await repository.dirtyRegions(for: streamID).isEmpty)
+        try await repository.close()
+    }
+}
+
+struct ContinuityLossCase: Sendable, CustomTestStringConvertible {
+    let reason: FSEventReason
+    let invalidatesCheckpoint: Bool
+
+    static let all: [Self] = [
+        Self(reason: .eventsDroppedByUserSpace, invalidatesCheckpoint: false),
+        Self(reason: .eventsDroppedByKernel, invalidatesCheckpoint: false),
+        Self(reason: .eventIdentifiersWrapped, invalidatesCheckpoint: true),
+        Self(reason: .callbackBridgeOverflow, invalidatesCheckpoint: false),
+    ]
+
+    var testDescription: String {
+        String(describing: reason)
+    }
 }
 
 private actor IntegrationScanner: CalibrationScanner {

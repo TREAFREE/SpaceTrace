@@ -32,6 +32,7 @@ The MVP does **not** promise exact process attribution, reproduce Apple's System
 | Engineering lifecycle | [Development Process](docs/engineering/development-process.md) |
 | Verification gates | [Quality Strategy](docs/engineering/quality-strategy.md) |
 | Current implementation evidence | [First Implementation Slice Status](docs/engineering/implementation-status.md) |
+| FSEvents continuity qualification | [Protocol](docs/engineering/fsevents-continuity-qualification.md) · [中文](docs/engineering/fsevents-continuity-qualification.zh-CN.md) |
 | Privacy and threat model | [Privacy and Security](docs/security/privacy-and-security.md) |
 | Opportunity research | [Research Notes](docs/research/macos-opportunity-research-2026.md) · [Interactive Report](docs/research/macos-opportunity-research-2026.html) |
 | Shared terminology | [Glossary](docs/glossary.md) |

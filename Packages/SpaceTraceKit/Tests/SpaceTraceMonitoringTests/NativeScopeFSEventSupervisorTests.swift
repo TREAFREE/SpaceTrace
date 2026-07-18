@@ -174,6 +174,63 @@ struct NativeScopeFSEventSupervisorTests {
         await supervisor.stopAll()
     }
 
+    @Test(
+        "Lifecycle updates expose inactive, active, recovering, restored, and stopped states",
+        .timeLimit(.minutes(1))
+    )
+    func lifecycleUpdatesExposeAutomaticRecovery() async throws {
+        let fixture = try SupervisorFixture()
+        defer { fixture.remove() }
+        let repository = try SQLiteEventJournalRepository(databaseURL: fixture.databaseURL)
+        let setup = try await fixture.persistentSetup(repository: repository)
+        let harness = ScriptedStreamHarness(outcomes: [
+            .terminalFailure,
+            .success,
+        ])
+        let supervisor = NativeScopeFSEventSupervisor(
+            repository: repository,
+            scanner: FoundationMetadataCalibrationScanner(),
+            resolver: FixedFSEventDeviceScopeResolver(resolved: setup.resolved),
+            makeStreamClient: { harness.makeClient() },
+            recoveryPolicy: try FSEventStreamRecoveryPolicy(
+                maximumAttempts: 3,
+                initialBackoffMilliseconds: 0,
+                maximumBackoffMilliseconds: 0,
+                stabilityThresholdMilliseconds: 60_000
+            )
+        )
+        let updates = try await supervisor.lifecycleUpdates(
+            for: setup.scope.id,
+            bufferCapacity: 16
+        )
+        var iterator = updates.makeAsyncIterator()
+        var states: [ScopeEventStreamLifecycleState] = []
+        states.append(try #require(await iterator.next()))
+
+        try await supervisor.restart(scope: setup.scope, activation: setup.activation)
+        await harness.waitForConfigurationCount(2)
+
+        while states.filter({ $0.phase == .active }).count < 2,
+              states.count < 12 {
+            states.append(try #require(await iterator.next()))
+        }
+
+        let phases = states.map(\.phase).reduce(into: [ScopeEventStreamLifecyclePhase]()) {
+            if $0.last != $1 {
+                $0.append($1)
+            }
+        }
+        #expect(phases == [.inactive, .active, .recovering, .active])
+        #expect(states.allSatisfy { $0.scopeID == setup.scope.id })
+
+        await supervisor.stop(
+            scopeID: setup.scope.id,
+            matching: setup.activation.current.generationID
+        )
+        let stopped = try #require(await iterator.next())
+        #expect(stopped == .inactive(scopeID: setup.scope.id))
+    }
+
     @Test("Repeated recovery start failures exhaust the circuit breaker")
     func repeatedRecoveryFailuresAreBounded() async throws {
         let fixture = try SupervisorFixture()
@@ -212,6 +269,22 @@ struct NativeScopeFSEventSupervisorTests {
         #expect(await supervisor.recoveryStatus(for: setup.scope.id) == nil)
         let failure = await supervisor.lastFailure(for: setup.scope.id)
         #expect(failure?.contains("exhausted after 3 attempts") == true)
+        guard case let .failed(failed) = await supervisor.lifecycleState(for: setup.scope.id) else {
+            Issue.record("Expected an observable failed lifecycle state.")
+            return
+        }
+        #expect(failed.generationID == setup.activation.current.generationID)
+        #expect(failed.attempts == 3)
+        #expect(failed.message == failure)
+
+        await supervisor.stop(
+            scopeID: setup.scope.id,
+            matching: setup.activation.current.generationID
+        )
+        #expect(
+            await supervisor.lifecycleState(for: setup.scope.id)
+                == .inactive(scopeID: setup.scope.id)
+        )
         #expect(try await repository.checkpoint(for: setup.identity.streamID) == nil)
     }
 
@@ -372,6 +445,28 @@ struct NativeScopeFSEventSupervisorTests {
             Issue.record("Expected recovery policy validation to fail.")
         } catch {
             #expect(error == testCase.expected)
+        }
+    }
+
+    @Test("Lifecycle observation requires a positive buffer capacity")
+    func lifecycleObservationRejectsInvalidBufferCapacity() async throws {
+        let fixture = try SupervisorFixture()
+        defer { fixture.remove() }
+        let repository = try SQLiteEventJournalRepository(databaseURL: fixture.databaseURL)
+        let supervisor = NativeScopeFSEventSupervisor(
+            repository: repository,
+            scanner: FoundationMetadataCalibrationScanner()
+        )
+        let scopeID = try WatchedScopeID("invalid-lifecycle-buffer")
+
+        do {
+            _ = try await supervisor.lifecycleUpdates(
+                for: scopeID,
+                bufferCapacity: 0
+            )
+            Issue.record("Expected lifecycle observation validation to fail.")
+        } catch {
+            #expect(error == .invalidBufferCapacity)
         }
     }
 }

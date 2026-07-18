@@ -58,12 +58,10 @@ git diff --check
 xcodebuild -list -project SpaceTrace.xcodeproj
 ```
 
-Until `make verify` and CI are added, use these Xcode checks:
+Use the same full verification entry point as CI:
 
 ```bash
-xcodebuild -project SpaceTrace.xcodeproj -scheme SpaceTrace -configuration Debug -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
-xcodebuild -project SpaceTrace.xcodeproj -scheme SpaceTrace -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO -only-testing:SpaceTraceTests test
-xcodebuild -project SpaceTrace.xcodeproj -scheme SpaceTrace -configuration Release -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+make verify
 ```
 
-Run the complete test command from `CONTRIBUTING.md` in an interactive macOS session because the UI-test runner must bootstrap a GUI application. Add lint and performance commands here and to `CONTRIBUTING.md` when their pinned tooling lands.
+Run the complete UI-test command from `CONTRIBUTING.md` in an interactive macOS session when UI journeys become meaningful because the UI-test runner must bootstrap a GUI application. Add lint and performance commands here and to `CONTRIBUTING.md` when their pinned tooling lands.

@@ -31,15 +31,13 @@ Clone 后先确认 scheme：
 xcodebuild -list -project SpaceTrace.xcodeproj
 ```
 
-当前基础验证命令：
+仓库的完整本地验证入口：
 
 ```bash
-xcodebuild -project SpaceTrace.xcodeproj -scheme SpaceTrace -configuration Debug -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
-xcodebuild -project SpaceTrace.xcodeproj -scheme SpaceTrace -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO test
-xcodebuild -project SpaceTrace.xcodeproj -scheme SpaceTrace -configuration Release -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+make verify
 ```
 
-仓库增加 `Makefile` 后，`make verify` 将成为与 CI 一致的唯一完整入口。签名、公证和 Sparkle 发布测试只在受保护 CI environment 中运行；普通贡献者不需要发布凭据。
+该命令与 CI 共用同一入口，依次执行仓库卫生和架构边界检查、`SpaceTraceKit` 测试、package 完整并发诊断与 warning-as-error 审计、scheme 发现、Debug 构建、应用单元测试和 Release 构建。也可用 `make package-concurrency-audit` 单独执行并发门槛。签名、公证和未来的更新发布测试只在受保护 CI environment 中运行；普通贡献者不需要发布凭据。
 
 ## Branches and commits
 

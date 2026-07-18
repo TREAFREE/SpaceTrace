@@ -4,7 +4,7 @@ SpaceTrace is a local-first macOS utility that explains **where disk space chang
 
 > What caused my Mac to lose disk space during the last day or week?
 
-The repository contains the initial Xcode macOS app scaffold. Product behavior has not been implemented yet; the current work establishes the product, architecture, privacy, and engineering contracts that implementation must follow.
+The repository contains the Xcode macOS app scaffold and the first tested architecture slice in a local Swift package. User-facing product behavior has not been implemented yet; the current work establishes the product contracts and validates the domain, FSEvents, persistence, and build boundaries that later features must follow.
 
 ## Product principles
 
@@ -31,6 +31,7 @@ The MVP does **not** promise exact process attribution, reproduce Apple's System
 | Architecture decisions | [ADR Index](docs/architecture/decisions/README.md) |
 | Engineering lifecycle | [Development Process](docs/engineering/development-process.md) |
 | Verification gates | [Quality Strategy](docs/engineering/quality-strategy.md) |
+| Current implementation evidence | [First Implementation Slice Status](docs/engineering/implementation-status.md) |
 | Privacy and threat model | [Privacy and Security](docs/security/privacy-and-security.md) |
 | Opportunity research | [Research Notes](docs/research/macos-opportunity-research-2026.md) · [Interactive Report](docs/research/macos-opportunity-research-2026.html) |
 | Shared terminology | [Glossary](docs/glossary.md) |
@@ -38,17 +39,18 @@ The MVP does **not** promise exact process attribution, reproduce Apple's System
 
 ## Project status
 
-- Stage: product discovery and technical design; Xcode scaffold created
+- Stage: architecture foundation and first technical spikes; user-facing MVP remains unimplemented
 - Target: public beta in approximately eight weeks (**assumption; pending confirmation**)
 - Supported baseline: macOS 15.6+, Apple Silicon first
 - Minimum-version qualification: build/test configuration is aligned; a macOS 15.6 runtime matrix remains required before Public Beta
 - Proposed implementation: Swift, SwiftUI with targeted AppKit integration
+- Implemented foundation: local `SpaceTraceKit` modules for domain observations, application persistence ports, a bounded FSEvents bridge, and an actor-isolated SQLite journal prototype
 - Proposed license: MIT (**TBD until explicitly approved**)
 - Distribution and signing: Developer ID, notarization, and update strategy remain release-blocking decisions
 
 ## Contributing
 
-Contribution rules, review gates, and decision processes are defined in [CONTRIBUTING.md](CONTRIBUTING.md). Before feature implementation begins, changes should focus on validation spikes, fixtures, accepted decisions, and making the scaffold match the approved support baseline.
+Contribution rules, review gates, and decision processes are defined in [CONTRIBUTING.md](CONTRIBUTING.md). Run `make verify` before submitting a change. Feature work should continue to prioritize validation spikes, fixtures, accepted decisions, and explicit evidence boundaries.
 
 ## Decision hierarchy
 

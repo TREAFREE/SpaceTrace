@@ -9,6 +9,9 @@ import SwiftUI
 
 @main
 struct SpaceTraceApp: App {
+    @NSApplicationDelegateAdaptor(SpaceTraceAppDelegate.self)
+    private var appDelegate
+
     var body: some Scene {
         WindowGroup {
             ContentView()

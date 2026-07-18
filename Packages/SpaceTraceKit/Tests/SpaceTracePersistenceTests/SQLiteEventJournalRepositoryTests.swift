@@ -64,6 +64,47 @@ struct SQLiteEventJournalRepositoryTests {
         fixture.remove()
     }
 
+    @Test("Schema version four migrates to security-scoped bookmark storage")
+    func migratesVersionFourBookmarkStorage() async throws {
+        let fixture = try TemporaryDatabase()
+        try createVersionFourFixture(at: fixture.databaseURL)
+        let repository = try SQLiteEventJournalRepository(databaseURL: fixture.databaseURL)
+        let bookmark = try makeWatchedScopeBookmark(
+            scopeID: "scope-migrated-bookmark",
+            root: "/Volumes/Migrated/Selected",
+            byte: 0x44
+        )
+
+        try await repository.upsertWatchedScopeBookmark(bookmark)
+
+        #expect(try await repository.watchedScopeBookmarks() == [bookmark])
+        try await repository.close()
+        fixture.remove()
+    }
+
+    @Test("Bookmark writes replace atomically by scope and support explicit removal")
+    func persistsAndRemovesBookmarks() async throws {
+        try await withRepository { repository in
+            let first = try makeWatchedScopeBookmark(
+                scopeID: "scope-bookmark",
+                root: "/Volumes/Projects/First",
+                byte: 0x01
+            )
+            let replacement = try makeWatchedScopeBookmark(
+                scopeID: "scope-bookmark",
+                root: "/Volumes/Projects/Replacement",
+                byte: 0x02
+            )
+
+            try await repository.upsertWatchedScopeBookmark(first)
+            try await repository.upsertWatchedScopeBookmark(replacement)
+            #expect(try await repository.watchedScopeBookmarks() == [replacement])
+
+            try await repository.removeWatchedScopeBookmark(for: replacement.scopeID)
+            #expect(try await repository.watchedScopeBookmarks().isEmpty)
+        }
+    }
+
     @Test("Duplicate mount callbacks persist one active generation")
     func deduplicatesPersistentMountActivation() async throws {
         try await withRepository { repository in
@@ -871,9 +912,54 @@ private func createVersionThreeMountFixture(at databaseURL: URL) throws {
     }
 }
 
+private func createVersionFourFixture(at databaseURL: URL) throws {
+    var database: OpaquePointer?
+    guard sqlite3_open(databaseURL.path, &database) == SQLITE_OK, let database else {
+        throw MigrationFixtureError.openFailed
+    }
+    defer { sqlite3_close(database) }
+
+    let sql = """
+        CREATE TABLE schema_migration (
+            version INTEGER PRIMARY KEY,
+            applied_at_ms INTEGER NOT NULL,
+            checksum TEXT NOT NULL
+        );
+        CREATE TABLE scope_mount_generation (
+            scope_id TEXT PRIMARY KEY NOT NULL,
+            mount_generation TEXT NOT NULL,
+            mount_path TEXT NOT NULL,
+            volume_uuid TEXT,
+            is_active INTEGER NOT NULL,
+            updated_at_ms INTEGER NOT NULL
+        ) WITHOUT ROWID;
+        INSERT INTO schema_migration(version, applied_at_ms, checksum)
+        VALUES(4, 0, 'scope-mount-generation-v4');
+        PRAGMA user_version = 4;
+        """
+    guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else {
+        throw MigrationFixtureError.createFailed
+    }
+}
+
 private enum MigrationFixtureError: Error {
     case openFailed
     case createFailed
+}
+
+private func makeWatchedScopeBookmark(
+    scopeID: String,
+    root: String,
+    byte: UInt8
+) throws -> WatchedScopeBookmark {
+    try WatchedScopeBookmark(
+        scopeID: WatchedScopeID(scopeID),
+        bookmarkData: Data([byte]),
+        expectedRoot: DirtyRegionPath(root),
+        expectedVolumeUUID: UUID(
+            uuidString: "11111111-2222-3333-4444-555555555555"
+        )!
+    )
 }
 
 private func makeBatch(

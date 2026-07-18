@@ -680,7 +680,15 @@ A retention option beyond 30 days is not part of the accepted baseline. It requi
 
 There is no stable public API that proves FDA globally. The application infers effective coverage from typed `EACCES`/`EPERM` observations at known protected regions and explains that this is evidence, not an authoritative permission-state query.
 
-### 14.2 Degradation behavior
+### 14.2 User-selected bookmark lifecycle
+
+The non-UI user-selected path is capability-based: the UI eventually supplies the original URL returned by the system selection surface; `SpaceTracePlatform` creates a read-only app-scoped bookmark and immediately proves it can resolve; `SpaceTracePersistence` stores only the opaque bookmark plus the exact normalized root and volume UUID; a restorable catalog retains the balanced security-scope lease for as long as native monitoring may touch that scope.
+
+On launch, bookmark resolution uses no UI and does not mount an absent volume. `mountPath` is never accepted from persistence: it is freshly derived from the resolved URL's volume resource and must contain the exact authorized root. Stale bookmarks, root drift, volume-UUID replacement, symlinks, non-directories, and access denial fail closed. Only temporary resource unavailability is retried when a later Disk Arbitration event reads the catalog; stale or identity-changing grants require explicit user reauthorization.
+
+`NativeMonitoringApplicationLifecycle` owns restoration and exactly one monitoring task. Zero persisted grants remains idle. One or more persisted grants starts volume observation even if every external scope is currently unavailable, allowing the matching volume to be restored after mount. Application termination cancels and awaits monitoring before releasing all access leases. Window/view lifecycle never owns this task. The detailed contract and current qualification boundary are recorded in [Security-Scoped Bookmark and Application Lifecycle](../engineering/security-scoped-bookmark-lifecycle.md).
+
+### 14.3 Degradation behavior
 
 - Permission denial marks a subtree inaccessible and preserves its previous complete value as stale.
 - Revocation during a scan prevents deletion inference under the affected parent.

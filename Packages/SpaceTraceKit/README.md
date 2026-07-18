@@ -7,19 +7,21 @@
 | Module | Responsibility | Platform coupling |
 | --- | --- | --- |
 | `SpaceTraceDomain` | Validated storage quantities, observation identities, coverage, and deltas | None |
-| `SpaceTraceApplication` | Dirty-region planning, calibration orchestration, mount-generation and event-stream lifecycle state machines, ports, and crash-consistency contracts | Foundation |
+| `SpaceTraceApplication` | Dirty-region planning, calibration orchestration, mount/event lifecycle state machines, opaque watched-scope bookmark contracts, ports, and crash-consistency contracts | Foundation |
 | `SpaceTraceFileSystem` | Per-device FSEvents identity/target resolution, callback bridge, conservative flag interpretation, semantic mapping, and a bounded metadata-only calibration scanner | CoreServices, Foundation, Darwin |
-| `SpaceTracePersistence` | Actor-isolated raw SQLite prototype for cursor, dirty work, scope mount generations, staged directory aggregates, and revision-safe atomic publication | SQLite3 |
-| `SpaceTracePlatform` | Read-only Disk Arbitration callback bridge with owned volume evidence, bounded buffering, and lifecycle-safe teardown | DiskArbitration, Dispatch |
-| `SpaceTraceMonitoring` | Non-UI composition of volume signals, exact mount-scope resolution, generation activation/closure, and FSEvents supervision | Application, filesystem, and platform adapters |
+| `SpaceTracePersistence` | Actor-isolated raw SQLite prototype for cursor, dirty work, scope mount generations, security-scoped bookmark records, staged directory aggregates, and revision-safe atomic publication | SQLite3 |
+| `SpaceTracePlatform` | Read-only Disk Arbitration callback bridge plus exact security-scoped bookmark acquisition/restoration and balanced access leases | Foundation, DiskArbitration, Dispatch |
+| `SpaceTraceMonitoring` | Non-UI composition of volume signals, exact mount-scope resolution, generation activation/closure, FSEvents supervision, and process-lifetime task ownership | Application, filesystem, and platform adapters |
 
-The filesystem, platform, monitoring, application pipeline, and persistence modules are architecture-spike implementations for proposed ADR-003 and ADR-004. Their non-UI composition is implemented and tested, but it is not connected to a user-visible workflow while those decisions remain proposed.
+The filesystem, platform, monitoring, application pipeline, and persistence modules are architecture-spike implementations for proposed ADR-003 and ADR-004. Their non-UI composition is implemented and tested, and the process lifecycle now restores persisted user grants before starting monitoring. No directory-selection or permission UI reaches this path while those decisions remain proposed.
 
 The package test suite includes serialized per-device FSEvents tests. They create and remove only a UUID-named directory below the system temporary directory, fail closed unless that directory is on APFS and outside the user's home directory, and use a native flush boundary instead of timing sleeps. Durable replay requires both a persistent volume UUID and the current FSEvents journal UUID; otherwise the resolver permits only `sinceNow` monitoring.
 
 The non-UI supervisor also owns post-start failure recovery. An unexpected termination first makes continuity loss durable, then re-resolves the approved mount evidence and starts a `sinceNow` stream under the same mount generation. Recovery uses bounded exponential backoff and a circuit breaker; unmount, generation replacement, and shutdown cancel the owned recovery task. The supervisor publishes a bounded application-owned lifecycle stream (`inactive`, `active`, `recovering`, or `failed`) so a future health UI can observe transitions without importing CoreServices or polling adapter internals.
 
 The exact claim boundary for daemon-generated `UserDropped`, `KernelDropped`, and event-ID wrap is documented in the [FSEvents continuity-loss qualification protocol](../../docs/engineering/fsevents-continuity-qualification.md) and its [Chinese translation](../../docs/engineering/fsevents-continuity-qualification.zh-CN.md).
+
+The bookmark/catalog/application ownership contract is documented in [Security-Scoped Bookmark and Application Lifecycle](../../docs/engineering/security-scoped-bookmark-lifecycle.md) and its [Chinese translation](../../docs/engineering/security-scoped-bookmark-lifecycle.zh-CN.md).
 
 An opt-in qualification test creates two 64 MiB APFS images with the same volume name, mounts only at a UUID-named path below `/tmp`, performs normal detach/remount/replacement, verifies distinct mount generations and restarted FSEvents delivery, then removes the images. It is intentionally excluded from normal `make verify` runs:
 

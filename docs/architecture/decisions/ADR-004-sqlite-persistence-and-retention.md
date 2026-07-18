@@ -28,6 +28,7 @@ The application has no backend, multi-user database, or cross-device synchroniza
 10. Schema migrations are ordered, checksummed, forward-only, and tested from every released fixture. Migration failure enters read-only recovery rather than silently replacing the database.
 11. Protect the database directory/file with user-only modes, exclude it from SpaceTrace scans, and never include it in diagnostic export.
 12. Any option beyond 30 days requires a future RFC/PRD update. It must be user-visible, clearable, explicitly opt-in, default-off, and disclose estimated privacy/storage cost.
+13. Schema v5 stores user-selected watched-scope bookmarks as bounded opaque BLOBs together with the exact authorized root and volume UUID. Platform resolution, not persistence, derives the current mount path and activates access.
 
 ## Options considered
 

@@ -16,18 +16,20 @@
 | FSEvents 桥接层 | 按设备解析监控目标；持久化卷/日志标识；校验卷内相对路径；还原应用绝对路径；支持重启的完整历史回放；可注入故障的流构造；对被拒绝的历史回放和启动后意外终止执行带校准恢复；处理根目录变化哨兵；安全持有原生资源生命周期；有界单消费者适配器；无日志 UUID 卷使用仅实时的主机流降级方案 | 持久回放同时绑定卷 UUID 与 FSEvents 日志 UUID；绝不持久化临时的 `dev_t`；恢复必须先持久化连续性丢失再开始实时监控；非持久降级流只属于一个挂载 generation |
 | 挂载生命周期 | 只读 Disk Arbitration 出现、消失、挂载路径变化观测；拥有所有权的回调快照；有界溢出信号；只匹配配置的精确挂载根；仅在已批准 scope 内补充 UUID；纯函数式 scope 挂载 generation 状态机；事务型持久化端口 | 枚举父卷不能激活外部卷 scope；重复回调复用同一个活跃 generation；每次观测到重新挂载都会创建新 generation；相同挂载路径上的不同 UUID 不能继承历史；迟到的卸载只能关闭其对应 generation |
 | 非 UI 监控组合 | actor 隔离的 Disk Arbitration 消费；有界挂载就绪重试；事务型激活/关闭；每个 scope 只拥有一个 FSEvents 消费任务；按 generation 条件停止/重启；带指数退避和熔断的启动后恢复；应用层拥有的生命周期状态与有界最新状态流；溢出后重建事件源 | 原生回调顺序不能悄悄重排并发 generation 工作；短暂故障只在固定上限内重试；卸载/替换会取消所属恢复任务；生命周期消费者无需轮询适配器即可获得当前 inactive/active/recovering/failed 状态；回调精度丢失时必须在重新枚举前关闭相关事件流 |
+| 权限与 catalog 生命周期 | 非 UI 的只读 bookmark 获取；opaque 应用层记录；精确 root/volume 恢复；重新派生 mount path；隐私安全的部分失败报告；外置卷缺席重试；配对 access lease | stale、路径移动、替换卷、符号链接、非目录和拒绝访问都不能悄悄扩大 scope 或自动刷新；只有暂时缺席会重试 |
+| 应用进程生命周期 | AppKit 启动/退出桥接；Application Support 组合；catalog 恢复；唯一 runtime 任务；异步退出协调；runtime 关闭后释放 lease | 关闭窗口不会停止监控；退出应用会先取消并等待原生工作，再释放权限能力；没有配置授权时保持 idle |
 | 失效映射 | 从适配器语义映射到应用层；词法 scope 校验；文件事件投影到父目录；过滤重放重叠；事件 ID generation 作废；祖先路径合并 | 路径含糊或连续性中断时，牺牲精度并退化为 scope 校准；事件 ID 回绕会作废旧 checkpoint，并让整个摄取批次不携带游标 |
 | 元数据校准扫描器 | 基于 Foundation/Darwin 的纯元数据遍历；显式限制条目数、深度、时长与批次；协作式取消；强制同卷；不跟随符号链接；硬链接分配量去重；强类型覆盖缺口 | 永不打开文件内容；叶子路径不会越过目录聚合边界；预算耗尽、权限丢失、挂载边界和取消都不能伪装成完整证据 |
 | 校准流水线 | actor 隔离的摄取与有界协调；通过应用层 scanner 端口执行扫描；使用结构化异步 staging | 部分完成或被取消的扫描会丢弃 staging 并保留 dirty work；扫描期间数据若变旧，完成的旧扫描不能发布数据或清除已经更新的工作 |
 | 事件日志端口 | 应用层拥有的持久事件流标识、连续性分类、游标、dirty region、行 revision、原因、批次及条件清理契约 | checkpoint 只有在同一批次中已有持久 dirty work 时才能写入；卷 UUID 或日志 UUID 任一变化都会选择不同的持久事件流 generation |
-| SQLite 原型 | actor 持有的 SQLite3 连接；WAL；schema v4；大端 `UInt64` 游标和 revision；持久 scope 挂载 generation；扫描运行与目录 staging 表；当前目录聚合；原子发布；无游标校准标记；checkpoint generation 作废；回滚故障接缝 | 游标推进与 dirty region 持久化保持原子性且不能倒退；挂载激活在一个写事务中完成分类和存储；generation 只能条件关闭；日志 generation 作废会原子清除 checkpoint 和所有待处理游标，并推进工作 revision |
-| 构建集成 | 本地 `SpaceTraceKit` Swift Package 已链接到 macOS 应用 target | 应用组合根可以依赖模块化非 UI target，无需复制源码 |
+| SQLite 原型 | actor 持有的 SQLite3 连接；WAL；schema v5；有界 opaque security-scoped bookmark；大端 `UInt64` 游标和 revision；持久 scope 挂载 generation；扫描运行与目录 staging 表；当前目录聚合；原子发布；无游标校准标记；checkpoint generation 作废；回滚故障接缝 | 游标推进与 dirty region 持久化保持原子性且不能倒退；bookmark 身份无需平台解码即可往返持久化；挂载激活在一个写事务中完成分类和存储；generation 只能条件关闭；日志 generation 作废会原子清除 checkpoint 和所有待处理游标，并推进工作 revision |
+| 构建集成 | 本地 `SpaceTraceKit` 已链接到 macOS 应用 target；显式声明只读 app-scoped bookmark entitlement；应用保持薄组合根 | 应用 target 能够恢复授权并持有模块化非 UI runtime 生命周期，无需复制源码或让 UI 拥有任务 |
 
 ## 验证证据
 
 以下门禁已在 2026-07-18 使用 Swift 6.2.1 与 Xcode 26.1.1 通过：
 
-- `swift test --package-path Packages/SpaceTraceKit`：135 个测试、20 个 suite（会改变测试环境的资格测试保持 opt-in，常规运行中显示为 skipped）；
+- `swift test --package-path Packages/SpaceTraceKit`：148 个测试、23 个 suite（会改变测试环境的资格测试保持 opt-in，常规运行中显示为 skipped）；
 - 同一套 package 测试在完整严格并发诊断以及“编译器警告视为错误”条件下通过；
 - 一条从适配器到应用层再到真实 SQLite 的集成测试，校准 scanner 使用注入实现；
 - 四条串行的按设备 FSEvents 集成测试，在受保护的一次性 APFS 目录上覆盖持久标识解析、实时事件、单订阅失败、取消清理、显式停止、重启、经 `HistoryDone` 完成的历史回放以及真实回调缓冲区溢出标记；
@@ -37,6 +39,7 @@
 - 通过可注入 client 与 resolver 的确定性测试，证明原生流创建失败和启动失败都会作废存量回放 checkpoint、持久化 scope 级校准工作、只尝试一次 `sinceNow` 恢复，并在该恢复同样失败时保持非活跃状态；
 - 通过确定性的启动后生命周期测试，证明自动实时恢复、连续性作废持久化、启动失败和重复终止的有界熔断、退避期间取消、拒绝未知/替换卷身份以及恢复策略参数校验；测试不依赖定时 sleep；
 - 通过确定性的生命周期状态观测测试，证明当前状态回放、`inactive → active → recovering → active`、终态 `failed`、按 generation 停止后的清理，以及缓冲区正数校验；
+- 通过确定性的 bookmark/catalog 测试，证明有效/stale 部分恢复、外置卷缺席后重试、stale 不自动刷新、授权获取持久化、lease 恰好释放一次，以及真实原生无 UI bookmark round-trip；同时覆盖 SQLite v4 到 v5 迁移与进程生命周期取消/清理；
 - 穷举运行两个持久卷身份与三个运行时磁盘身份组成的全部 2,401 条四信号应用状态序列，并为用户态丢失、内核丢失、事件 ID 回绕和回调溢出提供参数化的端到端持久化/校准证据；
 - 权限丢失、符号链接、挂载边界、硬链接、预算和取消的确定性元数据 fixture，以及仅作用于一次性临时目录的生产适配器测试；
 - `make verify`，其中包括架构检查、package 测试、Xcode scheme 发现、Debug 构建、应用单元测试和 Release 构建；
@@ -47,9 +50,9 @@
 ## 明确不作出的声明
 
 - 尚未实现面向用户的扫描、历史、解释、菜单栏、权限或导出工作流。
-- 生产 scanner、schema v3 staging 路径、schema v4 挂载映射、Disk Arbitration 事件源和 FSEvents supervisor 已组合进非 UI package runtime，但尚未接入应用 target 或任何用户可见流程。
+- 生产 scanner、schema v3 staging 路径、schema v4 挂载映射、schema v5 bookmark catalog、Disk Arbitration 事件源和 FSEvents supervisor 已接入应用进程生命周期，但目前没有目录选择或权限 UI 可以配置它们。
 - 扫描调度尚未响应温度状态、电池状态或系统负载。硬链接去重受条目预算限制，但每次扫描运行期间仍保存在内存中。
-- 尚未实现权限 scope 获取、安全作用域 bookmark 生命周期、云占位文件分类或 APFS snapshot 对账。
+- security-scoped bookmark 获取/恢复已经实现为非 UI API 与进程生命周期，但真实 sandbox Powerbox 选择、运行中权限撤销、stale bookmark 重新授权 UI、云占位文件分类和 APFS snapshot 对账尚未实现或完成资格验证。
 - 不会依据 FSEvents 推断精确字节差值或进程归因。
 - 原生资格测试已经在开发主机上覆盖受控卸载、重挂和同名卷替换；但最老支持系统的真实运行、守护进程真实 `UserDropped`/`KernelDropped`、事件 ID 回绕、睡眠/唤醒以及权限撤销仍未完成资格验证；允许采用的证据边界记录在 [FSEvents 连续性丢失资格验证](fsevents-continuity-qualification.zh-CN.md) 中。
 - 启动后自动恢复已经有界且经过测试，但守护进程真实 drop/wrap 条件以及最老支持 macOS 上的恢复行为仍未完成资格验证。
@@ -62,6 +65,6 @@
 1. 只有在符合连续性丢失资格规程且能够安全复现时，才采集真实守护进程 drop/wrap 证据，并在最低支持 macOS 运行时验证恢复行为。
 2. 完成 ADR-004 的 GRDB 与原生 SQLite 评审，包括许可证、构建、迁移和公证证据。
 3. 扩展 schema 迁移 fixture 矩阵，增加磁盘写满/损坏测试、保留行为与最老支持系统资格验证。
-4. 实现用户选择的安全作用域 bookmark 获取与恢复，使 `WatchedScope.root` 和 `mountPath` 来自明确授权；随后在不扩大 scope 的前提下，把非 UI runtime 接入应用生命周期。
+4. 增加由用户主动触发的系统目录选择与重新授权流程，并在不削弱现有精确 scope 契约的前提下，于 macOS 15.6 验证沙盒重启恢复、运行中撤权、stale bookmark、外置卷返回和应用退出。
 5. 增加温度、电源、睡眠/唤醒、权限撤销以及生产校准调度策略。
 6. 在相应 ADR 被接受之前，继续保证所有架构验证代码都无法从用户可见流程触达。

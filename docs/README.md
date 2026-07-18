@@ -21,7 +21,8 @@ This directory is the durable source of truth for product, architecture, enginee
 6. [Quality Strategy](engineering/quality-strategy.md)
 7. [First Implementation Slice Status](engineering/implementation-status.md)
 8. [FSEvents Continuity-Loss Qualification](engineering/fsevents-continuity-qualification.md) · [中文](engineering/fsevents-continuity-qualification.zh-CN.md)
-9. [Contributing](../CONTRIBUTING.md)
+9. [Security-Scoped Bookmark and Application Lifecycle](engineering/security-scoped-bookmark-lifecycle.md) · [中文](engineering/security-scoped-bookmark-lifecycle.zh-CN.md)
+10. [Contributing](../CONTRIBUTING.md)
 
 ### Product evidence
 

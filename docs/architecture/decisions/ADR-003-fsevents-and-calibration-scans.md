@@ -96,7 +96,7 @@ Release gates require property-based event/scan/crash sequences to preserve the 
 - An exhaustive model test executes all 2,401 four-signal sequences formed from two stable volume identities, three runtime disk identities, unmounts, and callback continuity loss. Repository activity, coordinator bindings, restart uniqueness, and conditional stop ownership remain consistent for every sequence.
 - `UserDropped`, `KernelDropped`, event-ID wrap, and application callback overflow now have parameterized adapter-to-SQLite-to-calibration evidence. The separate [continuity-loss qualification protocol](../../engineering/fsevents-continuity-qualification.md) records why injected semantics cannot be presented as a genuine daemon trigger.
 
-ADR-003 remains **Proposed**. Genuine daemon drop/wrap conditions, user-selected bookmark composition, and oldest-supported-OS qualification are still open validation items.
+ADR-003 remains **Proposed**. User-selected bookmark composition now supplies exact restored scopes to the native runtime, but genuine daemon drop/wrap conditions, live permission-revocation behavior, and oldest-supported-OS qualification are still open validation items.
 
 ## Revisit triggers
 

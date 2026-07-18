@@ -6,8 +6,8 @@ import Synchronization
 
 /// A dependency-free SQLite prototype for ADR-004. The actor is the sole
 /// owner of the connection and serializes every transaction and query.
-public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGenerationRepository {
-    private static let schemaVersion: Int32 = 4
+public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGenerationRepository, WatchedScopeBookmarkRepository {
+    private static let schemaVersion: Int32 = 5
 
     /// `Mutex` makes the non-Sendable C handle safe to release from the
     /// actor's nonisolated deinitializer. All operational access remains
@@ -244,6 +244,139 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         for scopeID: WatchedScopeID
     ) throws -> ScopeMountGeneration? {
         try readScopeMountGeneration(for: scopeID)
+    }
+
+    public func watchedScopeBookmarks() throws -> [WatchedScopeBookmark] {
+        let sql = """
+            SELECT scope_id, bookmark, expected_root, expected_volume_uuid
+            FROM watched_scope_bookmark
+            ORDER BY scope_id ASC
+            """
+        return try withStatement(sql, operation: "read watched-scope bookmarks") { statement in
+            var bookmarks: [WatchedScopeBookmark] = []
+            while true {
+                let result = sqlite3_step(statement)
+                switch result {
+                case SQLITE_ROW:
+                    let scopeID = try readText(
+                        from: statement,
+                        column: 0,
+                        field: "watched_scope_bookmark.scope_id"
+                    )
+                    let data = try readData(
+                        from: statement,
+                        column: 1,
+                        field: "watched_scope_bookmark.bookmark"
+                    )
+                    let expectedRoot = try readText(
+                        from: statement,
+                        column: 2,
+                        field: "watched_scope_bookmark.expected_root"
+                    )
+                    let expectedVolumeUUID = try readText(
+                        from: statement,
+                        column: 3,
+                        field: "watched_scope_bookmark.expected_volume_uuid"
+                    )
+                    do {
+                        guard let volumeUUID = UUID(uuidString: expectedVolumeUUID) else {
+                            throw SQLiteEventJournalError.corruptStoredValue(
+                                field: "watched_scope_bookmark.expected_volume_uuid"
+                            )
+                        }
+                        bookmarks.append(
+                            try WatchedScopeBookmark(
+                                scopeID: WatchedScopeID(scopeID),
+                                bookmarkData: data,
+                                expectedRoot: DirtyRegionPath(expectedRoot),
+                                expectedVolumeUUID: volumeUUID
+                            )
+                        )
+                    } catch let error as SQLiteEventJournalError {
+                        throw error
+                    } catch {
+                        throw SQLiteEventJournalError.corruptStoredValue(
+                            field: "watched_scope_bookmark"
+                        )
+                    }
+                case SQLITE_DONE:
+                    return bookmarks
+                default:
+                    throw sqliteFailure(
+                        operation: "step watched-scope bookmark query",
+                        code: result
+                    )
+                }
+            }
+        }
+    }
+
+    public func upsertWatchedScopeBookmark(_ bookmark: WatchedScopeBookmark) throws {
+        let sql = """
+            INSERT INTO watched_scope_bookmark(
+                scope_id, bookmark, expected_root, expected_volume_uuid,
+                created_at_ms, updated_at_ms
+            ) VALUES(
+                ?1, ?2, ?3, ?4,
+                CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+                CAST(strftime('%s', 'now') AS INTEGER) * 1000
+            )
+            ON CONFLICT(scope_id) DO UPDATE SET
+                bookmark = excluded.bookmark,
+                expected_root = excluded.expected_root,
+                expected_volume_uuid = excluded.expected_volume_uuid,
+                updated_at_ms = excluded.updated_at_ms
+            """
+        try withStatement(sql, operation: "upsert watched-scope bookmark") { statement in
+            try bookmark.scopeID.rawValue.withCString { scopeCString in
+                try bookmark.expectedRoot.rawValue.withCString { rootCString in
+                    try bookmark.expectedVolumeUUID.uuidString.lowercased().withCString {
+                        volumeCString in
+                        try bookmark.bookmarkData.withUnsafeBytes { bookmarkBuffer in
+                            try check(
+                                sqlite3_bind_text(statement, 1, scopeCString, -1, nil),
+                                operation: "bind bookmark scope ID"
+                            )
+                            try check(
+                                sqlite3_bind_blob(
+                                    statement,
+                                    2,
+                                    bookmarkBuffer.baseAddress,
+                                    Int32(bookmarkBuffer.count),
+                                    nil
+                                ),
+                                operation: "bind bookmark data"
+                            )
+                            try check(
+                                sqlite3_bind_text(statement, 3, rootCString, -1, nil),
+                                operation: "bind bookmark expected root"
+                            )
+                            try check(
+                                sqlite3_bind_text(statement, 4, volumeCString, -1, nil),
+                                operation: "bind bookmark expected volume UUID"
+                            )
+                            try stepExpectingDone(
+                                statement,
+                                operation: "write watched-scope bookmark"
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    public func removeWatchedScopeBookmark(for scopeID: WatchedScopeID) throws {
+        let sql = "DELETE FROM watched_scope_bookmark WHERE scope_id = ?1"
+        try withStatement(sql, operation: "remove watched-scope bookmark") { statement in
+            try scopeID.rawValue.withCString { scopeCString in
+                try check(
+                    sqlite3_bind_text(statement, 1, scopeCString, -1, nil),
+                    operation: "bind removed bookmark scope ID"
+                )
+                try stepExpectingDone(statement, operation: "delete watched-scope bookmark")
+            }
+        }
     }
 
     public func pendingDirtyWork(
@@ -593,15 +726,21 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             try migrateToVersionTwo(database)
             try migrateToVersionThree(database)
             try migrateToVersionFour(database)
+            try migrateToVersionFive(database)
         case 1:
             try migrateToVersionTwo(database)
             try migrateToVersionThree(database)
             try migrateToVersionFour(database)
+            try migrateToVersionFive(database)
         case 2:
             try migrateToVersionThree(database)
             try migrateToVersionFour(database)
+            try migrateToVersionFive(database)
         case 3:
             try migrateToVersionFour(database)
+            try migrateToVersionFive(database)
+        case 4:
+            try migrateToVersionFive(database)
         default:
             throw SQLiteEventJournalError.unsupportedSchemaVersion(currentVersion)
         }
@@ -620,6 +759,62 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             """,
             operation: "close stale active mount generations"
         )
+    }
+
+    private static func migrateToVersionFive(_ database: OpaquePointer) throws {
+        try execute(
+            on: database,
+            "BEGIN IMMEDIATE TRANSACTION",
+            operation: "begin schema migration v5"
+        )
+        do {
+            try execute(
+                on: database,
+                """
+                CREATE TABLE watched_scope_bookmark (
+                    scope_id TEXT PRIMARY KEY NOT NULL
+                        CHECK(length(scope_id) > 0 AND instr(scope_id, char(0)) = 0),
+                    bookmark BLOB NOT NULL
+                        CHECK(length(bookmark) > 0 AND length(bookmark) <= 1048576),
+                    expected_root TEXT NOT NULL
+                        CHECK(length(expected_root) > 0
+                            AND substr(expected_root, 1, 1) = '/'
+                            AND instr(expected_root, char(0)) = 0),
+                    expected_volume_uuid TEXT NOT NULL
+                        CHECK(length(expected_volume_uuid) = 36
+                            AND instr(expected_volume_uuid, char(0)) = 0),
+                    created_at_ms INTEGER NOT NULL,
+                    updated_at_ms INTEGER NOT NULL
+                ) WITHOUT ROWID;
+
+                INSERT INTO schema_migration(version, applied_at_ms, checksum)
+                VALUES(5, CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+                    'security-scoped-watch-bookmark-v5');
+
+                PRAGMA user_version = 5;
+                """,
+                operation: "apply schema migration version 5"
+            )
+            try execute(
+                on: database,
+                "COMMIT TRANSACTION",
+                operation: "commit schema migration v5"
+            )
+        } catch let migrationError {
+            do {
+                try execute(
+                    on: database,
+                    "ROLLBACK TRANSACTION",
+                    operation: "roll back schema migration v5"
+                )
+            } catch let rollbackError {
+                throw SQLiteEventJournalError.rollbackFailed(
+                    original: String(describing: migrationError),
+                    rollback: String(describing: rollbackError)
+                )
+            }
+            throw migrationError
+        }
     }
 
     private static func migrateToVersionFour(_ database: OpaquePointer) throws {
@@ -1654,6 +1849,22 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             return nil
         }
         return try readText(from: statement, column: column, field: field)
+    }
+
+    private func readData(
+        from statement: OpaquePointer,
+        column: Int32,
+        field: String
+    ) throws -> Data {
+        guard sqlite3_column_type(statement, column) == SQLITE_BLOB else {
+            throw SQLiteEventJournalError.corruptStoredValue(field: field)
+        }
+        let count = Int(sqlite3_column_bytes(statement, column))
+        guard count > 0, count <= WatchedScopeBookmark.maximumBookmarkByteCount,
+              let bytes = sqlite3_column_blob(statement, column) else {
+            throw SQLiteEventJournalError.corruptStoredValue(field: field)
+        }
+        return Data(bytes: bytes, count: count)
     }
 
     private func readCursor(

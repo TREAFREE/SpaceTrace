@@ -123,12 +123,15 @@ public struct DirtyRegionReason: OptionSet, Sendable, Equatable, Hashable, Codab
 public struct DirtyRegion: Sendable, Equatable, Hashable, Codable {
     public let path: DirtyRegionPath
     public let reasons: DirtyRegionReason
-    public let maximumCursor: EventJournalCursor
+    /// The newest journal cursor represented by this work, when one exists.
+    /// Out-of-band continuity failures such as `RootChanged` may create
+    /// durable calibration work without advancing or inventing a cursor.
+    public let maximumCursor: EventJournalCursor?
 
     public init(
         path: DirtyRegionPath,
         reasons: DirtyRegionReason,
-        maximumCursor: EventJournalCursor
+        maximumCursor: EventJournalCursor?
     ) throws(EventJournalModelError) {
         guard reasons.isEmpty == false else {
             throw .emptyDirtyRegionReasons
@@ -143,7 +146,10 @@ public struct DirtyRegion: Sendable, Equatable, Hashable, Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let path = try container.decode(DirtyRegionPath.self, forKey: .path)
         let reasons = try container.decode(DirtyRegionReason.self, forKey: .reasons)
-        let maximumCursor = try container.decode(EventJournalCursor.self, forKey: .maximumCursor)
+        let maximumCursor = try container.decodeIfPresent(
+            EventJournalCursor.self,
+            forKey: .maximumCursor
+        )
 
         do {
             try self.init(path: path, reasons: reasons, maximumCursor: maximumCursor)
@@ -179,8 +185,13 @@ public struct EventJournalBatch: Sendable, Equatable, Codable {
         guard dirtyRegions.isEmpty == false else {
             throw .emptyBatch
         }
-        guard dirtyRegions.allSatisfy({ $0.maximumCursor <= checkpoint }) else {
-            throw .dirtyRegionCursorExceedsCheckpoint
+        for region in dirtyRegions {
+            guard let maximumCursor = region.maximumCursor else {
+                throw .eventBatchRequiresCursors
+            }
+            guard maximumCursor <= checkpoint else {
+                throw .dirtyRegionCursorExceedsCheckpoint
+            }
         }
 
         self.streamID = streamID
@@ -221,7 +232,54 @@ public enum EventJournalModelError: Error, Sendable, Equatable {
     case invalidDirtyRegionPath(String)
     case emptyDirtyRegionReasons
     case emptyBatch
+    case eventBatchRequiresCursors
     case dirtyRegionCursorExceedsCheckpoint
+    case invalidDirtyRegionRevision(UInt64)
+}
+
+/// A monotonic row token used to prevent an older calibration result from
+/// clearing dirty work that changed while the scan was in flight.
+public struct DirtyRegionRevision: Sendable, Equatable, Hashable, Comparable, Codable {
+    public let rawValue: UInt64
+
+    public init(_ rawValue: UInt64) throws(EventJournalModelError) {
+        guard rawValue > 0 else {
+            throw .invalidDirtyRegionRevision(rawValue)
+        }
+        self.rawValue = rawValue
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(UInt64.self)
+        do {
+            try self.init(rawValue)
+        } catch {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "DirtyRegionRevision must be greater than zero."
+            )
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
+    public static func < (lhs: DirtyRegionRevision, rhs: DirtyRegionRevision) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+public struct DirtyRegionWorkItem: Sendable, Equatable, Hashable, Codable {
+    public let region: DirtyRegion
+    public let revision: DirtyRegionRevision
+
+    public init(region: DirtyRegion, revision: DirtyRegionRevision) {
+        self.region = region
+        self.revision = revision
+    }
 }
 
 /// Application-owned persistence port. Implementations may use SQLite, an
@@ -229,6 +287,15 @@ public enum EventJournalModelError: Error, Sendable, Equatable {
 /// into filesystem or application logic.
 public protocol EventJournalRepository: Sendable {
     func commit(_ batch: EventJournalBatch) async throws
+    func markDirty(streamID: EventStreamID, regions: [DirtyRegion]) async throws
     func checkpoint(for streamID: EventStreamID) async throws -> EventJournalCursor?
     func dirtyRegions(for streamID: EventStreamID) async throws -> [DirtyRegion]
+    func pendingDirtyWork(
+        for streamID: EventStreamID,
+        limit: Int
+    ) async throws -> [DirtyRegionWorkItem]
+    func resolve(
+        _ workItem: DirtyRegionWorkItem,
+        for streamID: EventStreamID
+    ) async throws -> Bool
 }

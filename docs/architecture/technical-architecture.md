@@ -330,7 +330,7 @@ FSEvents is an advisory, coalescing change journal. It tells SpaceTrace where ca
 - Never purge the system FSEvents journal.
 - An explicit mount generation separates observations across unmount/remount boundaries.
 
-Volume lifecycle composition is ordered and non-UI: Disk Arbitration callback → normalized application signal → exact configured mount-root match → approved-scope evidence resolution → transactional generation activation/closure → conditional FSEvents stop/restart. Disk Arbitration volume names and `dev_t` values are runtime evidence only. A callback-bridge overflow closes every correlated generation and recreates the observation session so enumeration repairs the lost callback interval.
+Volume lifecycle composition is ordered and non-UI: Disk Arbitration callback → normalized application signal → exact configured mount-root match → approved-scope evidence resolution → transactional generation activation/closure → conditional FSEvents stop/restart. Disk Arbitration volume names and `dev_t` values are runtime evidence only. A callback-bridge overflow closes every correlated generation and recreates the observation session so enumeration repairs the lost callback interval. If a started stream terminates unexpectedly, its supervisor first persists scope-level continuity loss, re-resolves the approved volume evidence, and attempts a `sinceNow` stream under the same mount generation. Exponential backoff, a fixed circuit breaker, stability-based attempt reset, and generation-bound cancellation prevent an infinite restart loop or resurrection after unmount.
 
 ### 9.2 Durable cursor protocol
 
@@ -358,6 +358,7 @@ The scanner leases a dirty region together with its current `max_event_id`. On s
 | Event ID lower than persisted with same expected stream | Treat as journal reset/restore; invalidate cursor and calibrate |
 | Volume UUID or FSEvents journal UUID mismatch | Create a new stream generation; never apply the old cursor or deltas |
 | Stream start failure | Fall back to scheduled calibration and surface degraded freshness |
+| Unexpected post-start termination | Persist stale calibration work, revalidate volume evidence, and recover with bounded `sinceNow` retries; remain degraded after circuit-breaker exhaustion |
 
 ### 9.4 Reconciliation state machine
 

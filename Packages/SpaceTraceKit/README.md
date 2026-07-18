@@ -17,6 +17,8 @@ The filesystem, platform, monitoring, application pipeline, and persistence modu
 
 The package test suite includes serialized per-device FSEvents tests. They create and remove only a UUID-named directory below the system temporary directory, fail closed unless that directory is on APFS and outside the user's home directory, and use a native flush boundary instead of timing sleeps. Durable replay requires both a persistent volume UUID and the current FSEvents journal UUID; otherwise the resolver permits only `sinceNow` monitoring.
 
+The non-UI supervisor also owns post-start failure recovery. An unexpected termination first makes continuity loss durable, then re-resolves the approved mount evidence and starts a `sinceNow` stream under the same mount generation. Recovery uses bounded exponential backoff and a circuit breaker; unmount, generation replacement, and shutdown cancel the owned recovery task.
+
 An opt-in qualification test creates two 64 MiB APFS images with the same volume name, mounts only at a UUID-named path below `/tmp`, performs normal detach/remount/replacement, verifies distinct mount generations and restarted FSEvents delivery, then removes the images. It is intentionally excluded from normal `make verify` runs:
 
 ```bash

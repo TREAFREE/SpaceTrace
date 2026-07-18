@@ -24,11 +24,13 @@ public actor NativeVolumeMonitoringRuntime {
         eventBufferCapacity: Int = 128,
         fseventLatency: TimeInterval = 1,
         fseventBufferCapacity: Int = 512,
+        fseventRecoveryPolicy: FSEventStreamRecoveryPolicy = .standard,
         excludeEventsFromThisProcess: Bool = true
     ) {
         let supervisor = NativeScopeFSEventSupervisor(
             repository: repository,
             scanner: scanner,
+            recoveryPolicy: fseventRecoveryPolicy,
             latency: fseventLatency,
             bufferCapacity: fseventBufferCapacity,
             excludeEventsFromThisProcess: excludeEventsFromThisProcess
@@ -80,6 +82,12 @@ public actor NativeVolumeMonitoringRuntime {
 
     public func lastStreamFailure(for scopeID: WatchedScopeID) async -> String? {
         await supervisor.lastFailure(for: scopeID)
+    }
+
+    public func streamRecoveryStatus(
+        for scopeID: WatchedScopeID
+    ) async -> ScopeFSEventRecoveryStatus? {
+        await supervisor.recoveryStatus(for: scopeID)
     }
 
     public func isObservingVolumeEvents() -> Bool {

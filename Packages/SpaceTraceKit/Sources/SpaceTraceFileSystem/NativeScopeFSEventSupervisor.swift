@@ -1,6 +1,77 @@
 import Foundation
 import SpaceTraceApplication
 
+public struct FSEventStreamRecoveryPolicy: Sendable, Equatable {
+    public let maximumAttempts: Int
+    public let initialBackoffMilliseconds: Int
+    public let maximumBackoffMilliseconds: Int
+    public let stabilityThresholdMilliseconds: Int
+
+    public init(
+        maximumAttempts: Int = 5,
+        initialBackoffMilliseconds: Int = 100,
+        maximumBackoffMilliseconds: Int = 2_000,
+        stabilityThresholdMilliseconds: Int = 30_000
+    ) throws(FSEventStreamRecoveryPolicyError) {
+        guard maximumAttempts > 0 else {
+            throw .maximumAttemptsMustBePositive
+        }
+        guard initialBackoffMilliseconds >= 0 else {
+            throw .initialBackoffMustBeNonnegative
+        }
+        guard maximumBackoffMilliseconds >= initialBackoffMilliseconds else {
+            throw .maximumBackoffMustCoverInitialBackoff
+        }
+        guard stabilityThresholdMilliseconds >= 0 else {
+            throw .stabilityThresholdMustBeNonnegative
+        }
+        self.maximumAttempts = maximumAttempts
+        self.initialBackoffMilliseconds = initialBackoffMilliseconds
+        self.maximumBackoffMilliseconds = maximumBackoffMilliseconds
+        self.stabilityThresholdMilliseconds = stabilityThresholdMilliseconds
+    }
+
+    public static var standard: Self {
+        Self(
+            validatedMaximumAttempts: 5,
+            initialBackoffMilliseconds: 100,
+            maximumBackoffMilliseconds: 2_000,
+            stabilityThresholdMilliseconds: 30_000
+        )
+    }
+
+    fileprivate func backoff(forAttempt attempt: Int) -> Duration {
+        guard attempt > 1, initialBackoffMilliseconds > 0 else { return .zero }
+        let exponent = min(attempt - 2, 30)
+        let multiplier = 1 << exponent
+        let (candidate, overflow) = initialBackoffMilliseconds
+            .multipliedReportingOverflow(by: multiplier)
+        let milliseconds = overflow
+            ? maximumBackoffMilliseconds
+            : min(candidate, maximumBackoffMilliseconds)
+        return .milliseconds(milliseconds)
+    }
+
+    private init(
+        validatedMaximumAttempts: Int,
+        initialBackoffMilliseconds: Int,
+        maximumBackoffMilliseconds: Int,
+        stabilityThresholdMilliseconds: Int
+    ) {
+        self.maximumAttempts = validatedMaximumAttempts
+        self.initialBackoffMilliseconds = initialBackoffMilliseconds
+        self.maximumBackoffMilliseconds = maximumBackoffMilliseconds
+        self.stabilityThresholdMilliseconds = stabilityThresholdMilliseconds
+    }
+}
+
+public enum FSEventStreamRecoveryPolicyError: Error, Sendable, Equatable {
+    case maximumAttemptsMustBePositive
+    case initialBackoffMustBeNonnegative
+    case maximumBackoffMustCoverInitialBackoff
+    case stabilityThresholdMustBeNonnegative
+}
+
 public struct ActiveScopeFSEventStatus: Sendable, Equatable {
     public let scopeID: WatchedScopeID
     public let generationID: MountGenerationID
@@ -20,14 +91,48 @@ public struct ActiveScopeFSEventStatus: Sendable, Equatable {
     }
 }
 
+public struct ScopeFSEventRecoveryStatus: Sendable, Equatable {
+    public let scopeID: WatchedScopeID
+    public let generationID: MountGenerationID
+    public let attempt: Int
+    public let maximumAttempts: Int
+    public let lastFailure: String
+}
+
 /// Native implementation of the application-owned stream lifecycle port.
 /// One scope owns one client and one consumer task; replacement is conditional
 /// on the mount generation selected transactionally by the repository.
 public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
     private struct ActiveStream {
         let status: ActiveScopeFSEventStatus
+        let scope: WatchedScope
+        let expectedVolumeUUID: UUID?
+        let revision: UInt64
+        let recoveryAttempt: Int
+        let startedAt: ContinuousClock.Instant
         let client: any FSEventStreamControlling
         let task: Task<Void, Never>
+    }
+
+    private struct RecoveryContext: Sendable {
+        let scope: WatchedScope
+        let generationID: MountGenerationID
+        let expectedVolumeUUID: UUID?
+        let previousStatus: ActiveScopeFSEventStatus
+        let revision: UInt64
+    }
+
+    private struct RecoveryTask {
+        let generationID: MountGenerationID
+        let revision: UInt64
+        var attempt: Int
+        var lastFailure: String
+        let task: Task<Void, Never>
+    }
+
+    private struct ConsumptionOutcome: Sendable {
+        let failure: String?
+        let processedObservation: Bool
     }
 
     private struct OpenedStream {
@@ -40,10 +145,12 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
     private let resolver: any FSEventDeviceScopeResolving
     private let makeStreamClient: @Sendable () -> any FSEventStreamControlling
     private let mapper: FSEventInvalidationMapper
+    private let recoveryPolicy: FSEventStreamRecoveryPolicy
     private let latency: TimeInterval
     private let bufferCapacity: Int
     private let excludeEventsFromThisProcess: Bool
     private var streams: [WatchedScopeID: ActiveStream] = [:]
+    private var recoveries: [WatchedScopeID: RecoveryTask] = [:]
     private var revisions: [WatchedScopeID: UInt64] = [:]
     private var failures: [WatchedScopeID: String] = [:]
 
@@ -55,6 +162,7 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
             FSEventStreamClient()
         },
         mapper: FSEventInvalidationMapper = FSEventInvalidationMapper(),
+        recoveryPolicy: FSEventStreamRecoveryPolicy = .standard,
         latency: TimeInterval = 1,
         bufferCapacity: Int = 512,
         excludeEventsFromThisProcess: Bool = true
@@ -64,6 +172,7 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
         self.resolver = resolver
         self.makeStreamClient = makeStreamClient
         self.mapper = mapper
+        self.recoveryPolicy = recoveryPolicy
         self.latency = latency
         self.bufferCapacity = bufferCapacity
         self.excludeEventsFromThisProcess = excludeEventsFromThisProcess
@@ -85,18 +194,11 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
         let resolved = try resolver.resolve(
             watchedURLs: [URL(fileURLWithPath: scope.root.rawValue, isDirectory: true)]
         )
-        let resolvedMountPath = Self.applicationPath(resolved.deviceTarget.mountPath)
-        guard resolvedMountPath == activation.current.mountPath.rawValue else {
-            throw NativeScopeFSEventSupervisorError.resolvedMountPathChanged(
-                expected: activation.current.mountPath.rawValue,
-                actual: resolvedMountPath
-            )
-        }
-        if let expected = activation.current.volumeUUID,
-           let actual = resolved.volumeUUID,
-           expected != actual {
-            throw NativeScopeFSEventSupervisorError.resolvedVolumeChanged
-        }
+        try validate(
+            resolved: resolved,
+            expectedMountPath: activation.current.mountPath,
+            expectedVolumeUUID: activation.current.volumeUUID
+        )
 
         let identity = resolved.persistentIdentity
         let streamID = try identity?.streamID ?? EventStreamID(
@@ -145,30 +247,16 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
             throw error
         }
 
-        let generationID = activation.current.generationID
-        let mapping = mapper
-        let task = Task { @concurrent [weak self] in
-            let failure = await Self.consume(
-                opened.observations,
-                mapper: mapping,
-                pipeline: pipeline
-            )
-            await self?.streamTerminated(
-                scopeID: scope.id,
-                generationID: generationID,
-                failure: failure
-            )
-        }
-        let status = ActiveScopeFSEventStatus(
-            scopeID: scope.id,
-            generationID: generationID,
+        install(
+            opened: opened,
+            scope: scope,
+            expectedVolumeUUID: activation.current.volumeUUID,
+            resolved: resolved,
             streamID: streamID,
-            persistentIdentity: identity
-        )
-        streams[scope.id] = ActiveStream(
-            status: status,
-            client: opened.client,
-            task: task
+            generationID: activation.current.generationID,
+            revision: revision,
+            recoveryAttempt: 0,
+            pipeline: pipeline
         )
         failures.removeValue(forKey: scope.id)
     }
@@ -177,13 +265,16 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
         scopeID: WatchedScopeID,
         matching generationID: MountGenerationID
     ) async {
+        let activeMatches = streams[scopeID]?.status.generationID == generationID
+        let recoveryMatches = recoveries[scopeID]?.generationID == generationID
+        guard activeMatches || recoveryMatches else { return }
         _ = nextRevision(for: scopeID)
-        guard streams[scopeID]?.status.generationID == generationID else { return }
         await stopCurrent(scopeID: scopeID)
     }
 
     public func stopAll() async {
-        for scopeID in streams.keys.sorted(by: { $0.rawValue < $1.rawValue }) {
+        let scopeIDs = Set(streams.keys).union(recoveries.keys)
+        for scopeID in scopeIDs.sorted(by: { $0.rawValue < $1.rawValue }) {
             _ = nextRevision(for: scopeID)
             await stopCurrent(scopeID: scopeID)
         }
@@ -197,6 +288,26 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
 
     public func lastFailure(for scopeID: WatchedScopeID) -> String? {
         failures[scopeID]
+    }
+
+    public func recoveryStatus(
+        for scopeID: WatchedScopeID
+    ) -> ScopeFSEventRecoveryStatus? {
+        guard let recovery = recoveries[scopeID] else { return nil }
+        return ScopeFSEventRecoveryStatus(
+            scopeID: scopeID,
+            generationID: recovery.generationID,
+            attempt: recovery.attempt,
+            maximumAttempts: recoveryPolicy.maximumAttempts,
+            lastFailure: recovery.lastFailure
+        )
+    }
+
+    /// Test seam for observing one already-scheduled recovery cycle without
+    /// polling or adding production timing sleeps.
+    func waitForRecoveryCompletion(for scopeID: WatchedScopeID) async {
+        guard let recovery = recoveries[scopeID] else { return }
+        await recovery.task.value
     }
 
     private func nextRevision(for scopeID: WatchedScopeID) -> UInt64 {
@@ -297,40 +408,338 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
         }
     }
 
+    private func install(
+        opened: OpenedStream,
+        scope: WatchedScope,
+        expectedVolumeUUID: UUID?,
+        resolved: ResolvedFSEventDeviceScope,
+        streamID: EventStreamID,
+        generationID: MountGenerationID,
+        revision: UInt64,
+        recoveryAttempt: Int,
+        pipeline: FileSystemCalibrationPipeline
+    ) {
+        let mapping = mapper
+        let task = Task { @concurrent [weak self] in
+            let outcome = await Self.consume(
+                opened.observations,
+                mapper: mapping,
+                pipeline: pipeline
+            )
+            await self?.streamTerminated(
+                scopeID: scope.id,
+                generationID: generationID,
+                revision: revision,
+                outcome: outcome
+            )
+        }
+        let status = ActiveScopeFSEventStatus(
+            scopeID: scope.id,
+            generationID: generationID,
+            streamID: streamID,
+            persistentIdentity: resolved.persistentIdentity
+        )
+        streams[scope.id] = ActiveStream(
+            status: status,
+            scope: scope,
+            expectedVolumeUUID: expectedVolumeUUID,
+            revision: revision,
+            recoveryAttempt: recoveryAttempt,
+            startedAt: ContinuousClock().now,
+            client: opened.client,
+            task: task
+        )
+    }
+
     private func stopCurrent(scopeID: WatchedScopeID) async {
-        guard let active = streams.removeValue(forKey: scopeID) else { return }
-        active.client.stop()
-        active.task.cancel()
-        await active.task.value
+        let active = streams.removeValue(forKey: scopeID)
+        let recovery = recoveries.removeValue(forKey: scopeID)
+
+        active?.client.stop()
+        active?.task.cancel()
+        recovery?.task.cancel()
+
+        if let active {
+            await active.task.value
+        }
+        if let recovery {
+            await recovery.task.value
+        }
     }
 
     private func streamTerminated(
         scopeID: WatchedScopeID,
         generationID: MountGenerationID,
-        failure: String?
+        revision: UInt64,
+        outcome: ConsumptionOutcome
     ) {
-        guard streams[scopeID]?.status.generationID == generationID else { return }
+        guard let active = streams[scopeID],
+              active.status.generationID == generationID,
+              active.revision == revision else { return }
         streams.removeValue(forKey: scopeID)
-        failures[scopeID] = failure ?? "FSEvents stream ended unexpectedly."
+        active.client.stop()
+
+        let failure = outcome.failure ?? "FSEvents stream ended unexpectedly."
+        failures[scopeID] = failure
+        let elapsed = active.startedAt.duration(to: ContinuousClock().now)
+        let wasStable = outcome.processedObservation
+            || elapsed >= .milliseconds(recoveryPolicy.stabilityThresholdMilliseconds)
+        let startingAttempt = wasStable ? 1 : active.recoveryAttempt + 1
+        let context = RecoveryContext(
+            scope: active.scope,
+            generationID: generationID,
+            expectedVolumeUUID: active.expectedVolumeUUID,
+            previousStatus: active.status,
+            revision: revision
+        )
+        let task = Task { @concurrent [weak self] in
+            guard let self else { return }
+            await self.recover(
+                context: context,
+                startingAttempt: startingAttempt,
+                initialFailure: failure
+            )
+        }
+        recoveries[scopeID] = RecoveryTask(
+            generationID: generationID,
+            revision: revision,
+            attempt: min(startingAttempt, recoveryPolicy.maximumAttempts),
+            lastFailure: failure,
+            task: task
+        )
+    }
+
+    private func recover(
+        context: RecoveryContext,
+        startingAttempt: Int,
+        initialFailure: String
+    ) async {
+        var attempt = startingAttempt
+        var lastFailure = initialFailure
+        var recoveryWorkPersisted = false
+        var preparedStreamIDs: Set<EventStreamID> = []
+
+        if attempt > recoveryPolicy.maximumAttempts {
+            do {
+                try await persistRecoveryWork(for: context.previousStatus, scope: context.scope)
+                try ensureRecoveryCurrent(context)
+            } catch is CancellationError {
+                return
+            } catch NativeScopeFSEventSupervisorError.operationSuperseded {
+                return
+            } catch {
+                lastFailure = String(reflecting: error)
+            }
+            finishExhaustedRecovery(context: context, lastFailure: lastFailure)
+            return
+        }
+
+        while attempt <= recoveryPolicy.maximumAttempts {
+            do {
+                try Task.checkCancellation()
+                try ensureRecoveryCurrent(context)
+                updateRecovery(
+                    context: context,
+                    attempt: attempt,
+                    lastFailure: lastFailure
+                )
+
+                if recoveryWorkPersisted == false {
+                    try await persistRecoveryWork(
+                        for: context.previousStatus,
+                        scope: context.scope
+                    )
+                    try ensureRecoveryCurrent(context)
+                    recoveryWorkPersisted = true
+                }
+
+                let delay = recoveryPolicy.backoff(forAttempt: attempt)
+                if delay > .zero {
+                    try await Task.sleep(for: delay)
+                    try ensureRecoveryCurrent(context)
+                }
+
+                let resolved = try resolver.resolve(
+                    watchedURLs: [
+                        URL(
+                            fileURLWithPath: context.scope.root.rawValue,
+                            isDirectory: true
+                        )
+                    ]
+                )
+                try validate(
+                    resolved: resolved,
+                    expectedMountPath: context.scope.mountPath,
+                    expectedVolumeUUID: context.expectedVolumeUUID
+                )
+                let streamID = try resolved.persistentIdentity?.streamID ?? EventStreamID(
+                    "fsevents-live/v1/\(context.scope.id.rawValue)/\(context.generationID.rawValue)"
+                )
+                if streamID != context.previousStatus.streamID,
+                   preparedStreamIDs.insert(streamID).inserted {
+                    try await persistRecoveryWork(
+                        streamID: streamID,
+                        hasPersistentIdentity: resolved.persistentIdentity != nil,
+                        scope: context.scope
+                    )
+                    try ensureRecoveryCurrent(context)
+                }
+
+                let pipeline = FileSystemCalibrationPipeline(
+                    streamID: streamID,
+                    watchRoot: context.scope.root,
+                    repository: repository,
+                    scanner: scanner
+                )
+                let opened = try startClient(
+                    configuration: configuration(
+                        scope: context.scope,
+                        resolved: resolved,
+                        replayPosition: .sinceNow
+                    )
+                )
+                try ensureRecoveryCurrent(context)
+                recoveries.removeValue(forKey: context.scope.id)
+                install(
+                    opened: opened,
+                    scope: context.scope,
+                    expectedVolumeUUID: context.expectedVolumeUUID,
+                    resolved: resolved,
+                    streamID: streamID,
+                    generationID: context.generationID,
+                    revision: context.revision,
+                    recoveryAttempt: attempt,
+                    pipeline: pipeline
+                )
+                failures.removeValue(forKey: context.scope.id)
+                return
+            } catch is CancellationError {
+                return
+            } catch NativeScopeFSEventSupervisorError.operationSuperseded {
+                return
+            } catch {
+                lastFailure = String(reflecting: error)
+                attempt += 1
+            }
+        }
+
+        finishExhaustedRecovery(context: context, lastFailure: lastFailure)
+    }
+
+    private func persistRecoveryWork(
+        for status: ActiveScopeFSEventStatus,
+        scope: WatchedScope
+    ) async throws {
+        try await persistRecoveryWork(
+            streamID: status.streamID,
+            hasPersistentIdentity: status.persistentIdentity != nil,
+            scope: scope
+        )
+    }
+
+    private func persistRecoveryWork(
+        streamID: EventStreamID,
+        hasPersistentIdentity: Bool,
+        scope: WatchedScope
+    ) async throws {
+        let region = try DirtyRegion(
+            path: scope.root,
+            reasons: [
+                .mustScanSubdirectories,
+                .droppedEvents,
+                .requiresCalibration,
+            ],
+            maximumCursor: nil
+        )
+        if hasPersistentIdentity {
+            try await repository.invalidateCheckpointAndMarkDirty(
+                streamID: streamID,
+                regions: [region]
+            )
+        } else {
+            try await repository.markDirty(streamID: streamID, regions: [region])
+        }
+    }
+
+    private func ensureRecoveryCurrent(_ context: RecoveryContext) throws {
+        try ensureCurrent(context.revision, for: context.scope.id)
+        guard let recovery = recoveries[context.scope.id],
+              recovery.generationID == context.generationID,
+              recovery.revision == context.revision else {
+            throw NativeScopeFSEventSupervisorError.operationSuperseded
+        }
+    }
+
+    private func updateRecovery(
+        context: RecoveryContext,
+        attempt: Int,
+        lastFailure: String
+    ) {
+        guard var recovery = recoveries[context.scope.id],
+              recovery.generationID == context.generationID,
+              recovery.revision == context.revision else { return }
+        recovery.attempt = attempt
+        recovery.lastFailure = lastFailure
+        recoveries[context.scope.id] = recovery
+    }
+
+    private func finishExhaustedRecovery(
+        context: RecoveryContext,
+        lastFailure: String
+    ) {
+        guard recoveries[context.scope.id]?.revision == context.revision else { return }
+        recoveries.removeValue(forKey: context.scope.id)
+        failures[context.scope.id] = "FSEvents automatic recovery exhausted after "
+            + "\(recoveryPolicy.maximumAttempts) attempts. Last failure: \(lastFailure)"
     }
 
     private nonisolated static func consume(
         _ observations: FSEventStreamClient.ObservationStream,
         mapper: FSEventInvalidationMapper,
         pipeline: FileSystemCalibrationPipeline
-    ) async -> String? {
+    ) async -> ConsumptionOutcome {
+        var processedObservation = false
         do {
             for try await observation in observations {
                 try Task.checkCancellation()
                 if let invalidation = try mapper.map(observation) {
                     try await pipeline.ingest([invalidation])
                 }
+                processedObservation = true
             }
-            return Task.isCancelled ? nil : "FSEvents stream ended unexpectedly."
+            return ConsumptionOutcome(
+                failure: Task.isCancelled ? nil : "FSEvents stream ended unexpectedly.",
+                processedObservation: processedObservation
+            )
         } catch is CancellationError {
-            return nil
+            return ConsumptionOutcome(
+                failure: nil,
+                processedObservation: processedObservation
+            )
         } catch {
-            return String(reflecting: error)
+            return ConsumptionOutcome(
+                failure: String(reflecting: error),
+                processedObservation: processedObservation
+            )
+        }
+    }
+
+    private func validate(
+        resolved: ResolvedFSEventDeviceScope,
+        expectedMountPath: DirtyRegionPath,
+        expectedVolumeUUID: UUID?
+    ) throws {
+        let resolvedMountPath = Self.applicationPath(resolved.deviceTarget.mountPath)
+        guard resolvedMountPath == expectedMountPath.rawValue else {
+            throw NativeScopeFSEventSupervisorError.resolvedMountPathChanged(
+                expected: expectedMountPath.rawValue,
+                actual: resolvedMountPath
+            )
+        }
+        if let expectedVolumeUUID {
+            guard resolved.volumeUUID == expectedVolumeUUID else {
+                throw NativeScopeFSEventSupervisorError.resolvedVolumeChanged
+            }
         }
     }
 

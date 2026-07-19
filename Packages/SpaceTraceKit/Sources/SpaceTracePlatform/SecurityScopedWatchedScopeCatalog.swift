@@ -14,7 +14,7 @@ public enum SecurityScopedResourceAccessMode: Sendable, Equatable {
 /// Native, non-UI boundary for acquiring and restoring user-selected folders.
 /// Callers pass the URL returned by the system selection surface; this type
 /// never opens a panel itself.
-public actor SecurityScopedWatchedScopeCatalog: RestorableWatchedScopeCatalog {
+public actor SecurityScopedWatchedScopeCatalog: MutableWatchedScopeCatalog {
     private let repository: any WatchedScopeBookmarkRepository
     private let codec: any SecurityScopedBookmarkCodec
     private var records: [WatchedScopeID: WatchedScopeBookmark] = [:]
@@ -113,6 +113,23 @@ public actor SecurityScopedWatchedScopeCatalog: RestorableWatchedScopeCatalog {
         activeScopes = nextActive
         failures = nextFailures
         return restorationReport()
+    }
+
+    /// Removes a persisted grant before releasing its process capability. If
+    /// persistence fails, the in-memory grant remains unchanged so callers can
+    /// safely retry without manufacturing an unrecorded state.
+    public func remove(scopeID: WatchedScopeID) async throws {
+        guard isUpdating == false else {
+            throw SecurityScopedWatchedScopeError.concurrentOperation
+        }
+        isUpdating = true
+        defer { isUpdating = false }
+        operationEpoch &+= 1
+
+        try await repository.removeWatchedScopeBookmark(for: scopeID)
+        activeScopes.removeValue(forKey: scopeID)?.lease.release()
+        records.removeValue(forKey: scopeID)
+        failures.removeValue(forKey: scopeID)
     }
 
     public func watchedScopes() async throws -> [WatchedScope] {

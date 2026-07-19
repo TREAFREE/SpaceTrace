@@ -6,7 +6,7 @@ DESTINATION := platform=macOS,arch=arm64
 PACKAGE_PATH := Packages/SpaceTraceKit
 DERIVED_DATA_ROOT := build/DerivedData
 
-.PHONY: verify hygiene architecture-check package-test package-concurrency-audit package-apfs-image-qualification xcode-list app-build-debug app-test-unit app-build-release
+.PHONY: verify hygiene architecture-check package-test package-concurrency-audit package-apfs-image-qualification xcode-list app-build-debug app-test-unit app-test-ui app-build-release
 
 verify: hygiene architecture-check package-test package-concurrency-audit xcode-list app-build-debug app-test-unit app-build-release
 
@@ -35,6 +35,9 @@ app-build-debug:
 
 app-test-unit:
 	xcodebuild -quiet -project "$(PROJECT)" -scheme "$(SCHEME)" -destination "$(DESTINATION)" -derivedDataPath "$(DERIVED_DATA_ROOT)/Tests" CODE_SIGNING_ALLOWED=NO -only-testing:SpaceTraceTests test
+
+app-test-ui:
+	xcodebuild -quiet -project "$(PROJECT)" -scheme "$(SCHEME)" -destination "$(DESTINATION)" -derivedDataPath "$(DERIVED_DATA_ROOT)/UITests" -only-testing:SpaceTraceUITests/DirectoryAuthorizationUITests test
 
 app-build-release:
 	xcodebuild -quiet -project "$(PROJECT)" -scheme "$(SCHEME)" -configuration Release -destination "$(DESTINATION)" -derivedDataPath "$(DERIVED_DATA_ROOT)/Release" CODE_SIGNING_ALLOWED=NO build

@@ -6,7 +6,7 @@ import SpaceTracePersistence
 import SpaceTracePlatform
 
 struct SpaceTraceCompositionRoot {
-    let lifecycle: NativeMonitoringApplicationLifecycle
+    let authorizationCoordinator: WatchedScopeAuthorizationCoordinator
 
     static func make(fileManager: FileManager = .default) throws -> Self {
         let applicationSupportRoot = try applicationSupportDirectory(using: fileManager)
@@ -27,10 +27,14 @@ struct SpaceTraceCompositionRoot {
             repository: repository,
             scanner: scanner
         )
+        let lifecycle = NativeMonitoringApplicationLifecycle(
+            catalog: catalog,
+            runtime: runtime
+        )
         return Self(
-            lifecycle: NativeMonitoringApplicationLifecycle(
+            authorizationCoordinator: WatchedScopeAuthorizationCoordinator(
                 catalog: catalog,
-                runtime: runtime
+                lifecycle: lifecycle
             )
         )
     }

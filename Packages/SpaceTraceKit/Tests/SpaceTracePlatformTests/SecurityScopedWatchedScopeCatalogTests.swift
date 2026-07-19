@@ -138,10 +138,58 @@ struct SecurityScopedWatchedScopeCatalogTests {
         #expect(restored.scopes.first?.root == acquired.root)
         #expect(restored.scopes.first?.mountPath == acquired.mountPath)
     }
+
+    @Test("Removing a grant persists revocation before releasing its lease")
+    func removesPersistedGrantAndLease() async throws {
+        let repository = BookmarkRepositoryFake()
+        let leaseProbe = LeaseProbe()
+        let catalog = SecurityScopedWatchedScopeCatalog(
+            repository: repository,
+            codec: BookmarkCodecFake(leaseProbe: leaseProbe)
+        )
+        let scopeID = try WatchedScopeID("scope-revoked")
+
+        _ = try await catalog.acquire(
+            selectedURL: URL(fileURLWithPath: "/Volumes/Test/Selected", isDirectory: true),
+            scopeID: scopeID
+        )
+        try await catalog.remove(scopeID: scopeID)
+
+        #expect(await repository.bookmarks().isEmpty)
+        #expect(await catalog.restorationReport().configuredScopeCount == 0)
+        #expect(try await catalog.watchedScopes().isEmpty)
+        #expect(leaseProbe.releaseCount == 1)
+    }
+
+    @Test("A persistence failure leaves the active grant and lease intact")
+    func keepsGrantWhenRemovalPersistenceFails() async throws {
+        let repository = BookmarkRepositoryFake()
+        let leaseProbe = LeaseProbe()
+        let catalog = SecurityScopedWatchedScopeCatalog(
+            repository: repository,
+            codec: BookmarkCodecFake(leaseProbe: leaseProbe)
+        )
+        let scopeID = try WatchedScopeID("scope-retained")
+        _ = try await catalog.acquire(
+            selectedURL: URL(fileURLWithPath: "/Volumes/Test/Selected", isDirectory: true),
+            scopeID: scopeID
+        )
+        await repository.failRemoval()
+
+        await #expect(throws: BookmarkRepositoryFixtureError.removalFailed) {
+            try await catalog.remove(scopeID: scopeID)
+        }
+
+        #expect(await repository.bookmarks().map(\.scopeID) == [scopeID])
+        #expect(try await catalog.watchedScopes().map(\.id) == [scopeID])
+        #expect(leaseProbe.releaseCount == 0)
+        await catalog.releaseAll()
+    }
 }
 
 private actor BookmarkRepositoryFake: WatchedScopeBookmarkRepository {
     private var storage: [WatchedScopeID: WatchedScopeBookmark]
+    private var shouldFailRemoval = false
 
     init(bookmarks: [WatchedScopeBookmark] = []) {
         storage = Dictionary(uniqueKeysWithValues: bookmarks.map { ($0.scopeID, $0) })
@@ -155,13 +203,24 @@ private actor BookmarkRepositoryFake: WatchedScopeBookmarkRepository {
         storage[bookmark.scopeID] = bookmark
     }
 
-    func removeWatchedScopeBookmark(for scopeID: WatchedScopeID) {
+    func removeWatchedScopeBookmark(for scopeID: WatchedScopeID) throws {
+        if shouldFailRemoval {
+            throw BookmarkRepositoryFixtureError.removalFailed
+        }
         storage.removeValue(forKey: scopeID)
+    }
+
+    func failRemoval() {
+        shouldFailRemoval = true
     }
 
     func bookmarks() -> [WatchedScopeBookmark] {
         watchedScopeBookmarks()
     }
+}
+
+private enum BookmarkRepositoryFixtureError: Error {
+    case removalFailed
 }
 
 private final class LeaseProbe: Sendable {

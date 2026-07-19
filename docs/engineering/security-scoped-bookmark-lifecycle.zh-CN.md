@@ -1,8 +1,8 @@
 # Security-Scoped Bookmark 与应用生命周期
 
-状态：**非 UI 架构切片已实现；用户选择界面和权限撤销资格验证仍未完成**
+状态：**架构与最小 UI 已实现；完整签名与最低系统资格验证仍未完成**
 
-最近验证日期：2026-07-18
+最近验证日期：2026-07-19
 
 英文事实源：[security-scoped-bookmark-lifecycle.md](security-scoped-bookmark-lifecycle.md)。本文是便于中文阅读的对应译文；如两者存在差异，以英文文档为工程事实源，并应在同一次变更中修正译文。
 
@@ -20,7 +20,7 @@
   -> 进程级应用生命周期
 ```
 
-本阶段明确**不会**展示 `NSOpenPanel`、添加权限 UI、默认选择目录、请求 Full Disk Access，也不会让监控成为用户可见功能。未来 UI 必须把系统选择界面返回的原始 URL 交给 `SecurityScopedWatchedScopeCatalog.acquire(selectedURL:scopeID:)`；不能先把 URL 转成字符串，因为字符串不携带 security scope。
+最小 UI 现在只会在用户明确操作后展示 `NSOpenPanel`，并把选择器返回的原始 URL 交给 catalog。它不会默认选择目录、请求 Full Disk Access，也不会展示监控结果。授权前仍禁止把 picker URL 转为字符串，因为字符串不携带 security scope。
 
 ## 2. 所有权边界
 
@@ -29,8 +29,8 @@
 | `SpaceTraceApplication` | 定义 opaque bookmark 记录、持久化端口、恢复报告和 catalog 生命周期协议 | 解析 bookmark bytes 或调用平台 API |
 | `SpaceTracePersistence` | 在 SQLite v5 中保存 bookmark 和预期身份 | 记录日志、导出、解码或扩大授权范围 |
 | `SpaceTracePlatform` | 创建/恢复原生 bookmark、精确校验资源、配对 access lease、实现 catalog | 打开 UI 或推断产品策略 |
-| `SpaceTraceMonitoring` | 恢复 catalog、持有唯一长期 runtime 任务、在退出时取消并释放 | 把监控绑定到窗口或 View 生命周期 |
-| `SpaceTraceApp` | 创建 Application Support 存储，并桥接 `NSApplication` 启动/退出 | 承载权限或监控业务逻辑 |
+| `SpaceTraceMonitoring` | 恢复 catalog、持有唯一长期 runtime、把授权变更与 runtime 重启串行化、退出时取消并释放 | 把监控绑定到窗口或 View 生命周期 |
+| `SpaceTraceApp` | 创建 Application Support、展示系统选择器、在 MainActor 投影类型化状态，并桥接 `NSApplication` 启动/退出 | 解码 bookmark 或持有原生监控任务 |
 
 catalog 会为每个活跃 scope 保留一个 access lease。每次成功调用 `startAccessingSecurityScopedResource()`，都会在 catalog 被替换、runtime 失败或应用退出时，恰好配对一次 `stopAccessingSecurityScopedResource()`。
 
@@ -84,6 +84,8 @@ schema v5 新增 `watched_scope_bookmark`：
 
 SwiftUI 应用通过 `NSApplicationDelegateAdaptor` 接入。`applicationShouldTerminate` 返回 `terminateLater`，完成异步关闭后再回复 AppKit。关闭窗口不会停止监控。
 
+用户主动更换或移除授权由 `WatchedScopeAuthorizationCoordinator` 负责：停止 runtime、持久化 capability 变化、恢复 catalog、再启动 runtime。变更失败时，它会尝试从持久事实恢复监控。转换期间 UI 控件禁用；取消 `NSOpenPanel` 不发生任何变更。
+
 ## 6. Entitlement 与分发模式
 
 当前检入仓库的开发应用启用了 App Sandbox，并声明：
@@ -110,6 +112,8 @@ ADR-002 另行提议未来直接分发的产品不启用 App Sandbox，以覆盖
 - identity-only 模式下真实原生 bookmark 的无 UI round-trip；
 - SQLite v4 到 v5 迁移、替换、往返读取与删除；
 - 生命周期 idle、启动、重复启动、失败、取消与关闭；
+- 先持久化的授权移除、变更失败回退、runtime 重启与转换串行化；
+- MainActor ViewModel 对选择、picker 取消、stale 重新授权、明确移除以及缺席卷刷新状态的投影；
 - `make verify` 中的 package 完整严格并发诊断，以及 Xcode Debug/Release 组合构建。
 
-在本阶段变成用户可见功能之前，仍须用经过签名的沙盒应用完成以下资格验证：真实系统目录选择、重启恢复、运行中撤销权限、stale bookmark 重新授权、外置卷缺席/返回、应用退出，以及 macOS 15.6 真实运行行为。
+检入仓库的[资格验证协议](user-selected-directory-qualification.zh-CN.md)覆盖签名系统选择、重启、明确移除授权、stale/身份变化证据、外置卷缺席/返回/替换、应用退出和 macOS 15.6 门禁。当前主机的 ad-hoc smoke 证据不能关闭 Apple 身份签名或 macOS 15.6 门禁。

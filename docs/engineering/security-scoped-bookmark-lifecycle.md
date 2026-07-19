@@ -1,8 +1,8 @@
 # Security-Scoped Bookmark and Application Lifecycle
 
-Status: **Implemented non-UI architecture slice; user selection UI and permission-revocation qualification remain open**
+Status: **Implemented architecture and minimal UI; full signed/oldest-OS qualification remains open**
 
-Last verified: 2026-07-18
+Last verified: 2026-07-19
 
 Chinese companion translation: [security-scoped-bookmark-lifecycle.zh-CN.md](security-scoped-bookmark-lifecycle.zh-CN.md). This English document remains the engineering source of truth.
 
@@ -20,7 +20,7 @@ system selection URL
   -> process-level application lifecycle
 ```
 
-It deliberately does **not** present `NSOpenPanel`, add permission UI, select a default directory, request Full Disk Access, or make monitoring user-visible. A future UI must pass the URL returned by the system selection surface to `SecurityScopedWatchedScopeCatalog.acquire(selectedURL:scopeID:)`; converting the URL to a string before acquisition is invalid because the string does not carry the security scope.
+The minimal UI now presents `NSOpenPanel` only after an explicit action and passes its original URL to the catalog. It does not select a default directory, request Full Disk Access, or make monitoring results user-visible. Converting the picker URL to a string before acquisition remains invalid because the string does not carry the security scope.
 
 ## 2. Ownership boundaries
 
@@ -29,8 +29,8 @@ It deliberately does **not** present `NSOpenPanel`, add permission UI, select a 
 | `SpaceTraceApplication` | Opaque bookmark record, persistence port, restoration report, catalog lifecycle protocol | Interpret bookmark bytes or call platform APIs |
 | `SpaceTracePersistence` | Store the bookmark and expected identity in SQLite v5 | Log, export, decode, or broaden a grant |
 | `SpaceTracePlatform` | Create/resolve native bookmarks, validate the exact resource, balance access leases, implement the catalog | Open UI or infer product policy |
-| `SpaceTraceMonitoring` | Restore the catalog, own one long-lived runtime task, cancel and release on shutdown | Bind monitoring to a window/view lifecycle |
-| `SpaceTraceApp` | Build Application Support storage and bridge `NSApplication` launch/termination | Contain permission or monitoring business logic |
+| `SpaceTraceMonitoring` | Restore the catalog, own one long-lived runtime task, serialize grant mutation with runtime restart, cancel and release on shutdown | Bind monitoring to a window/view lifecycle |
+| `SpaceTraceApp` | Build Application Support storage, present the system picker, project typed state on MainActor, and bridge `NSApplication` launch/termination | Decode bookmark data or own native monitoring tasks |
 
 The catalog retains one access lease per active scope. Every successful `startAccessingSecurityScopedResource()` is balanced exactly once by `stopAccessingSecurityScopedResource()` during catalog replacement, runtime failure, or application shutdown.
 
@@ -84,6 +84,8 @@ Starting the application with configured bookmarks but no currently restorable s
 
 The SwiftUI app uses `NSApplicationDelegateAdaptor`. `applicationShouldTerminate` returns `terminateLater`, performs asynchronous shutdown, then replies to AppKit. Closing a window does not stop monitoring.
 
+User-driven replacement or removal is owned by `WatchedScopeAuthorizationCoordinator`: stop the runtime, persist the capability change, restore the catalog, and start the runtime again. If mutation fails, it attempts to restore monitoring from persisted truth. UI controls are disabled during a transition, and canceling `NSOpenPanel` performs no mutation.
+
 ## 6. Entitlements and distribution modes
 
 The checked-in development application is currently sandboxed and declares:
@@ -110,6 +112,8 @@ Deterministic tests cover:
 - a real native bookmark round-trip without UI in identity-only mode;
 - SQLite v4-to-v5 migration, replacement, round-trip, and removal;
 - lifecycle idle/start/duplicate-start/failure/cancellation/shutdown behavior;
+- persisted-first grant removal, mutation rollback, runtime restart, and transition serialization;
+- MainActor view-model projection for selection, picker cancellation, stale reauthorization, explicit removal, and absent-volume refresh;
 - package complete strict-concurrency diagnostics and Xcode Debug/Release composition builds through `make verify`.
 
-Before this slice becomes user-visible, qualification still requires a sandboxed signed app run covering real system selection, relaunch, permission revocation while active, stale-bookmark reacquisition, external-volume absence/return, app quit, and macOS 15.6 runtime behavior.
+The checked-in [qualification protocol](user-selected-directory-qualification.md) covers signed system selection, relaunch, explicit grant removal, stale/identity evidence, external-volume absence/return/replacement, app quit, and the macOS 15.6 runtime gate. Current-host ad-hoc smoke evidence cannot close the Apple-identity signing or macOS 15.6 gates.

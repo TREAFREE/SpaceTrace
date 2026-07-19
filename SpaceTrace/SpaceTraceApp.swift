@@ -14,7 +14,8 @@ struct SpaceTraceApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(model: appDelegate.authorizationModel)
         }
+        .defaultSize(width: 640, height: 460)
     }
 }

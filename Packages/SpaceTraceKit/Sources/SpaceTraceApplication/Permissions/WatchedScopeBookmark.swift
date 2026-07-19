@@ -80,6 +80,18 @@ public protocol RestorableWatchedScopeCatalog: WatchedScopeCatalog {
     func releaseAll() async
 }
 
+/// Mutation boundary for grants created by an explicit system picker action.
+/// Implementations must persist the capability before exposing it as active and
+/// must release any active lease when a grant is removed.
+public protocol MutableWatchedScopeCatalog: RestorableWatchedScopeCatalog {
+    func acquire(
+        selectedURL: URL,
+        scopeID: WatchedScopeID
+    ) async throws -> WatchedScope
+    func remove(scopeID: WatchedScopeID) async throws
+    func restorationReport() async -> WatchedScopeRestorationReport
+}
+
 public enum WatchedScopeBookmarkError: Error, Sendable, Equatable {
     case emptyBookmark
     case bookmarkTooLarge

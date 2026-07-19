@@ -4,6 +4,8 @@ import SpaceTraceMonitoring
 
 @MainActor
 final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
+    let authorizationModel = DirectoryAuthorizationViewModel()
+
     private let logger = Logger(
         subsystem: "com.TREAFREE.SpaceTrace",
         category: "lifecycle"
@@ -14,28 +16,34 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         _ = notification
+#if DEBUG
+        if authorizationModel.loadUITestScenarioIfConfigured() {
+            return
+        }
+#endif
         do {
             let compositionRoot = try SpaceTraceCompositionRoot.make()
             self.compositionRoot = compositionRoot
-            startupTask = Task { @concurrent [weak self, lifecycle = compositionRoot.lifecycle] in
-                do {
-                    _ = try await lifecycle.start()
-                } catch is CancellationError {
-                    return
-                } catch NativeMonitoringApplicationLifecycleError.startCancelled {
-                    return
-                } catch {
-                    await self?.recordStartupFailure()
-                }
+            authorizationModel.connect(compositionRoot.authorizationCoordinator)
+            startupTask = Task { [weak self] in
+                await self?.authorizationModel.start()
             }
         } catch {
+            authorizationModel.handleCompositionFailure()
             logger.error("Application composition failed with private diagnostic context.")
+        }
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        _ = notification
+        Task { [weak self] in
+            await self?.authorizationModel.refreshIfNeeded()
         }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         _ = sender
-        guard let lifecycle = compositionRoot?.lifecycle else {
+        guard let coordinator = compositionRoot?.authorizationCoordinator else {
             return .terminateNow
         }
         guard shutdownTask == nil else {
@@ -44,7 +52,7 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
 
         startupTask?.cancel()
         shutdownTask = Task { @concurrent in
-            await lifecycle.stop()
+            await coordinator.stop()
             await MainActor.run {
                 NSApplication.shared.reply(toApplicationShouldTerminate: true)
             }
@@ -52,7 +60,4 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
         return .terminateLater
     }
 
-    private func recordStartupFailure() {
-        logger.error("Monitoring startup failed with private diagnostic context.")
-    }
 }

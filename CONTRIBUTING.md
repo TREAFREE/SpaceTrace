@@ -39,6 +39,14 @@ make verify
 
 该命令与 CI 共用同一入口，依次执行仓库卫生和架构边界检查、`SpaceTraceKit` 测试、package 完整并发诊断与 warning-as-error 审计、scheme 发现、Debug 构建、应用单元测试和 Release 构建。也可用 `make package-concurrency-audit` 单独执行并发门槛。签名、公证和未来的更新发布测试只在受保护 CI environment 中运行；普通贡献者不需要发布凭据。
 
+目录授权 UI 成为有意义的用户旅程后，交互式 Mac 会话还需运行：
+
+```bash
+make app-test-ui
+```
+
+该命令需要钥匙串中存在稳定的 Apple 开发签名身份，使 UI test runner 与沙盒 App 能建立稳定容器身份。ad-hoc 签名可用于手工 smoke，但在 macOS 14 及以上可能使 UI runner 无法完成应用启动握手，因此不能替代该门禁。完整的真实权限矩阵见[用户选择目录 UI 与沙盒资格验证](docs/engineering/user-selected-directory-qualification.zh-CN.md)。
+
 ## Branches and commits
 
 从最新 `main` 创建短分支：

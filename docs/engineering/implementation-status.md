@@ -1,8 +1,8 @@
 # First Implementation Slice Status
 
-Status: **Architecture spike; not user-visible production behavior**
+Status: **Architecture spike with a minimal user-visible directory-permission flow**
 
-Last verified: 2026-07-18
+Last verified: 2026-07-19
 
 Chinese companion translation: [implementation-status.zh-CN.md](implementation-status.zh-CN.md). This English document remains the architecture source of truth.
 
@@ -18,6 +18,7 @@ This document records what the first implementation slice proves and, equally im
 | Non-UI monitoring composition | Actor-isolated Disk Arbitration consumption, bounded mount-readiness retry, transactional activation/closure, one owned FSEvents consumer task per scope, generation-conditional stop/restart, post-start recovery with exponential backoff and circuit breaking, application-owned lifecycle states with bounded newest-state updates, and overflow-driven source recreation | Native callback order cannot silently reorder concurrent generation work; transient failures are retried within fixed bounds; unmount/replacement cancels owned recovery; lifecycle consumers observe the current inactive/active/recovering/failed state without adapter polling; and loss of callback precision closes correlated streams before re-enumeration |
 | Permission and catalog lifecycle | Non-UI read-only bookmark acquisition, opaque application records, exact root/volume restoration, fresh mount-path derivation, privacy-safe partial reports, retry for absent external volumes, and balanced access leases | Stale, moved, replacement-volume, symlink, non-directory, and denied grants cannot silently broaden scope or auto-refresh; only temporary absence retries |
 | Application process lifecycle | AppKit launch/termination bridge, Application Support composition, catalog restoration, exactly one owned runtime task, asynchronous quit coordination, and lease release after runtime shutdown | Closing a window cannot stop monitoring; quitting cancels and awaits native work before releasing permission capability; zero configured grants remains idle |
+| Directory authorization UI | User-triggered `NSOpenPanel`, MainActor state projection, typed authorized/unavailable/reauthorization-required/empty/failure states, explicit replacement/removal controls, and serialized runtime restart around capability mutation | UI never reconstructs a grant from path text; stale and identity-changing grants require another system-picker action; removal releases the grant without deleting user files or measurement history |
 | Invalidation mapping | Adapter-to-application semantic mapping, lexical scope validation, file-to-parent projection, replay-overlap filtering, event-ID generation invalidation, and ancestor coalescing | Ambiguous paths and continuity gaps sacrifice precision by falling back to scope calibration; an event-ID wrap invalidates the old checkpoint and makes the complete ingest batch cursor-free |
 | Metadata calibration scanner | Foundation/Darwin metadata-only traversal with explicit entry, depth, duration, batching, and cooperative-cancellation budgets; same-volume enforcement; no symlink traversal; hard-link allocation deduplication; typed coverage gaps | File contents are never opened; leaf paths do not cross the directory-aggregate boundary; budget exhaustion, permission loss, mount boundaries, and cancellation cannot become complete evidence |
 | Calibration pipeline | Actor-isolated ingestion and bounded reconciliation orchestration behind an application-owned scanner port, with structured asynchronous staging | Partial and cancelled scans discard staging and retain dirty work; a completed stale scan cannot publish data or clear work updated while it was running |
@@ -27,9 +28,9 @@ This document records what the first implementation slice proves and, equally im
 
 ## Verification evidence
 
-The following gates passed on 2026-07-18 with Swift 6.2.1 and Xcode 26.1.1:
+The following gates passed through 2026-07-19 with Swift 6.2.1 and Xcode 26.1.1:
 
-- `swift test --package-path Packages/SpaceTraceKit`: 148 tests in 23 suites (the destructive-environment qualification remains opt-in and is reported as skipped here);
+- `swift test --package-path Packages/SpaceTraceKit`: 154 tests in 24 suites (the environment-changing qualification remains opt-in and is reported as skipped here);
 - the same package tests with complete strict-concurrency diagnostics and compiler warnings treated as errors;
 - an adapter-to-application-to-real-SQLite integration test with an injected calibration scanner;
 - four serialized per-device FSEvents integration tests on a guarded disposable APFS directory, covering persistent identity resolution, live delivery, single-subscription failure, cancellation cleanup, explicit stop, restart, historical replay through `HistoryDone`, and a real callback-buffer overflow marker;
@@ -40,6 +41,9 @@ The following gates passed on 2026-07-18 with Swift 6.2.1 and Xcode 26.1.1:
 - deterministic post-start lifecycle tests proving automatic live recovery, durable continuity invalidation, bounded start and repeated-terminal failure, cancellation during backoff, rejection of missing/replacement volume identity, and recovery-policy validation without timing sleeps;
 - deterministic lifecycle-state observation proving current-state replay, `inactive → active → recovering → active`, terminal `failed`, generation-bound stop cleanup, and positive buffer validation;
 - deterministic bookmark/catalog tests proving valid/stale partial restoration, absent-volume retry, no stale auto-refresh, acquisition persistence, exactly-once lease release, and a real native no-UI bookmark round-trip; plus SQLite v4-to-v5 migration and process-lifecycle cancellation/cleanup tests;
+- deterministic grant-removal failure ordering, authorization-coordinator restart/rollback, and MainActor view-model tests for selection, cancellation, stale reauthorization, revocation, and external-volume return;
+- strict verification of an ad-hoc signed current-host smoke build containing App Sandbox, read-only user-selected files, app-scoped bookmarks, and `LSMinimumSystemVersion = 15.6`; this is not distribution-signing or macOS 15.6 runtime evidence;
+- current-host signed-sandbox smoke proving exact Powerbox selection, normal same-bundle relaunch without another picker, app-level bookmark removal without fixture deletion, unavailable state while a disposable APFS image is absent, and automatic authorization recovery when the same Volume UUID returns;
 - exhaustive application state-model execution of all 2,401 four-signal sequences across two persistent volume identities and three runtime disk identities, plus parameterized end-to-end persistence/calibration evidence for user-space drop, kernel drop, event-ID wrap, and callback overflow;
 - deterministic metadata fixtures for permission loss, symlinks, mount boundaries, hard links, budgets, and cancellation, plus a production-adapter test scoped to a disposable temporary directory;
 - `make verify`, including architecture checks, package tests, Xcode scheme discovery, Debug build, application unit tests, and Release build;
@@ -49,10 +53,9 @@ The strict-concurrency run is an audit for newly introduced package code. The ap
 
 ## Deliberately not claimed
 
-- No user-facing scan, history, explanation, menu-bar, permission, or export workflow is implemented.
-- The production scanner, schema-v3 staging path, schema-v4 mount mapping, schema-v5 bookmark catalog, Disk Arbitration source, and FSEvents supervisor are wired into the application process lifecycle, but no directory-selection or permission UI can configure them yet.
+- No user-facing scan, history, explanation, menu-bar, or export workflow is implemented. The directory-permission screen is intentionally the only current product UI.
 - Scan scheduling does not yet react to thermal state, battery state, or system load. Hard-link deduplication is bounded by the entry budget but remains in memory for each scan run.
-- Security-scoped bookmark acquisition/restoration is implemented as a non-UI API and process lifecycle, but real sandbox Powerbox selection, live permission revocation, stale-bookmark reacquisition UI, cloud placeholder classification, and APFS snapshot reconciliation are not implemented or qualified.
+- Real sandbox Powerbox presentation and stale/identity-failure reauthorization UI are implemented. Current-host persistent selection, same-bundle relaunch, explicit app-level removal, and same-image external-volume return have passed. Genuine stale evidence, the different-UUID replacement subcase in the UI flow, Apple-identity signing, and the macOS 15.6 runtime matrix remain incomplete or blocked by the available host.
 - No exact byte delta or process attribution is inferred from FSEvents.
 - Native qualification now includes controlled detach/remount and same-name replacement images on the development host. Oldest-supported-OS runtime behavior, genuine daemon `UserDropped`, `KernelDropped`, event-ID wrap, sleep/wake, and permission-revocation behavior remain unqualified; the permitted evidence boundary is recorded in the [continuity-loss qualification protocol](fsevents-continuity-qualification.md).
 - Automatic post-start recovery is bounded and tested, but genuine daemon-generated drop/wrap conditions and recovery on the oldest supported macOS runtime remain unqualified.
@@ -65,6 +68,6 @@ The strict-concurrency run is an audit for newly introduced package code. The ap
 1. Capture genuine daemon drop/wrap evidence only when it is safely reproducible under the continuity-loss qualification protocol, and qualify recovery on the oldest supported macOS runtime.
 2. Complete the ADR-004 GRDB-versus-raw-SQLite review, including license, build, migration, and notarization evidence.
 3. Expand the schema migration fixture matrix and add disk-full/corruption tests, retention behavior, and oldest-supported-OS qualification.
-4. Add the user-driven system directory-selection and reauthorization workflow, then qualify sandboxed relaunch, live revocation, stale bookmarks, external-volume return, and shutdown on macOS 15.6 without weakening the implemented exact-scope contract.
+4. Rerun the signed sandbox protocol with a stable Apple identity on Apple Silicon macOS 15.6, including genuine stale evidence and the different-UUID UI replacement subcase; do not substitute the completed current-host ad-hoc smoke for this gate.
 5. Add thermal, power, sleep/wake, permission-revocation, and production calibration scheduling policies.
 6. Keep all spike code unreachable from user-visible workflows until its corresponding ADR is accepted.

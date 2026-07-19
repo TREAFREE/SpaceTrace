@@ -229,6 +229,8 @@ SpaceTrace/
 
 MVP uses one menu-bar-capable application process. Closing the main window does not stop monitoring; quitting the app does. Optional launch at login uses the public Service Management API and is user-controlled. There is no LaunchDaemon, XPC helper, login-item helper executable, or root process.
 
+The supported application shell is a conventional Dock application with one main window plus a public SwiftUI `MenuBarExtra` for lightweight status and window access. The main window owns data-rich investigation, history, evidence, and permission education. The menu-bar surface remains small and does not become the only route to an essential action. SpaceTrace does not position a custom window around the camera housing or depend on display-notch geometry: `NSScreen` safe-area APIs are treated only as layout-avoidance evidence, not as a product surface or persistent attachment point.
+
 This choice keeps FDA scope, code signing, crash recovery, and updates understandable. A helper may only be reconsidered if measured app-lifecycle constraints prevent the agreed freshness SLO.
 
 ### 7.2 Concurrency ownership

@@ -42,8 +42,10 @@ The following gates passed through 2026-07-19 with Swift 6.2.1 and Xcode 26.1.1:
 - deterministic lifecycle-state observation proving current-state replay, `inactive → active → recovering → active`, terminal `failed`, generation-bound stop cleanup, and positive buffer validation;
 - deterministic bookmark/catalog tests proving valid/stale partial restoration, absent-volume retry, no stale auto-refresh, acquisition persistence, exactly-once lease release, and a real native no-UI bookmark round-trip; plus SQLite v4-to-v5 migration and process-lifecycle cancellation/cleanup tests;
 - deterministic grant-removal failure ordering, authorization-coordinator restart/rollback, and MainActor view-model tests for selection, cancellation, stale reauthorization, revocation, and external-volume return;
+- deterministic application-shell tests proving that only implemented overview/permission destinations are exposed and that unavailable, stale, or failed grants can never appear overview-ready;
 - strict verification of an ad-hoc signed current-host smoke build containing App Sandbox, read-only user-selected files, app-scoped bookmarks, and `LSMinimumSystemVersion = 15.6`; this is not distribution-signing or macOS 15.6 runtime evidence;
 - current-host signed-sandbox smoke proving exact Powerbox selection, normal same-bundle relaunch without another picker, app-level bookmark removal without fixture deletion, unavailable state while a disposable APFS image is absent, and automatic authorization recovery when the same Volume UUID returns;
+- current-host visual and accessibility-tree inspection of the ordinary single-window shell, overview readiness, sidebar navigation, and embedded permission journey; the public SwiftUI `MenuBarExtra` compiles into the same process, while its final status-item click matrix remains part of signed UI qualification;
 - exhaustive application state-model execution of all 2,401 four-signal sequences across two persistent volume identities and three runtime disk identities, plus parameterized end-to-end persistence/calibration evidence for user-space drop, kernel drop, event-ID wrap, and callback overflow;
 - deterministic metadata fixtures for permission loss, symlinks, mount boundaries, hard links, budgets, and cancellation, plus a production-adapter test scoped to a disposable temporary directory;
 - `make verify`, including architecture checks, package tests, Xcode scheme discovery, Debug build, application unit tests, and Release build;
@@ -53,7 +55,7 @@ The strict-concurrency run is an audit for newly introduced package code. The ap
 
 ## Deliberately not claimed
 
-- No user-facing scan, history, explanation, menu-bar, or export workflow is implemented. The directory-permission screen is intentionally the only current product UI.
+- No user-facing baseline scan, history, growth explanation, 24-hour menu-bar metric, or export workflow is implemented. The ordinary main-window shell, permission-aware overview, directory-permission destination, and lightweight menu-bar entry are implemented, and they intentionally show no invented storage measurements.
 - Scan scheduling does not yet react to thermal state, battery state, or system load. Hard-link deduplication is bounded by the entry budget but remains in memory for each scan run.
 - Real sandbox Powerbox presentation and stale/identity-failure reauthorization UI are implemented. Current-host persistent selection, same-bundle relaunch, explicit app-level removal, and same-image external-volume return have passed. Genuine stale evidence, the different-UUID replacement subcase in the UI flow, Apple-identity signing, and the macOS 15.6 runtime matrix remain incomplete or blocked by the available host.
 - No exact byte delta or process attribution is inferred from FSEvents.
@@ -65,9 +67,10 @@ The strict-concurrency run is an audit for newly introduced package code. The ap
 
 ## Next acceptance gates
 
-1. Capture genuine daemon drop/wrap evidence only when it is safely reproducible under the continuity-loss qualification protocol, and qualify recovery on the oldest supported macOS runtime.
-2. Complete the ADR-004 GRDB-versus-raw-SQLite review, including license, build, migration, and notarization evidence.
-3. Expand the schema migration fixture matrix and add disk-full/corruption tests, retention behavior, and oldest-supported-OS qualification.
-4. Rerun the signed sandbox protocol with a stable Apple identity on Apple Silicon macOS 15.6, including genuine stale evidence and the different-UUID UI replacement subcase; do not substitute the completed current-host ad-hoc smoke for this gate.
-5. Add thermal, power, sleep/wake, permission-revocation, and production calibration scheduling policies.
-6. Keep all spike code unreachable from user-visible workflows until its corresponding ADR is accepted.
+1. Connect the authorized-scope baseline pipeline to a cancellable application use case and typed progress snapshots, then render only published coverage-aware results in the overview.
+2. Capture genuine daemon drop/wrap evidence only when it is safely reproducible under the continuity-loss qualification protocol, and qualify recovery on the oldest supported macOS runtime.
+3. Complete the ADR-004 GRDB-versus-raw-SQLite review, including license, build, migration, and notarization evidence.
+4. Expand the schema migration fixture matrix and add disk-full/corruption tests, retention behavior, and oldest-supported-OS qualification.
+5. Rerun the signed sandbox protocol with a stable Apple identity on Apple Silicon macOS 15.6, including genuine stale evidence, the different-UUID UI replacement subcase, and the system menu-bar interaction matrix; do not substitute the completed current-host ad-hoc smoke for this gate.
+6. Add thermal, power, sleep/wake, permission-revocation, and production calibration scheduling policies.
+7. Keep all spike code unreachable from user-visible workflows until its corresponding ADR is accepted.

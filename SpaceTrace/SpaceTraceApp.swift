@@ -13,9 +13,15 @@ struct SpaceTraceApp: App {
     private var appDelegate
 
     var body: some Scene {
-        WindowGroup {
+        Window("SpaceTrace", id: "main") {
             ContentView(model: appDelegate.authorizationModel)
         }
-        .defaultSize(width: 640, height: 460)
+        .defaultSize(width: 920, height: 620)
+        .windowToolbarStyle(.unified)
+
+        MenuBarExtra("SpaceTrace", systemImage: "externaldrive") {
+            MenuBarStatusView(model: appDelegate.authorizationModel)
+        }
+        .menuBarExtraStyle(.window)
     }
 }

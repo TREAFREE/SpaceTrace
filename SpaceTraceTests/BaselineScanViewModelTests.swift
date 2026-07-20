@@ -26,6 +26,8 @@ struct BaselineScanViewModelTests {
 
         #expect(model.state == .failed(failure))
         #expect(await coordinator.startedScopeIDs == [scopeID])
+        await model.restore(scopeID: scopeID)
+        #expect(await coordinator.restoredScopeIDs == [scopeID])
         await model.cancel()
         #expect(await coordinator.cancelCount == 1)
 
@@ -38,6 +40,7 @@ private actor BaselineScanCoordinatorFake: AuthorizedBaselineScanCoordinating {
     private var continuation: AsyncStream<AuthorizedBaselineScanState>.Continuation?
     private var observationWaiters: [CheckedContinuation<Void, Never>] = []
     private(set) var startedScopeIDs: [WatchedScopeID] = []
+    private(set) var restoredScopeIDs: [WatchedScopeID] = []
     private(set) var cancelCount = 0
 
     func updates() -> AsyncStream<AuthorizedBaselineScanState> {
@@ -55,6 +58,10 @@ private actor BaselineScanCoordinatorFake: AuthorizedBaselineScanCoordinating {
 
     func cancel() {
         cancelCount += 1
+    }
+
+    func restoreLatest(scopeID: WatchedScopeID) {
+        restoredScopeIDs.append(scopeID)
     }
 
     func send(_ state: AuthorizedBaselineScanState) {

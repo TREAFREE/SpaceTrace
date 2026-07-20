@@ -55,30 +55,33 @@ public struct AuthorizedBaselineScanProgress: Sendable, Equatable {
 }
 
 public struct AuthorizedBaselineScanResult: Sendable, Equatable {
-    public let context: AuthorizedBaselineScanContext
-    public let logicalBytes: ByteCount
-    public let allocatedBytes: ByteCount
-    public let descendantCount: Int64
-    public let report: CalibrationReport
-    public let startedAt: Date
-    public let completedAt: Date
+    public enum Origin: Sendable, Equatable {
+        case completedScan
+        case restoredAfterRestart
+    }
+
+    public let snapshot: AuthorizedBaselineSnapshot
+    public let root: AuthorizedBaselineRootSnapshot
+    public let origin: Origin
+
+    public var context: AuthorizedBaselineScanContext { root.context }
+    public var logicalBytes: ByteCount { root.logicalBytes }
+    public var allocatedBytes: ByteCount { root.allocatedBytes }
+    public var descendantCount: Int64 { root.descendantCount }
+    public var startedAt: Date { snapshot.startedAt }
+    public var completedAt: Date { snapshot.committedAt }
 
     public init(
-        context: AuthorizedBaselineScanContext,
-        logicalBytes: ByteCount,
-        allocatedBytes: ByteCount,
-        descendantCount: Int64,
-        report: CalibrationReport,
-        startedAt: Date,
-        completedAt: Date
-    ) {
-        self.context = context
-        self.logicalBytes = logicalBytes
-        self.allocatedBytes = allocatedBytes
-        self.descendantCount = descendantCount
-        self.report = report
-        self.startedAt = startedAt
-        self.completedAt = completedAt
+        snapshot: AuthorizedBaselineSnapshot,
+        scopeID: WatchedScopeID,
+        origin: Origin
+    ) throws(AuthorizedBaselineSnapshotError) {
+        guard let root = snapshot.root(for: scopeID) else {
+            throw .requestedScopeMissing
+        }
+        self.snapshot = snapshot
+        self.root = root
+        self.origin = origin
     }
 }
 
@@ -132,6 +135,7 @@ public enum AuthorizedBaselineScanFailureCode: Sendable, Equatable {
     case scopeNotAuthorized
     case monitoringNotReady
     case publishedRootMissing
+    case baselinePersistenceFailed
     case operationFailed
 }
 

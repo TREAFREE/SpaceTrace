@@ -82,6 +82,84 @@ struct SQLiteEventJournalRepositoryTests {
         fixture.remove()
     }
 
+    @Test("Committed baseline metadata and multiple roots round-trip by scope")
+    func persistsAuthorizedBaselineSnapshot() async throws {
+        try await withRepository { repository in
+            let timestamp = Date(timeIntervalSince1970: 1_750_000_000)
+            let firstScopeID = try WatchedScopeID("scope-baseline-first")
+            let secondScopeID = try WatchedScopeID("scope-baseline-second")
+            let snapshot = try makeAuthorizedBaselineSnapshot(
+                id: "baseline-round-trip",
+                timestamp: timestamp,
+                roots: [
+                    (firstScopeID, "/Users/example/First", "stream-first", 1_024),
+                    (secondScopeID, "/Users/example/Second", "stream-second", 2_048),
+                ]
+            )
+
+            try await repository.saveAuthorizedBaseline(snapshot)
+
+            #expect(
+                try await repository.latestAuthorizedBaseline(for: firstScopeID) == snapshot
+            )
+            #expect(
+                try await repository.latestAuthorizedBaseline(for: secondScopeID) == snapshot
+            )
+        }
+    }
+
+    @Test("Restart discards interrupted staging but preserves durable dirty work")
+    func recoversInterruptedCalibrationRun() async throws {
+        let fixture = try TemporaryDatabase()
+        let repository = try SQLiteEventJournalRepository(databaseURL: fixture.databaseURL)
+        let streamID = try EventStreamID("volume-restart:generation-1")
+        let batch = try makeBatch(
+            streamID: streamID,
+            path: "/Users/example/Interrupted",
+            reasons: .requiresCalibration,
+            cursor: 9
+        )
+        try await repository.commit(batch)
+        let workItem = try #require(
+            try await repository.pendingDirtyWork(for: streamID, limit: 1).first
+        )
+        let runID = try await repository.beginCalibration(
+            CalibrationRequest(streamID: streamID, workItem: workItem)
+        )
+        try await repository.stageCalibration(
+            [
+                makeAggregate(
+                    path: "/Users/example/Interrupted",
+                    logical: 100,
+                    allocated: 200,
+                    descendants: 1
+                ),
+            ],
+            in: runID
+        )
+        try await repository.close()
+
+        let reopened = try SQLiteEventJournalRepository(databaseURL: fixture.databaseURL)
+        #expect(try await reopened.pendingDirtyWork(for: streamID, limit: 10) == [workItem])
+        try await reopened.close()
+
+        #expect(
+            try readSQLiteText(
+                from: fixture.databaseURL,
+                sql: "SELECT state FROM scan_run WHERE id = ?1",
+                argument: runID.rawValue
+            ) == "failed"
+        )
+        #expect(
+            try readSQLiteCount(
+                from: fixture.databaseURL,
+                sql: "SELECT COUNT(*) FROM scan_node_stage WHERE scan_run_id = ?1",
+                argument: runID.rawValue
+            ) == 0
+        )
+        fixture.remove()
+    }
+
     @Test("Bookmark writes replace atomically by scope and support explicit removal")
     func persistsAndRemovesBookmarks() async throws {
         try await withRepository { repository in
@@ -903,6 +981,7 @@ private func createVersionThreeMountFixture(at databaseURL: URL) throws {
             applied_at_ms INTEGER NOT NULL,
             checksum TEXT NOT NULL
         );
+        \(minimalCalibrationTablesSQL)
         INSERT INTO schema_migration(version, applied_at_ms, checksum)
         VALUES(3, 0, 'calibration-v3-staging-finalization');
         PRAGMA user_version = 3;
@@ -933,6 +1012,7 @@ private func createVersionFourFixture(at databaseURL: URL) throws {
             is_active INTEGER NOT NULL,
             updated_at_ms INTEGER NOT NULL
         ) WITHOUT ROWID;
+        \(minimalCalibrationTablesSQL)
         INSERT INTO schema_migration(version, applied_at_ms, checksum)
         VALUES(4, 0, 'scope-mount-generation-v4');
         PRAGMA user_version = 4;
@@ -940,6 +1020,128 @@ private func createVersionFourFixture(at databaseURL: URL) throws {
     guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else {
         throw MigrationFixtureError.createFailed
     }
+}
+
+private let minimalCalibrationTablesSQL = """
+    CREATE TABLE scan_run (
+        id TEXT PRIMARY KEY NOT NULL,
+        stream_id TEXT NOT NULL,
+        region_path TEXT NOT NULL,
+        dirty_revision_be BLOB NOT NULL CHECK(length(dirty_revision_be) = 8),
+        state TEXT NOT NULL CHECK(state IN (
+            'running', 'completed', 'partial', 'cancelled',
+            'failed', 'superseded'
+        )),
+        coverage TEXT CHECK(coverage IN ('complete', 'partial')),
+        entries_seen INTEGER NOT NULL DEFAULT 0,
+        directories_staged INTEGER NOT NULL DEFAULT 0,
+        started_at_ms INTEGER NOT NULL,
+        finished_at_ms INTEGER
+    ) WITHOUT ROWID;
+    CREATE TABLE scan_node_stage (
+        scan_run_id TEXT NOT NULL REFERENCES scan_run(id) ON DELETE CASCADE,
+        path TEXT NOT NULL,
+        logical_bytes INTEGER,
+        allocated_bytes INTEGER,
+        descendant_count INTEGER NOT NULL,
+        coverage TEXT NOT NULL,
+        PRIMARY KEY(scan_run_id, path)
+    ) WITHOUT ROWID;
+    """
+
+private func makeAuthorizedBaselineSnapshot(
+    id: String,
+    timestamp: Date,
+    roots: [(WatchedScopeID, String, String, Int64)]
+) throws -> AuthorizedBaselineSnapshot {
+    let rootSnapshots = try roots.map { scopeID, path, streamID, logicalBytes in
+        try AuthorizedBaselineRootSnapshot(
+            context: AuthorizedBaselineScanContext(
+                scopeID: scopeID,
+                root: DirtyRegionPath(path),
+                streamID: EventStreamID(streamID)
+            ),
+            logicalBytes: ByteCount(logicalBytes),
+            allocatedBytes: ByteCount(logicalBytes * 2),
+            descendantCount: 3,
+            entriesVisited: 4,
+            directoriesObserved: 2
+        )
+    }
+    return try AuthorizedBaselineSnapshot(
+        id: AuthorizedBaselineID(id),
+        startedAt: timestamp,
+        committedAt: timestamp.addingTimeInterval(1),
+        build: AuthorizedBaselineBuildMetadata(
+            appVersion: "0.1.0 (1)",
+            schemaVersion: SQLiteEventJournalRepository.currentSchemaVersion
+        ),
+        startupVolume: StartupVolumeCapacitySnapshot(
+            observedAt: timestamp,
+            volumeUUID: UUID(uuidString: "11111111-2222-3333-4444-555555555555"),
+            totalBytes: ByteCount(10_000),
+            availableBytes: ByteCount(4_000),
+            availableForImportantUsageBytes: nil
+        ),
+        roots: rootSnapshots
+    )
+}
+
+private func readSQLiteText(
+    from databaseURL: URL,
+    sql: String,
+    argument: String
+) throws -> String? {
+    var database: OpaquePointer?
+    guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+          let database else {
+        throw MigrationFixtureError.openFailed
+    }
+    defer { sqlite3_close(database) }
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
+          let statement else {
+        throw MigrationFixtureError.createFailed
+    }
+    defer { sqlite3_finalize(statement) }
+    try argument.withCString { value in
+        guard sqlite3_bind_text(statement, 1, value, -1, nil) == SQLITE_OK else {
+            throw MigrationFixtureError.createFailed
+        }
+    }
+    guard sqlite3_step(statement) == SQLITE_ROW,
+          let text = sqlite3_column_text(statement, 0) else {
+        return nil
+    }
+    return String(cString: text)
+}
+
+private func readSQLiteCount(
+    from databaseURL: URL,
+    sql: String,
+    argument: String
+) throws -> Int64 {
+    var database: OpaquePointer?
+    guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+          let database else {
+        throw MigrationFixtureError.openFailed
+    }
+    defer { sqlite3_close(database) }
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
+          let statement else {
+        throw MigrationFixtureError.createFailed
+    }
+    defer { sqlite3_finalize(statement) }
+    try argument.withCString { value in
+        guard sqlite3_bind_text(statement, 1, value, -1, nil) == SQLITE_OK else {
+            throw MigrationFixtureError.createFailed
+        }
+    }
+    guard sqlite3_step(statement) == SQLITE_ROW else {
+        throw MigrationFixtureError.createFailed
+    }
+    return sqlite3_column_int64(statement, 0)
 }
 
 private enum MigrationFixtureError: Error {

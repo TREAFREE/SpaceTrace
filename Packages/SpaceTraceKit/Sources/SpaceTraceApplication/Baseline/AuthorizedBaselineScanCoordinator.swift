@@ -7,20 +7,35 @@ public actor AuthorizedBaselineScanCoordinator {
 
     private let contextProvider: any AuthorizedBaselineScanContextProviding
     private let calibrationRunner: any AuthorizedBaselineCalibrationRunning
+    private let snapshotRepository: any AuthorizedBaselineSnapshotRepository
+    private let volumeCapacityProvider: any StartupVolumeCapacitySnapshotProviding
+    private let buildMetadata: AuthorizedBaselineBuildMetadata
+    private let makeBaselineID: @Sendable () -> AuthorizedBaselineID
     private let now: @Sendable () -> Date
     private var currentState: AuthorizedBaselineScanState = .idle
     private var currentTask: Task<Void, Never>?
     private var operationID: UUID?
     private var activeContext: AuthorizedBaselineScanContext?
+    private var isRestoring = false
     private var observers: [UUID: Observer] = [:]
 
     public init(
         contextProvider: any AuthorizedBaselineScanContextProviding,
         calibrationRunner: any AuthorizedBaselineCalibrationRunning,
+        snapshotRepository: any AuthorizedBaselineSnapshotRepository,
+        volumeCapacityProvider: any StartupVolumeCapacitySnapshotProviding,
+        buildMetadata: AuthorizedBaselineBuildMetadata,
+        makeBaselineID: @escaping @Sendable () -> AuthorizedBaselineID = {
+            AuthorizedBaselineID()
+        },
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.contextProvider = contextProvider
         self.calibrationRunner = calibrationRunner
+        self.snapshotRepository = snapshotRepository
+        self.volumeCapacityProvider = volumeCapacityProvider
+        self.buildMetadata = buildMetadata
+        self.makeBaselineID = makeBaselineID
         self.now = now
     }
 
@@ -45,7 +60,7 @@ public actor AuthorizedBaselineScanCoordinator {
 
     @discardableResult
     public func start(scopeID: WatchedScopeID) -> Bool {
-        guard currentTask == nil else { return false }
+        guard currentTask == nil, isRestoring == false else { return false }
         let operationID = UUID()
         let startedAt = now()
         self.operationID = operationID
@@ -69,6 +84,47 @@ public actor AuthorizedBaselineScanCoordinator {
 
     public func waitForCurrentScan() async {
         await currentTask?.value
+    }
+
+    /// Restores only a previously committed baseline. Interrupted scan staging
+    /// is recovered by the persistence adapter and is never presented as a
+    /// resumable or complete result.
+    public func restoreLatest(scopeID: WatchedScopeID) async {
+        guard currentTask == nil, isRestoring == false else { return }
+        isRestoring = true
+        defer { isRestoring = false }
+
+        do {
+            let snapshot = try await snapshotRepository.latestAuthorizedBaseline(
+                for: scopeID
+            )
+            try Task.checkCancellation()
+            guard let snapshot else {
+                publish(.idle)
+                return
+            }
+            publish(
+                .completed(
+                    try AuthorizedBaselineScanResult(
+                        snapshot: snapshot,
+                        scopeID: scopeID,
+                        origin: .restoredAfterRestart
+                    )
+                )
+            )
+        } catch is CancellationError {
+            return
+        } catch {
+            publish(
+                .failed(
+                    AuthorizedBaselineScanFailure(
+                        scopeID: scopeID,
+                        code: .baselinePersistenceFailed,
+                        failedAt: now()
+                    )
+                )
+            )
+        }
     }
 
     private func execute(
@@ -104,16 +160,41 @@ public actor AuthorizedBaselineScanCoordinator {
                     )
                     return
                 }
+                let volumeSnapshot = await volumeCapacityProvider.snapshot()
+                try Task.checkCancellation()
+                let completedAt = now()
+                let rootSnapshot = try AuthorizedBaselineRootSnapshot(
+                    context: context,
+                    logicalBytes: logicalBytes,
+                    allocatedBytes: allocatedBytes,
+                    descendantCount: aggregate.descendantCount,
+                    entriesVisited: report.entriesVisited,
+                    directoriesObserved: report.directoriesStaged
+                )
+                let snapshot = try AuthorizedBaselineSnapshot(
+                    id: makeBaselineID(),
+                    startedAt: startedAt,
+                    committedAt: completedAt,
+                    build: buildMetadata,
+                    startupVolume: volumeSnapshot,
+                    roots: [rootSnapshot]
+                )
+                do {
+                    try await snapshotRepository.saveAuthorizedBaseline(snapshot)
+                } catch {
+                    publishFailure(
+                        scopeID: scopeID,
+                        code: .baselinePersistenceFailed,
+                        operationID: operationID
+                    )
+                    return
+                }
                 publish(
                     .completed(
-                        AuthorizedBaselineScanResult(
-                            context: context,
-                            logicalBytes: logicalBytes,
-                            allocatedBytes: allocatedBytes,
-                            descendantCount: aggregate.descendantCount,
-                            report: report,
-                            startedAt: startedAt,
-                            completedAt: now()
+                        try AuthorizedBaselineScanResult(
+                            snapshot: snapshot,
+                            scopeID: scopeID,
+                            origin: .completedScan
                         )
                     )
                 )

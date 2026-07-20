@@ -41,6 +41,14 @@ struct SpaceTraceCompositionRoot {
             calibrationRunner: EventJournalAuthorizedBaselineCalibrationRunner(
                 repository: repository,
                 scanner: scanner
+            ),
+            snapshotRepository: repository,
+            volumeCapacityProvider: FoundationStartupVolumeCapacityProvider(
+                dataDirectoryURL: applicationSupportRoot
+            ),
+            buildMetadata: try AuthorizedBaselineBuildMetadata(
+                appVersion: appVersion(),
+                schemaVersion: SQLiteEventJournalRepository.currentSchemaVersion
             )
         )
         return Self(
@@ -75,6 +83,19 @@ struct SpaceTraceCompositionRoot {
             ofItemAtPath: directory.path
         )
         return directory
+    }
+
+    private static func appVersion(bundle: Bundle = .main) -> String {
+        let shortVersion = bundle.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String ?? "development"
+        guard let build = bundle.object(
+            forInfoDictionaryKey: "CFBundleVersion"
+        ) as? String,
+              build.isEmpty == false else {
+            return shortVersion
+        }
+        return "\(shortVersion) (\(build))"
     }
 
     private static func protectDatabaseFiles(

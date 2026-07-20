@@ -8,7 +8,7 @@ Chinese companion translation: [authorized-baseline-overview.zh-CN.md](authorize
 
 ## Purpose and scope
 
-This slice connects one restored, user-selected directory to a cancellable metadata baseline and renders only verifiable results in the overview. It implements the directory-root portion of FR-002. It does **not** yet implement startup data-volume capacity/available samples, multi-root aggregation, resumable baselines, thermal or power scheduling, or historical comparison points.
+This slice connects one restored, user-selected directory to a cancellable metadata baseline and renders only verifiable results in the overview. The committed record now includes a startup-data-volume capacity sample and survives an application restart. It implements the single-active-root portion of FR-002. It does **not** yet implement a multi-root scan scheduler, true mid-scan continuation, thermal or power scheduling, or historical comparison points.
 
 ## Ownership and data flow
 
@@ -24,7 +24,12 @@ Overview button
          -> bounded metadata scanner
          -> SQLite staging
          -> revision-checked atomic publication
-    -> published root aggregate or typed non-publication result
+    -> startup data-volume capacity sample
+    -> SQLite v6 authorized baseline snapshot transaction
+         -> app/schema version
+         -> volume total/current-available/important-usage estimate
+         -> ordered root summaries (multi-root capable record shape)
+    -> new result, restored committed result, or typed non-publication result
     -> overview
 ```
 
@@ -40,7 +45,7 @@ The application-owned state is one of:
 - `preparing`, while the authorized scope and active monitoring generation are resolved;
 - `scanning`, while bounded metadata enumeration is active;
 - `publishing`, after a complete report exists but before its revision-checked transaction commits;
-- `completed`, containing a published complete root aggregate and scan report;
+- `completed`, containing a durable complete baseline snapshot; its origin says whether it was just scanned or restored after restart;
 - `incomplete`, containing either partial-coverage evidence or a superseded-revision reason;
 - `cancelled`, after the owned task has exited and staging has been discarded;
 - `failed`, with a stable, privacy-safe failure code.
@@ -53,11 +58,20 @@ The overview uses an indeterminate progress indicator because the scanner does n
 2. Scanner output is streamed to SQLite staging tables; no staged row is current truth.
 3. A partial report is discarded and its dirty work remains. The UI may show real entry, directory, and gap counts, but it shows no staged byte total.
 4. A complete report enters atomic publication. If a newer event changed the dirty revision, the run becomes `superseded`, staging is discarded, and the dirty work remains.
-5. Only a successful publication is read back from `node_current` and shown as a byte result.
-6. A published result identifies logical bytes and observable allocated bytes separately. The latter is not presented as unique APFS physical allocation or reclaimable space.
-7. Cancellation discards staging and never relabels partial work as complete.
+5. Only a successful directory publication is read back from `node_current`. The coordinator then samples the volume containing SpaceTrace's Application Support directory and writes the v6 baseline snapshot in its own transaction.
+6. The UI enters `completed` only after that snapshot transaction succeeds. A crash or write failure between directory publication and snapshot commit cannot create a false durable baseline: restart restores the previous committed snapshot, or none.
+7. A published result identifies logical bytes and observable allocated bytes separately. The latter is not presented as unique APFS physical allocation or reclaimable space.
+8. Cancellation discards staging and never relabels partial work as complete.
 
 These rules preserve the architecture invariant that unknown is not zero.
+
+## Durable metadata and restart policy
+
+Schema v6 adds `authorized_baseline_snapshot` and `authorized_baseline_root`. Each committed snapshot records its start/commit times, App version, schema version, complete coverage, volume observation time and optional capacity values. Roots are stored as an ordered collection with unique scope IDs, so persistence does not need another shape migration when a future scheduler scans multiple authorized roots.
+
+On startup, SQLite performs a bounded recovery transaction. Any `running` calibration row belongs to the dead process: its staging rows are deleted, it is marked failed, and its durable dirty work remains. SpaceTrace deliberately does not claim that arbitrary filesystem enumeration can resume from an in-memory midpoint. After authorization restoration, the coordinator loads only the latest committed baseline containing that scope and labels the UI result as restored.
+
+The startup-data-volume provider queries the volume containing the Application Support directory rather than assuming an APFS mount path. `total`, immediately `available`, and `availableForImportantUsage` are distinct optional values. The important-usage value may include space macOS can make available and is not labeled as current free blocks. Unavailable API values remain unknown.
 
 ## User-visible behavior
 
@@ -69,13 +83,16 @@ A successful card shows:
 - complete coverage;
 - logical and observable allocated size using binary units;
 - descendant and visited-entry counts;
+- startup data-volume total and current available capacity;
+- the separate macOS important-usage availability estimate;
 - publication time;
+- App/schema version and whether the card was restored from local committed state;
 - a rescan action.
 
 Partial coverage, revision supersession, cancellation, and failures have distinct messages and retry actions. None of those states display an unpublished byte total.
 
 ## Verification boundary
 
-Deterministic package tests cover complete publication, partial non-publication, revision supersession, cancellation, typed progress order, context failures, and real SQLite read-back. Application tests cover the MainActor projection and command forwarding. Full repository verification builds Debug and Release app configurations and executes package and application unit suites.
+Deterministic package tests cover complete publication, partial non-publication, revision supersession, cancellation, typed progress order, context failures, capacity sampling, multi-root snapshot round-trip, restart restoration, interrupted-staging cleanup, and preservation of dirty work. Application tests cover the MainActor projection, restoration command, and command forwarding. Full repository verification builds Debug and Release app configurations and executes package and application unit suites.
 
 Native security-scoped selection and mount lifecycle remain covered by their existing signed-sandbox and APFS-image protocols. This slice does not claim that the full FR-002 journey has passed on macOS 15.6; deployment-target compilation on a newer host is not runtime qualification.

@@ -192,16 +192,43 @@ struct OverviewView: View {
                 LabeledContent("逻辑大小", value: formatBytes(result.logicalBytes.value))
                 LabeledContent("可观察分配大小", value: formatBytes(result.allocatedBytes.value))
                 LabeledContent("后代条目", value: result.descendantCount.formatted())
-                LabeledContent("扫描条目", value: result.report.entriesVisited.formatted())
-                LabeledContent("完成根目录", value: "1 / 1")
+                LabeledContent("扫描条目", value: result.root.entriesVisited.formatted())
+                LabeledContent(
+                    "完成根目录",
+                    value: "\(result.snapshot.roots.count) / \(result.snapshot.roots.count)"
+                )
                 LabeledContent("不可完整读取的根目录", value: "0")
+                LabeledContent(
+                    "数据卷总容量",
+                    value: formatOptionalBytes(result.snapshot.startupVolume.totalBytes)
+                )
+                LabeledContent(
+                    "数据卷当前可用",
+                    value: formatOptionalBytes(result.snapshot.startupVolume.availableBytes)
+                )
+                LabeledContent(
+                    "macOS 重要用途可用估计",
+                    value: formatOptionalBytes(
+                        result.snapshot.startupVolume.availableForImportantUsageBytes
+                    )
+                )
             }
             Text("大小使用二进制单位。可观察分配大小不等于 APFS 唯一物理占用，也不代表可回收空间。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("“重要用途可用估计”由 macOS 提供，可能包含系统可清理空间，不等于当前空闲块。未知值会明确显示为未知。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text("发布于 \(result.completedAt.formatted(date: .abbreviated, time: .standard))")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            Text(
+                result.origin == .restoredAfterRestart
+                    ? "已从本机已提交记录恢复 · App \(result.snapshot.build.appVersion) · Schema \(result.snapshot.build.schemaVersion)"
+                    : "App \(result.snapshot.build.appVersion) · Schema \(result.snapshot.build.schemaVersion)"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
             Button("重新扫描") {
                 Task { await baselineScanModel.start(scopeID: scopeID) }
             }
@@ -282,8 +309,18 @@ struct OverviewView: View {
             Text(failureDetail(failure.code))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Button("重试") {
-                Task { await baselineScanModel.start(scopeID: scopeID) }
+            Button(
+                failure.code == .baselinePersistenceFailed
+                    ? "恢复上次已提交基线"
+                    : "重试"
+            ) {
+                Task {
+                    if failure.code == .baselinePersistenceFailed {
+                        await baselineScanModel.restore(scopeID: scopeID)
+                    } else {
+                        await baselineScanModel.start(scopeID: scopeID)
+                    }
+                }
             }
             .accessibilityIdentifier("overview-retry-failed-baseline")
         }
@@ -445,6 +482,11 @@ struct OverviewView: View {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .binary)
     }
 
+    private func formatOptionalBytes(_ bytes: ByteCount?) -> String {
+        guard let bytes else { return String(localized: "未知") }
+        return formatBytes(bytes.value)
+    }
+
     private func coverageLabel(_ coverage: CalibrationCoverage) -> String {
         switch coverage {
         case .complete: String(localized: "完整")
@@ -478,6 +520,8 @@ struct OverviewView: View {
             String(localized: "目录监控代次尚未激活或正在恢复。请稍后重试；SpaceTrace 不会绕过监控连续性直接发布结果。")
         case .publishedRootMissing:
             String(localized: "原子发布完成后没有找到可验证的根目录摘要。旧数据保持不变。")
+        case .baselinePersistenceFailed:
+            String(localized: "已发布目录聚合，但基线记录未能安全写入或恢复。SpaceTrace 不会把它展示为持久基线，请重试或检查本地数据库状态。")
         case .operationFailed:
             String(localized: "扫描或本地数据库操作失败。没有发布新的基线，请稍后重试。")
         }

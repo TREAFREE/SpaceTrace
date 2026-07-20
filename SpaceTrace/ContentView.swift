@@ -25,6 +25,11 @@ struct ContentView: View {
         .task {
             await baselineScanModel.monitor()
         }
+        .task(id: authorizationModel.authorizedScopeID) {
+            await baselineScanModel.restore(
+                scopeID: authorizationModel.authorizedScopeID
+            )
+        }
     }
 
     @ViewBuilder

@@ -19,9 +19,16 @@ struct AuthorizedBaselineScanCoordinatorTests {
                 fixture.completeReport
             )
         )
+        let snapshotRepository = BaselineSnapshotRepositoryFake()
         let coordinator = AuthorizedBaselineScanCoordinator(
             contextProvider: BaselineContextProviderFake(context: fixture.context),
             calibrationRunner: runner,
+            snapshotRepository: snapshotRepository,
+            volumeCapacityProvider: BaselineVolumeCapacityProviderFake(
+                snapshot: fixture.volumeSnapshot
+            ),
+            buildMetadata: fixture.buildMetadata,
+            makeBaselineID: { fixture.baselineID },
             now: { fixture.timestamp }
         )
         let recorder = BaselineStateRecorder()
@@ -44,7 +51,10 @@ struct AuthorizedBaselineScanCoordinatorTests {
         #expect(result.logicalBytes.value == 4_096)
         #expect(result.allocatedBytes.value == 8_192)
         #expect(result.descendantCount == 7)
-        #expect(result.report.coverage == .complete)
+        #expect(result.root.entriesVisited == 8)
+        #expect(result.snapshot.startupVolume == fixture.volumeSnapshot)
+        #expect(result.origin == .completedScan)
+        #expect(await snapshotRepository.savedSnapshots == [result.snapshot])
         #expect(
             await recorder.phases == [.idle, .preparing, .scanning, .publishing, .completed]
         )
@@ -66,6 +76,12 @@ struct AuthorizedBaselineScanCoordinatorTests {
             calibrationRunner: BaselineCalibrationRunnerFake(
                 outcome: .incomplete(partialReport, .partialCoverage)
             ),
+            snapshotRepository: BaselineSnapshotRepositoryFake(),
+            volumeCapacityProvider: BaselineVolumeCapacityProviderFake(
+                snapshot: fixture.volumeSnapshot
+            ),
+            buildMetadata: fixture.buildMetadata,
+            makeBaselineID: { fixture.baselineID },
             now: { fixture.timestamp }
         )
 
@@ -88,6 +104,12 @@ struct AuthorizedBaselineScanCoordinatorTests {
         let coordinator = AuthorizedBaselineScanCoordinator(
             contextProvider: BaselineContextProviderFake(context: fixture.context),
             calibrationRunner: runner,
+            snapshotRepository: BaselineSnapshotRepositoryFake(),
+            volumeCapacityProvider: BaselineVolumeCapacityProviderFake(
+                snapshot: fixture.volumeSnapshot
+            ),
+            buildMetadata: fixture.buildMetadata,
+            makeBaselineID: { fixture.baselineID },
             now: { fixture.timestamp }
         )
 
@@ -123,6 +145,12 @@ struct AuthorizedBaselineScanCoordinatorTests {
                     fixture.completeReport
                 )
             ),
+            snapshotRepository: BaselineSnapshotRepositoryFake(),
+            volumeCapacityProvider: BaselineVolumeCapacityProviderFake(
+                snapshot: fixture.volumeSnapshot
+            ),
+            buildMetadata: fixture.buildMetadata,
+            makeBaselineID: { fixture.baselineID },
             now: { fixture.timestamp }
         )
 
@@ -135,6 +163,95 @@ struct AuthorizedBaselineScanCoordinatorTests {
         }
         #expect(failure.code == .monitoringNotReady)
     }
+
+    @Test("A committed baseline restores after restart without rerunning the scanner")
+    func restoresCommittedBaseline() async throws {
+        let fixture = try Fixture()
+        let root = try AuthorizedBaselineRootSnapshot(
+            context: fixture.context,
+            logicalBytes: ByteCount(1_024),
+            allocatedBytes: ByteCount(2_048),
+            descendantCount: 4,
+            entriesVisited: 5,
+            directoriesObserved: 2
+        )
+        let snapshot = try AuthorizedBaselineSnapshot(
+            id: fixture.baselineID,
+            startedAt: fixture.timestamp,
+            committedAt: fixture.timestamp,
+            build: fixture.buildMetadata,
+            startupVolume: fixture.volumeSnapshot,
+            roots: [root]
+        )
+        let repository = BaselineSnapshotRepositoryFake(initialSnapshot: snapshot)
+        let coordinator = AuthorizedBaselineScanCoordinator(
+            contextProvider: BaselineContextProviderFake(context: fixture.context),
+            calibrationRunner: BaselineCalibrationRunnerFake(
+                outcome: .published(
+                    try DirectoryMetadataAggregate(
+                        path: fixture.context.root,
+                        logicalBytes: .zero,
+                        allocatedBytes: .zero,
+                        descendantCount: 0,
+                        coverage: .complete
+                    ),
+                    fixture.completeReport
+                )
+            ),
+            snapshotRepository: repository,
+            volumeCapacityProvider: BaselineVolumeCapacityProviderFake(
+                snapshot: fixture.volumeSnapshot
+            ),
+            buildMetadata: fixture.buildMetadata,
+            makeBaselineID: { fixture.baselineID },
+            now: { fixture.timestamp }
+        )
+
+        await coordinator.restoreLatest(scopeID: fixture.scopeID)
+
+        guard case let .completed(result) = await coordinator.state() else {
+            Issue.record("Expected the committed baseline to be restored.")
+            return
+        }
+        #expect(result.snapshot == snapshot)
+        #expect(result.origin == .restoredAfterRestart)
+    }
+
+    @Test("A snapshot write failure never claims a durable completed baseline")
+    func reportsSnapshotPersistenceFailure() async throws {
+        let fixture = try Fixture()
+        let coordinator = AuthorizedBaselineScanCoordinator(
+            contextProvider: BaselineContextProviderFake(context: fixture.context),
+            calibrationRunner: BaselineCalibrationRunnerFake(
+                outcome: .published(
+                    try DirectoryMetadataAggregate(
+                        path: fixture.context.root,
+                        logicalBytes: ByteCount(100),
+                        allocatedBytes: ByteCount(200),
+                        descendantCount: 1,
+                        coverage: .complete
+                    ),
+                    fixture.completeReport
+                )
+            ),
+            snapshotRepository: BaselineSnapshotRepositoryFake(failsOnSave: true),
+            volumeCapacityProvider: BaselineVolumeCapacityProviderFake(
+                snapshot: fixture.volumeSnapshot
+            ),
+            buildMetadata: fixture.buildMetadata,
+            makeBaselineID: { fixture.baselineID },
+            now: { fixture.timestamp }
+        )
+
+        #expect(await coordinator.start(scopeID: fixture.scopeID))
+        await coordinator.waitForCurrentScan()
+
+        guard case let .failed(failure) = await coordinator.state() else {
+            Issue.record("Expected a persistence failure instead of completed state.")
+            return
+        }
+        #expect(failure.code == .baselinePersistenceFailed)
+    }
 }
 
 private struct Fixture: Sendable {
@@ -142,6 +259,9 @@ private struct Fixture: Sendable {
     let context: AuthorizedBaselineScanContext
     let completeReport: CalibrationReport
     let timestamp = Date(timeIntervalSince1970: 1_750_000_000)
+    let baselineID: AuthorizedBaselineID
+    let buildMetadata: AuthorizedBaselineBuildMetadata
+    let volumeSnapshot: StartupVolumeCapacitySnapshot
 
     init() throws {
         scopeID = try WatchedScopeID("scope-primary")
@@ -157,7 +277,61 @@ private struct Fixture: Sendable {
             directoriesStaged: 2,
             gaps: []
         )
+        baselineID = try AuthorizedBaselineID("baseline-primary")
+        buildMetadata = try AuthorizedBaselineBuildMetadata(
+            appVersion: "0.1.0 (1)",
+            schemaVersion: 6
+        )
+        volumeSnapshot = StartupVolumeCapacitySnapshot(
+            observedAt: timestamp,
+            volumeUUID: UUID(uuidString: "11111111-2222-3333-4444-555555555555"),
+            totalBytes: try ByteCount(1_000_000),
+            availableBytes: try ByteCount(400_000),
+            availableForImportantUsageBytes: try ByteCount(500_000)
+        )
     }
+}
+
+private struct BaselineVolumeCapacityProviderFake: StartupVolumeCapacitySnapshotProviding {
+    let value: StartupVolumeCapacitySnapshot
+
+    init(snapshot: StartupVolumeCapacitySnapshot) {
+        value = snapshot
+    }
+
+    func snapshot() -> StartupVolumeCapacitySnapshot {
+        value
+    }
+}
+
+private actor BaselineSnapshotRepositoryFake: AuthorizedBaselineSnapshotRepository {
+    private let initialSnapshot: AuthorizedBaselineSnapshot?
+    private let failsOnSave: Bool
+    private(set) var savedSnapshots: [AuthorizedBaselineSnapshot] = []
+
+    init(
+        initialSnapshot: AuthorizedBaselineSnapshot? = nil,
+        failsOnSave: Bool = false
+    ) {
+        self.initialSnapshot = initialSnapshot
+        self.failsOnSave = failsOnSave
+    }
+
+    func saveAuthorizedBaseline(_ snapshot: AuthorizedBaselineSnapshot) throws {
+        if failsOnSave { throw BaselineSnapshotRepositoryFakeError.writeFailed }
+        savedSnapshots.append(snapshot)
+    }
+
+    func latestAuthorizedBaseline(
+        for scopeID: WatchedScopeID
+    ) -> AuthorizedBaselineSnapshot? {
+        savedSnapshots.reversed().first { $0.root(for: scopeID) != nil }
+            ?? initialSnapshot.flatMap { $0.root(for: scopeID) == nil ? nil : $0 }
+    }
+}
+
+private enum BaselineSnapshotRepositoryFakeError: Error {
+    case writeFailed
 }
 
 private struct BaselineContextProviderFake: AuthorizedBaselineScanContextProviding {

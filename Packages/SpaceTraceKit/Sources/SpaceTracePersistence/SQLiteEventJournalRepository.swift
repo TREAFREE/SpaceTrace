@@ -6,8 +6,9 @@ import Synchronization
 
 /// A dependency-free SQLite prototype for ADR-004. The actor is the sole
 /// owner of the connection and serializes every transaction and query.
-public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGenerationRepository, WatchedScopeBookmarkRepository {
-    private static let schemaVersion: Int32 = 5
+public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGenerationRepository, WatchedScopeBookmarkRepository, AuthorizedBaselineSnapshotRepository {
+    public static let currentSchemaVersion = 6
+    private static let schemaVersion = Int32(currentSchemaVersion)
 
     /// `Mutex` makes the non-Sendable C handle safe to release from the
     /// actor's nonisolated deinitializer. All operational access remains
@@ -677,6 +678,40 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         }
     }
 
+    public func saveAuthorizedBaseline(
+        _ snapshot: AuthorizedBaselineSnapshot
+    ) throws {
+        try execute(
+            "BEGIN IMMEDIATE TRANSACTION",
+            operation: "begin authorized baseline snapshot write"
+        )
+        do {
+            try insertAuthorizedBaselineSnapshot(snapshot)
+            for (ordinal, root) in snapshot.roots.enumerated() {
+                try insertAuthorizedBaselineRoot(
+                    root,
+                    baselineID: snapshot.id,
+                    ordinal: ordinal
+                )
+            }
+            try execute(
+                "COMMIT TRANSACTION",
+                operation: "commit authorized baseline snapshot write"
+            )
+        } catch {
+            try rollback(after: error)
+        }
+    }
+
+    public func latestAuthorizedBaseline(
+        for scopeID: WatchedScopeID
+    ) throws -> AuthorizedBaselineSnapshot? {
+        guard let baselineID = try latestAuthorizedBaselineID(for: scopeID) else {
+            return nil
+        }
+        return try readAuthorizedBaselineSnapshot(id: baselineID)
+    }
+
     /// Explicitly releases SQLite resources. Calling close repeatedly is safe;
     /// repository operations after closing report `databaseClosed`.
     public func close() throws {
@@ -727,20 +762,27 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             try migrateToVersionThree(database)
             try migrateToVersionFour(database)
             try migrateToVersionFive(database)
+            try migrateToVersionSix(database)
         case 1:
             try migrateToVersionTwo(database)
             try migrateToVersionThree(database)
             try migrateToVersionFour(database)
             try migrateToVersionFive(database)
+            try migrateToVersionSix(database)
         case 2:
             try migrateToVersionThree(database)
             try migrateToVersionFour(database)
             try migrateToVersionFive(database)
+            try migrateToVersionSix(database)
         case 3:
             try migrateToVersionFour(database)
             try migrateToVersionFive(database)
+            try migrateToVersionSix(database)
         case 4:
             try migrateToVersionFive(database)
+            try migrateToVersionSix(database)
+        case 5:
+            try migrateToVersionSix(database)
         default:
             throw SQLiteEventJournalError.unsupportedSchemaVersion(currentVersion)
         }
@@ -759,6 +801,142 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             """,
             operation: "close stale active mount generations"
         )
+        try recoverInterruptedCalibrationRuns(database)
+    }
+
+    private static func migrateToVersionSix(_ database: OpaquePointer) throws {
+        try execute(
+            on: database,
+            "BEGIN IMMEDIATE TRANSACTION",
+            operation: "begin schema migration v6"
+        )
+        do {
+            try execute(
+                on: database,
+                """
+                CREATE TABLE authorized_baseline_snapshot (
+                    id TEXT PRIMARY KEY NOT NULL
+                        CHECK(length(id) > 0 AND instr(id, char(0)) = 0),
+                    started_at_ms INTEGER NOT NULL,
+                    committed_at_ms INTEGER NOT NULL
+                        CHECK(committed_at_ms >= started_at_ms),
+                    app_version TEXT NOT NULL
+                        CHECK(length(app_version) > 0 AND length(app_version) <= 128
+                            AND instr(app_version, char(0)) = 0),
+                    schema_version INTEGER NOT NULL CHECK(schema_version > 0),
+                    volume_observed_at_ms INTEGER NOT NULL,
+                    volume_uuid TEXT,
+                    volume_total_bytes INTEGER
+                        CHECK(volume_total_bytes IS NULL OR volume_total_bytes >= 0),
+                    volume_available_bytes INTEGER
+                        CHECK(volume_available_bytes IS NULL
+                            OR volume_available_bytes >= 0),
+                    volume_important_available_bytes INTEGER
+                        CHECK(volume_important_available_bytes IS NULL
+                            OR volume_important_available_bytes >= 0),
+                    coverage TEXT NOT NULL CHECK(coverage = 'complete'),
+                    root_count INTEGER NOT NULL CHECK(root_count > 0)
+                ) WITHOUT ROWID;
+
+                CREATE TABLE authorized_baseline_root (
+                    baseline_id TEXT NOT NULL REFERENCES authorized_baseline_snapshot(id)
+                        ON DELETE CASCADE,
+                    ordinal INTEGER NOT NULL CHECK(ordinal >= 0),
+                    scope_id TEXT NOT NULL
+                        CHECK(length(scope_id) > 0 AND instr(scope_id, char(0)) = 0),
+                    stream_id TEXT NOT NULL
+                        CHECK(length(stream_id) > 0 AND instr(stream_id, char(0)) = 0),
+                    root_path TEXT NOT NULL
+                        CHECK(length(root_path) > 0
+                            AND substr(root_path, 1, 1) = '/'
+                            AND instr(root_path, char(0)) = 0),
+                    logical_bytes INTEGER NOT NULL CHECK(logical_bytes >= 0),
+                    allocated_bytes INTEGER NOT NULL CHECK(allocated_bytes >= 0),
+                    descendant_count INTEGER NOT NULL CHECK(descendant_count >= 0),
+                    entries_visited INTEGER NOT NULL CHECK(entries_visited >= 0),
+                    directories_observed INTEGER NOT NULL CHECK(directories_observed > 0),
+                    coverage TEXT NOT NULL CHECK(coverage = 'complete'),
+                    PRIMARY KEY(baseline_id, ordinal),
+                    UNIQUE(baseline_id, scope_id)
+                ) WITHOUT ROWID;
+
+                CREATE INDEX authorized_baseline_root_scope
+                    ON authorized_baseline_root(scope_id, baseline_id);
+                CREATE INDEX authorized_baseline_committed
+                    ON authorized_baseline_snapshot(committed_at_ms DESC, id DESC);
+
+                INSERT INTO schema_migration(version, applied_at_ms, checksum)
+                VALUES(6, CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+                    'authorized-baseline-snapshot-v6');
+
+                PRAGMA user_version = 6;
+                """,
+                operation: "apply schema migration version 6"
+            )
+            try execute(
+                on: database,
+                "COMMIT TRANSACTION",
+                operation: "commit schema migration v6"
+            )
+        } catch let migrationError {
+            do {
+                try execute(
+                    on: database,
+                    "ROLLBACK TRANSACTION",
+                    operation: "roll back schema migration v6"
+                )
+            } catch let rollbackError {
+                throw SQLiteEventJournalError.rollbackFailed(
+                    original: String(describing: migrationError),
+                    rollback: String(describing: rollbackError)
+                )
+            }
+            throw migrationError
+        }
+    }
+
+    private static func recoverInterruptedCalibrationRuns(_ database: OpaquePointer) throws {
+        try execute(
+            on: database,
+            "BEGIN IMMEDIATE TRANSACTION",
+            operation: "begin interrupted calibration recovery"
+        )
+        do {
+            try execute(
+                on: database,
+                """
+                DELETE FROM scan_node_stage
+                WHERE scan_run_id IN (
+                    SELECT id FROM scan_run WHERE state = 'running'
+                );
+
+                UPDATE scan_run
+                SET state = 'failed',
+                    finished_at_ms = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+                WHERE state = 'running';
+                """,
+                operation: "recover interrupted calibration runs"
+            )
+            try execute(
+                on: database,
+                "COMMIT TRANSACTION",
+                operation: "commit interrupted calibration recovery"
+            )
+        } catch let recoveryError {
+            do {
+                try execute(
+                    on: database,
+                    "ROLLBACK TRANSACTION",
+                    operation: "roll back interrupted calibration recovery"
+                )
+            } catch let rollbackError {
+                throw SQLiteEventJournalError.rollbackFailed(
+                    original: String(describing: recoveryError),
+                    rollback: String(describing: rollbackError)
+                )
+            }
+            throw recoveryError
+        }
     }
 
     private static func migrateToVersionFive(_ database: OpaquePointer) throws {
@@ -1106,6 +1284,255 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         }
 
         return sqlite3_column_int(statement, 0)
+    }
+
+    private func insertAuthorizedBaselineSnapshot(
+        _ snapshot: AuthorizedBaselineSnapshot
+    ) throws {
+        let sql = """
+            INSERT INTO authorized_baseline_snapshot(
+                id, started_at_ms, committed_at_ms, app_version, schema_version,
+                volume_observed_at_ms, volume_uuid, volume_total_bytes,
+                volume_available_bytes, volume_important_available_bytes,
+                coverage, root_count
+            ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'complete', ?11)
+            """
+        try withStatement(sql, operation: "insert authorized baseline snapshot") { statement in
+            try bind(snapshot.id.rawValue, to: statement, index: 1, operation: "bind baseline ID")
+            try check(
+                sqlite3_bind_int64(statement, 2, Self.milliseconds(snapshot.startedAt)),
+                operation: "bind baseline start"
+            )
+            try check(
+                sqlite3_bind_int64(statement, 3, Self.milliseconds(snapshot.committedAt)),
+                operation: "bind baseline commit"
+            )
+            try bind(snapshot.build.appVersion, to: statement, index: 4, operation: "bind baseline app version")
+            try check(
+                sqlite3_bind_int64(statement, 5, Int64(snapshot.build.schemaVersion)),
+                operation: "bind baseline schema version"
+            )
+            try check(
+                sqlite3_bind_int64(
+                    statement,
+                    6,
+                    Self.milliseconds(snapshot.startupVolume.observedAt)
+                ),
+                operation: "bind volume observation time"
+            )
+            try bind(
+                snapshot.startupVolume.volumeUUID?.uuidString.lowercased(),
+                to: statement,
+                index: 7,
+                operation: "bind baseline volume UUID"
+            )
+            try bind(
+                snapshot.startupVolume.totalBytes?.value,
+                to: statement,
+                index: 8,
+                operation: "bind baseline volume total"
+            )
+            try bind(
+                snapshot.startupVolume.availableBytes?.value,
+                to: statement,
+                index: 9,
+                operation: "bind baseline volume available"
+            )
+            try bind(
+                snapshot.startupVolume.availableForImportantUsageBytes?.value,
+                to: statement,
+                index: 10,
+                operation: "bind baseline volume important-usage capacity"
+            )
+            try check(
+                sqlite3_bind_int64(statement, 11, Int64(snapshot.roots.count)),
+                operation: "bind baseline root count"
+            )
+            try stepExpectingDone(statement, operation: "write authorized baseline snapshot")
+        }
+    }
+
+    private func insertAuthorizedBaselineRoot(
+        _ root: AuthorizedBaselineRootSnapshot,
+        baselineID: AuthorizedBaselineID,
+        ordinal: Int
+    ) throws {
+        let sql = """
+            INSERT INTO authorized_baseline_root(
+                baseline_id, ordinal, scope_id, stream_id, root_path,
+                logical_bytes, allocated_bytes, descendant_count,
+                entries_visited, directories_observed, coverage
+            ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'complete')
+            """
+        try withStatement(sql, operation: "insert authorized baseline root") { statement in
+            try bind(baselineID.rawValue, to: statement, index: 1, operation: "bind root baseline ID")
+            try check(sqlite3_bind_int64(statement, 2, Int64(ordinal)), operation: "bind root ordinal")
+            try bind(root.context.scopeID.rawValue, to: statement, index: 3, operation: "bind root scope ID")
+            try bind(root.context.streamID.rawValue, to: statement, index: 4, operation: "bind root stream ID")
+            try bind(root.context.root.rawValue, to: statement, index: 5, operation: "bind root path")
+            try check(sqlite3_bind_int64(statement, 6, root.logicalBytes.value), operation: "bind root logical bytes")
+            try check(sqlite3_bind_int64(statement, 7, root.allocatedBytes.value), operation: "bind root allocated bytes")
+            try check(sqlite3_bind_int64(statement, 8, root.descendantCount), operation: "bind root descendants")
+            try check(sqlite3_bind_int64(statement, 9, root.entriesVisited), operation: "bind root entries")
+            try check(sqlite3_bind_int64(statement, 10, root.directoriesObserved), operation: "bind root directories")
+            try stepExpectingDone(statement, operation: "write authorized baseline root")
+        }
+    }
+
+    private func latestAuthorizedBaselineID(
+        for scopeID: WatchedScopeID
+    ) throws -> AuthorizedBaselineID? {
+        let sql = """
+            SELECT snapshot.id
+            FROM authorized_baseline_snapshot AS snapshot
+            INNER JOIN authorized_baseline_root AS root
+                ON root.baseline_id = snapshot.id
+            WHERE root.scope_id = ?1
+            ORDER BY snapshot.committed_at_ms DESC, snapshot.id DESC
+            LIMIT 1
+            """
+        return try withStatement(sql, operation: "read latest authorized baseline ID") { statement in
+            try bind(scopeID.rawValue, to: statement, index: 1, operation: "bind latest baseline scope")
+            let result = sqlite3_step(statement)
+            switch result {
+            case SQLITE_ROW:
+                do {
+                    return try AuthorizedBaselineID(
+                        readText(
+                            from: statement,
+                            column: 0,
+                            field: "authorized_baseline_snapshot.id"
+                        )
+                    )
+                } catch {
+                    throw SQLiteEventJournalError.corruptStoredValue(
+                        field: "authorized_baseline_snapshot.id"
+                    )
+                }
+            case SQLITE_DONE:
+                return nil
+            default:
+                throw sqliteFailure(operation: "step latest baseline query", code: result)
+            }
+        }
+    }
+
+    private func readAuthorizedBaselineSnapshot(
+        id: AuthorizedBaselineID
+    ) throws -> AuthorizedBaselineSnapshot {
+        let sql = """
+            SELECT started_at_ms, committed_at_ms, app_version, schema_version,
+                volume_observed_at_ms, volume_uuid, volume_total_bytes,
+                volume_available_bytes, volume_important_available_bytes, root_count
+            FROM authorized_baseline_snapshot
+            WHERE id = ?1
+            """
+        let header: StoredAuthorizedBaselineHeader = try withStatement(
+            sql,
+            operation: "read authorized baseline snapshot"
+        ) { statement in
+            try bind(id.rawValue, to: statement, index: 1, operation: "bind baseline lookup ID")
+            let result = sqlite3_step(statement)
+            guard result == SQLITE_ROW else {
+                if result == SQLITE_DONE {
+                    throw SQLiteEventJournalError.corruptStoredValue(
+                        field: "authorized_baseline_snapshot"
+                    )
+                }
+                throw sqliteFailure(operation: "step baseline snapshot query", code: result)
+            }
+            return StoredAuthorizedBaselineHeader(
+                startedAt: try readDate(from: statement, column: 0, field: "authorized_baseline_snapshot.started_at_ms"),
+                committedAt: try readDate(from: statement, column: 1, field: "authorized_baseline_snapshot.committed_at_ms"),
+                appVersion: try readText(from: statement, column: 2, field: "authorized_baseline_snapshot.app_version"),
+                schemaVersion: try readPositiveInt(from: statement, column: 3, field: "authorized_baseline_snapshot.schema_version"),
+                volumeObservedAt: try readDate(from: statement, column: 4, field: "authorized_baseline_snapshot.volume_observed_at_ms"),
+                volumeUUID: try readOptionalUUID(from: statement, column: 5, field: "authorized_baseline_snapshot.volume_uuid"),
+                volumeTotalBytes: try readOptionalByteCount(from: statement, column: 6, field: "authorized_baseline_snapshot.volume_total_bytes"),
+                volumeAvailableBytes: try readOptionalByteCount(from: statement, column: 7, field: "authorized_baseline_snapshot.volume_available_bytes"),
+                volumeImportantAvailableBytes: try readOptionalByteCount(from: statement, column: 8, field: "authorized_baseline_snapshot.volume_important_available_bytes"),
+                rootCount: try readPositiveInt(from: statement, column: 9, field: "authorized_baseline_snapshot.root_count")
+            )
+        }
+        let roots = try readAuthorizedBaselineRoots(id: id)
+        guard roots.count == header.rootCount else {
+            throw SQLiteEventJournalError.corruptStoredValue(
+                field: "authorized_baseline_snapshot.root_count"
+            )
+        }
+
+        do {
+            return try AuthorizedBaselineSnapshot(
+                id: id,
+                startedAt: header.startedAt,
+                committedAt: header.committedAt,
+                build: AuthorizedBaselineBuildMetadata(
+                    appVersion: header.appVersion,
+                    schemaVersion: header.schemaVersion
+                ),
+                startupVolume: StartupVolumeCapacitySnapshot(
+                    observedAt: header.volumeObservedAt,
+                    volumeUUID: header.volumeUUID,
+                    totalBytes: header.volumeTotalBytes,
+                    availableBytes: header.volumeAvailableBytes,
+                    availableForImportantUsageBytes: header.volumeImportantAvailableBytes
+                ),
+                roots: roots
+            )
+        } catch {
+            throw SQLiteEventJournalError.corruptStoredValue(
+                field: "authorized_baseline_snapshot"
+            )
+        }
+    }
+
+    private func readAuthorizedBaselineRoots(
+        id: AuthorizedBaselineID
+    ) throws -> [AuthorizedBaselineRootSnapshot] {
+        let sql = """
+            SELECT scope_id, stream_id, root_path, logical_bytes, allocated_bytes,
+                descendant_count, entries_visited, directories_observed
+            FROM authorized_baseline_root
+            WHERE baseline_id = ?1
+            ORDER BY ordinal ASC
+            """
+        return try withStatement(sql, operation: "read authorized baseline roots") { statement in
+            try bind(id.rawValue, to: statement, index: 1, operation: "bind baseline roots ID")
+            var roots: [AuthorizedBaselineRootSnapshot] = []
+            while true {
+                let result = sqlite3_step(statement)
+                switch result {
+                case SQLITE_ROW:
+                    do {
+                        let context = AuthorizedBaselineScanContext(
+                            scopeID: try WatchedScopeID(readText(from: statement, column: 0, field: "authorized_baseline_root.scope_id")),
+                            root: try DirtyRegionPath(readText(from: statement, column: 2, field: "authorized_baseline_root.root_path")),
+                            streamID: try EventStreamID(readText(from: statement, column: 1, field: "authorized_baseline_root.stream_id"))
+                        )
+                        roots.append(
+                            try AuthorizedBaselineRootSnapshot(
+                                context: context,
+                                logicalBytes: readRequiredByteCount(from: statement, column: 3, field: "authorized_baseline_root.logical_bytes"),
+                                allocatedBytes: readRequiredByteCount(from: statement, column: 4, field: "authorized_baseline_root.allocated_bytes"),
+                                descendantCount: readNonnegativeInt64(from: statement, column: 5, field: "authorized_baseline_root.descendant_count"),
+                                entriesVisited: readNonnegativeInt64(from: statement, column: 6, field: "authorized_baseline_root.entries_visited"),
+                                directoriesObserved: Int64(readPositiveInt(from: statement, column: 7, field: "authorized_baseline_root.directories_observed"))
+                            )
+                        )
+                    } catch let error as SQLiteEventJournalError {
+                        throw error
+                    } catch {
+                        throw SQLiteEventJournalError.corruptStoredValue(
+                            field: "authorized_baseline_root"
+                        )
+                    }
+                case SQLITE_DONE:
+                    return roots
+                default:
+                    throw sqliteFailure(operation: "step baseline roots query", code: result)
+                }
+            }
+        }
     }
 
     private func readScopeMountGeneration(
@@ -1684,7 +2111,13 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         if let value {
             try value.withCString { valueCString in
                 try check(
-                    sqlite3_bind_text(statement, index, valueCString, -1, nil),
+                    sqlite3_bind_text(
+                        statement,
+                        index,
+                        valueCString,
+                        -1,
+                        unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+                    ),
                     operation: operation
                 )
             }
@@ -1930,6 +2363,86 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         }
     }
 
+    private func readRequiredByteCount(
+        from statement: OpaquePointer,
+        column: Int32,
+        field: String
+    ) throws -> ByteCount {
+        guard let value = try readOptionalByteCount(
+            from: statement,
+            column: column,
+            field: field
+        ) else {
+            throw SQLiteEventJournalError.corruptStoredValue(field: field)
+        }
+        return value
+    }
+
+    private func readNonnegativeInt64(
+        from statement: OpaquePointer,
+        column: Int32,
+        field: String
+    ) throws -> Int64 {
+        guard sqlite3_column_type(statement, column) == SQLITE_INTEGER else {
+            throw SQLiteEventJournalError.corruptStoredValue(field: field)
+        }
+        let value = sqlite3_column_int64(statement, column)
+        guard value >= 0 else {
+            throw SQLiteEventJournalError.corruptStoredValue(field: field)
+        }
+        return value
+    }
+
+    private func readPositiveInt(
+        from statement: OpaquePointer,
+        column: Int32,
+        field: String
+    ) throws -> Int {
+        let value = try readNonnegativeInt64(
+            from: statement,
+            column: column,
+            field: field
+        )
+        guard value > 0, value <= Int64(Int.max) else {
+            throw SQLiteEventJournalError.corruptStoredValue(field: field)
+        }
+        return Int(value)
+    }
+
+    private func readDate(
+        from statement: OpaquePointer,
+        column: Int32,
+        field: String
+    ) throws -> Date {
+        guard sqlite3_column_type(statement, column) == SQLITE_INTEGER else {
+            throw SQLiteEventJournalError.corruptStoredValue(field: field)
+        }
+        let milliseconds = sqlite3_column_int64(statement, column)
+        return Date(timeIntervalSince1970: TimeInterval(milliseconds) / 1_000)
+    }
+
+    private func readOptionalUUID(
+        from statement: OpaquePointer,
+        column: Int32,
+        field: String
+    ) throws -> UUID? {
+        guard let rawValue = try readOptionalText(
+            from: statement,
+            column: column,
+            field: field
+        ) else {
+            return nil
+        }
+        guard let value = UUID(uuidString: rawValue) else {
+            throw SQLiteEventJournalError.corruptStoredValue(field: field)
+        }
+        return value
+    }
+
+    private static func milliseconds(_ date: Date) -> Int64 {
+        Int64(date.timeIntervalSince1970 * 1_000)
+    }
+
     private static func encode(_ cursor: EventJournalCursor) -> [UInt8] {
         encode(cursor.rawValue)
     }
@@ -1954,6 +2467,19 @@ private struct ScanRunContext {
     let regionPath: DirtyRegionPath
     let revision: DirtyRegionRevision
     let state: String
+}
+
+private struct StoredAuthorizedBaselineHeader {
+    let startedAt: Date
+    let committedAt: Date
+    let appVersion: String
+    let schemaVersion: Int
+    let volumeObservedAt: Date
+    let volumeUUID: UUID?
+    let volumeTotalBytes: ByteCount?
+    let volumeAvailableBytes: ByteCount?
+    let volumeImportantAvailableBytes: ByteCount?
+    let rootCount: Int
 }
 
 private extension CalibrationCoverage {

@@ -45,7 +45,10 @@ let package = Package(
         ),
         .target(
             name: "SpaceTracePlatform",
-            dependencies: ["SpaceTraceApplication"],
+            dependencies: [
+                "SpaceTraceApplication",
+                "SpaceTraceDomain",
+            ],
             linkerSettings: [
                 .linkedFramework("DiskArbitration"),
             ]

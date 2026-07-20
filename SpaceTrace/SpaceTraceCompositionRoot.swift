@@ -10,11 +10,34 @@ struct SpaceTraceCompositionRoot {
     let baselineScanCoordinator: AuthorizedBaselineScanCoordinator
     let scanSchedulingMonitor: NativeScanSchedulingMonitor
 
-    static func make(fileManager: FileManager = .default) throws -> Self {
+    enum Startup {
+        case operational(SpaceTraceCompositionRoot)
+        case recovery(SQLiteReadOnlyRecoverySession)
+    }
+
+    static func bootstrap(fileManager: FileManager = .default) throws -> Startup {
         let applicationSupportRoot = try applicationSupportDirectory(using: fileManager)
         let databaseURL = applicationSupportRoot
             .appendingPathComponent("SpaceTrace.sqlite", isDirectory: false)
-        let repository = try SQLiteEventJournalRepository(databaseURL: databaseURL)
+        switch SQLiteRepositoryBootstrap.open(databaseURL: databaseURL) {
+        case let .operational(repository):
+            return .operational(try make(
+                repository: repository,
+                applicationSupportRoot: applicationSupportRoot,
+                databaseURL: databaseURL,
+                fileManager: fileManager
+            ))
+        case let .recovery(session):
+            return .recovery(session)
+        }
+    }
+
+    private static func make(
+        repository: SQLiteEventJournalRepository,
+        applicationSupportRoot: URL,
+        databaseURL: URL,
+        fileManager: FileManager
+    ) throws -> Self {
         try protectDatabaseFiles(at: databaseURL, using: fileManager)
 
         let catalog = SecurityScopedWatchedScopeCatalog(

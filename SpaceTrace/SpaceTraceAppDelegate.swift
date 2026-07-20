@@ -2,18 +2,21 @@ import AppKit
 import OSLog
 import SpaceTraceApplication
 import SpaceTraceMonitoring
+import SpaceTracePersistence
 import SpaceTracePlatform
 
 @MainActor
 final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
     let authorizationModel = DirectoryAuthorizationViewModel()
     let baselineScanModel = BaselineScanViewModel()
+    let databaseRecoveryModel = DatabaseRecoveryViewModel()
 
     private let logger = Logger(
         subsystem: "com.TREAFREE.SpaceTrace",
         category: "lifecycle"
     )
     private var compositionRoot: SpaceTraceCompositionRoot?
+    private var recoverySession: SQLiteReadOnlyRecoverySession?
     private var startupTask: Task<Void, Never>?
     private var shutdownTask: Task<Void, Never>?
 
@@ -25,12 +28,19 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
         }
 #endif
         do {
-            let compositionRoot = try SpaceTraceCompositionRoot.make()
-            self.compositionRoot = compositionRoot
-            authorizationModel.connect(compositionRoot.authorizationCoordinator)
-            baselineScanModel.connect(compositionRoot.baselineScanCoordinator)
-            startupTask = Task { [weak self] in
-                await self?.authorizationModel.start()
+            switch try SpaceTraceCompositionRoot.bootstrap() {
+            case let .operational(compositionRoot):
+                self.compositionRoot = compositionRoot
+                authorizationModel.connect(compositionRoot.authorizationCoordinator)
+                baselineScanModel.connect(compositionRoot.baselineScanCoordinator)
+                startupTask = Task { [weak self] in
+                    await self?.authorizationModel.start()
+                }
+            case let .recovery(session):
+                recoverySession = session
+                databaseRecoveryModel.activate(session.overview)
+                authorizationModel.handleCompositionFailure()
+                baselineScanModel.handleCompositionFailure()
             }
         } catch {
             authorizationModel.handleCompositionFailure()
@@ -49,6 +59,7 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         _ = sender
         guard let compositionRoot else {
+            recoverySession?.close()
             return .terminateNow
         }
         guard shutdownTask == nil else {

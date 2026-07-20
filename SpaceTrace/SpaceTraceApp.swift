@@ -16,7 +16,8 @@ struct SpaceTraceApp: App {
         Window("SpaceTrace", id: "main") {
             ContentView(
                 authorizationModel: appDelegate.authorizationModel,
-                baselineScanModel: appDelegate.baselineScanModel
+                baselineScanModel: appDelegate.baselineScanModel,
+                databaseRecoveryModel: appDelegate.databaseRecoveryModel
             )
         }
         .defaultSize(width: 920, height: 620)

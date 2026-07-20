@@ -28,6 +28,8 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             throw SQLiteEventJournalError.invalidDatabaseLocation
         }
 
+        try SQLiteArtifactValidator.validateBeforeOpen(databaseURL: databaseURL)
+
         var openedDatabase: OpaquePointer?
         let flags = SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
         let openResult = sqlite3_open_v2(databaseURL.path, &openedDatabase, flags, nil)
@@ -40,9 +42,11 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             throw SQLiteEventJournalError.openFailed(code: openResult, message: message)
         }
 
+        let migrationBackupURL: URL?
         do {
-            try Self.configureAndMigrate(
+            migrationBackupURL = try Self.configureAndMigrate(
                 openedDatabase,
+                databaseURL: databaseURL,
                 failurePoint: failurePoint
             )
         } catch {
@@ -52,6 +56,9 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
 
         connection = Mutex(openedDatabase)
         injectedFailurePoint = failurePoint
+        if let migrationBackupURL {
+            try? FileManager.default.removeItem(at: migrationBackupURL)
+        }
     }
 
     deinit {
@@ -777,8 +784,9 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
 
     private static func configureAndMigrate(
         _ database: OpaquePointer,
+        databaseURL: URL,
         failurePoint: SQLiteEventJournalTestFailurePoint?
-    ) throws {
+    ) throws -> URL? {
         let timeoutResult = sqlite3_busy_timeout(database, 5_000)
         guard timeoutResult == SQLITE_OK else {
             throw SQLiteEventJournalError.sqliteFailure(
@@ -791,6 +799,17 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         // Read before any persistent pragma so an invalid/corrupt main file is
         // classified without attempting to replace or rewrite it.
         let currentVersion = try readSchemaVersion(from: database)
+
+        let migrationBackupURL: URL?
+        if currentVersion > 0, currentVersion < Self.schemaVersion {
+            migrationBackupURL = try SQLiteMigrationBackup.create(
+                sourceDatabase: database,
+                databaseURL: databaseURL,
+                sourceVersion: currentVersion
+            )
+        } else {
+            migrationBackupURL = nil
+        }
 
         try execute(on: database, "PRAGMA journal_mode = WAL", operation: "enable WAL mode")
         try execute(on: database, "PRAGMA foreign_keys = ON", operation: "enable foreign keys")
@@ -867,6 +886,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             operation: "close stale active mount generations"
         )
         try recoverInterruptedCalibrationRuns(database)
+        return migrationBackupURL
     }
 
     private static func migrateToVersionSeven(

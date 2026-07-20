@@ -85,7 +85,8 @@ let package = Package(
                 "SpaceTraceDomain",
                 "SpaceTraceFileSystem",
                 "SpaceTracePersistence",
-            ]
+            ],
+            resources: [.copy("Fixtures")]
         ),
         .testTarget(
             name: "SpaceTracePlatformTests",

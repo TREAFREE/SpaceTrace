@@ -1,0 +1,15 @@
+{
+  "formatVersion": 1,
+  "fixtures": [
+    {
+      "schemaVersion": 6,
+      "relativePath": "v6/SpaceTrace.sqlite",
+      "sha256": "5a5bbe6cdf57ac6c5e4398a771b6505e29e4775b4f321fd5ed1097ff30bae528"
+    },
+    {
+      "schemaVersion": 7,
+      "relativePath": "v7/SpaceTrace.sqlite",
+      "sha256": "beccfcbf1bf40ad2f3f89997d58f61aeacb7b0126ed9a4c813b9448a3cdfb95c"
+    }
+  ]
+}

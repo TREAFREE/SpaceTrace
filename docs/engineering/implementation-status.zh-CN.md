@@ -25,14 +25,14 @@
 | 已授权目录基线应用流程 | 精确解析已授权 scope/活跃 stream 上下文；actor 持有可取消批次任务；类型化的准备/暂停/恢复/扫描/发布/完成状态；权限切换时取消；聚合进度与逐根覆盖结果投影 | UI 字节结果只能来自按 revision 校验并原子发布后重新读回的完整根目录聚合；部分覆盖、取消、被取代及被调度器中断的尝试绝不能成为完整事实；路径可能重叠时不伪造聚合字节总量 |
 | 扫描调度 | 应用层拥有的电源/温度/活动快照；固定的休眠 → 温度 → 低电量优先级；可回放决策门；结构化取消并重试当前根；提交前准入门；基于公开原生 API 的信号 monitor | 用户主动扫描在普通电池供电时仍可运行；休眠、严重/危急温度和低电量模式会安全暂停；条件恢复后重扫当前根目录，不声称从内存中点续扫 |
 | 事件日志端口 | 应用层拥有的持久事件流标识、连续性分类、游标、dirty region、行 revision、原因、批次及条件清理契约 | checkpoint 只有在同一批次中已有持久 dirty work 时才能写入；卷 UUID 或日志 UUID 任一变化都会选择不同的持久事件流 generation |
-| SQLite 原型 | actor 持有的 SQLite3 连接；WAL；schema v6；有界 opaque security-scoped bookmark；大端 `UInt64` 游标和 revision；持久 scope 挂载 generation；扫描运行与目录 staging 表；当前目录聚合；已提交多根基线快照；原子发布；无游标校准标记；checkpoint generation 作废；回滚故障接缝 | 游标推进与 dirty region 持久化保持原子性且不能倒退；bookmark 身份无需平台解码即可往返持久化；挂载激活在一个写事务中完成分类和存储；generation 只能条件关闭；日志 generation 作废会原子清除 checkpoint 和所有待处理游标，并推进工作 revision |
+| SQLite 原型 | actor 持有的 SQLite3 连接；WAL；schema v7；有界 opaque security-scoped bookmark；大端 `UInt64` 游标和 revision；持久 scope 挂载 generation；扫描运行与目录 staging 表；当前/已删除目录聚合；已提交多根基线快照；原子发布；无游标校准标记；checkpoint generation 作废；类型化磁盘写满/损坏/迁移错误；有界 retention | 游标推进与 dirty region 持久化保持原子性且不能倒退；写满失败保留已提交状态；损坏输入不被静默替换；迁移失败会回滚 schema 与版本账本；retention 只删除过期且可替代的行，并保留当前事实、未解决工作和每个 scope 的最新基线 |
 | 构建集成 | 本地 `SpaceTraceKit` 已链接到 macOS 应用 target；显式声明只读 app-scoped bookmark entitlement；应用保持薄组合根 | 应用 target 能够恢复授权并持有模块化非 UI runtime 生命周期，无需复制源码或让 UI 拥有任务 |
 
 ## 验证证据
 
 以下门禁截至 2026-07-20 已使用 Swift 6.2.1 与 Xcode 26.1.1 通过：
 
-- `swift test --package-path Packages/SpaceTraceKit`：178 个测试、28 个 suite（会改变测试环境的资格测试保持 opt-in，常规运行中显示为 skipped）；
+- `swift test --package-path Packages/SpaceTraceKit`：185 个测试、28 个 suite（会改变测试环境的资格测试保持 opt-in，常规运行中显示为 skipped）；
 - 同一套 package 测试在完整严格并发诊断以及“编译器警告视为错误”条件下通过；
 - 一条从适配器到应用层再到真实 SQLite 的集成测试，校准 scanner 使用注入实现；
 - 四条串行的按设备 FSEvents 集成测试，在受保护的一次性 APFS 目录上覆盖持久标识解析、实时事件、单订阅失败、取消清理、显式停止、重启、经 `HistoryDone` 完成的历史回放以及真实回调缓冲区溢出标记；
@@ -42,7 +42,9 @@
 - 通过可注入 client 与 resolver 的确定性测试，证明原生流创建失败和启动失败都会作废存量回放 checkpoint、持久化 scope 级校准工作、只尝试一次 `sinceNow` 恢复，并在该恢复同样失败时保持非活跃状态；
 - 通过确定性的启动后生命周期测试，证明自动实时恢复、连续性作废持久化、启动失败和重复终止的有界熔断、退避期间取消、拒绝未知/替换卷身份以及恢复策略参数校验；测试不依赖定时 sleep；
 - 通过确定性的生命周期状态观测测试，证明当前状态回放、`inactive → active → recovering → active`、终态 `failed`、按 generation 停止后的清理，以及缓冲区正数校验；
-- 通过确定性的 bookmark/catalog 测试，证明有效/stale 部分恢复、外置卷缺席后重试、stale 不自动刷新、授权获取持久化、完全重复根目录拒绝、lease 恰好释放一次，以及真实原生无 UI bookmark round-trip；同时覆盖 SQLite 到 v6 的迁移与进程生命周期取消/清理；
+- 通过确定性的 bookmark/catalog 测试，证明有效/stale 部分恢复、外置卷缺席后重试、stale 不自动刷新、授权获取持久化、完全重复根目录拒绝、lease 恰好释放一次，以及真实原生无 UI bookmark round-trip；同时覆盖 SQLite 到 v7 的迁移与进程生命周期取消/清理；
+- 固定 GRDB 7.10.0 版本的 Release SPM spike 证明当前主机编译、`DatabasePool`/`DatabaseMigrator` 执行、默认 product 链接和系统 SQLite 链接；同时完成官方许可/manifest 证据评审，并明确第一阶段继续使用原生 SQLite；
+- 确定性的真实 `SQLITE_FULL`、损坏主文件保留、提交前迁移回滚、retention 边界和固定时钟 retention 测试，覆盖过期 deleted node、可替代基线与无引用 scan run；
 - 确定性的授权移除失败顺序、授权协调器重启/回退，以及覆盖选择、取消、stale 重新授权、撤权和外置卷返回的 MainActor ViewModel 测试；
 - 确定性的应用外壳测试证明只暴露已实现的概览/权限目的地，并且 unavailable、stale 或 failed 授权绝不会在概览中显示为已就绪；
 - 确定性的已授权目录基线测试证明类型化阶段顺序、取消完成、部分覆盖/被取代结果不发布、权限切换前取消，以及从真实 SQLite 读回完整根目录聚合；同时 12 个应用单元测试通过，覆盖 MainActor 多 scope 投影和批量命令转发；
@@ -66,7 +68,7 @@
 - 不会依据 FSEvents 推断精确字节差值或进程归因。
 - 原生资格测试已经在开发主机上覆盖受控卸载、重挂和同名卷替换；但最老支持系统的真实运行、守护进程真实 `UserDropped`/`KernelDropped`、事件 ID 回绕、睡眠/唤醒以及权限撤销仍未完成资格验证；允许采用的证据边界记录在 [FSEvents 连续性丢失资格验证](fsevents-continuity-qualification.zh-CN.md) 中。
 - 启动后自动恢复已经有界且经过测试，但守护进程真实 drop/wrap 条件以及最老支持 macOS 上的恢复行为仍未完成资格验证。
-- SQLite 适配器是不引入外部依赖的架构原型。ADR-004 中关于 GRDB、迁移 fixture、保留策略、磁盘写满、损坏和 benchmark 的决策仍未完成。
+- GRDB 与原生 SQLite 的证据评审已经完成，第一阶段继续使用原生 SQLite。当前表的磁盘写满、明显主文件损坏、v6 到 v7 迁移回滚接缝和一部分有界 retention 已有测试。细粒度主库/WAL 损坏矩阵、迁移备份与全部已发布 fixture、完整小时/日历史及老化 dirty path 隐私行为、只读恢复 UI、benchmark、GRDB 行为等价、公证和最低系统运行证据仍未完成。
 - 尚未完成 macOS 15.6 真实运行资格验证；在较新主机上按 deployment target 编译不等于运行证据。
 - Full Disk Access、App Sandbox 移除、Developer ID 签名、公证、分发及更新行为均未改变，继续由相应的 Proposed 决策约束。
 
@@ -74,8 +76,8 @@
 
 1. 使用签名 sandbox App，在 macOS 15.6 与当前稳定版 macOS 上完成真实睡眠/唤醒、交流电/电池、低电量模式和安全可控温度转换的生产信号资格验证；只有具备 benchmark 证据后才增加后台 token bucket/速率策略。
 2. 只有在符合连续性丢失资格规程且能够安全复现时，才采集真实守护进程 drop/wrap 证据，并在最低支持 macOS 运行时验证恢复行为。
-3. 完成 ADR-004 的 GRDB 与原生 SQLite 评审，包括许可证、构建、迁移和公证证据。
-4. 扩展 schema 迁移 fixture 矩阵，增加磁盘写满/损坏测试、保留行为与最老支持系统资格验证。
+3. 增加原子迁移备份与只读恢复组合；扩展 golden fixture 矩阵和主库/WAL 损坏场景，且不得静默重建。
+4. 实现 ADR-004 剩余历史表和第 30 天老化 dirty path 转换，然后运行 50 万/100 万行的体积、延迟、checkpoint、retention benchmark 与最低系统资格验证。
 5. 使用稳定 Apple 身份在 Apple Silicon macOS 15.6 上重跑签名沙盒协议，并覆盖真实 stale 证据、UI 的不同 UUID 换卷子项和系统菜单栏交互矩阵；不得以已完成的当前主机 ad-hoc smoke 代替该门禁。
 6. 在签名沙盒矩阵中验证活跃扫描期间撤权和多目录列表变更。
 7. 在把当前已经用户可见的基线切片视为 Beta 就绪或具备发布资格之前，完成 ADR-003 与 ADR-004 的维护者评审。

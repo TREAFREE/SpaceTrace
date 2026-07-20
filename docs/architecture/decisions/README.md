@@ -7,7 +7,7 @@ This directory records durable technical, data, permission, distribution, and se
 | [ADR-001](ADR-001-native-macos-platform.md) | Native macOS modular monolith, macOS 15.6 minimum, and Apple Silicon-first baseline | Accepted; Intel support deferred |
 | [ADR-002](ADR-002-read-only-optional-full-disk-access.md) | Read-only operation with optional Full Disk Access | Proposed |
 | [ADR-003](ADR-003-fsevents-and-calibration-scans.md) | FSEvents invalidation journal plus calibration scans | Proposed |
-| [ADR-004](ADR-004-sqlite-persistence-and-retention.md) | SQLite/GRDB adapter and 30-day bounded retention | Proposed; GRDB validation pending |
+| [ADR-004](ADR-004-sqlite-persistence-and-retention.md) | SQLite adapter and 30-day bounded retention | Proposed; raw adapter retained after GRDB evidence review; recovery/benchmark gates pending |
 | [ADR-005](ADR-005-system-command-adapter.md) | Optional isolated read-only system-command adapter | Proposed |
 
 ## Status lifecycle

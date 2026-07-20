@@ -139,7 +139,7 @@ flowchart TB
         Attribution["AttributionEngine\nVersioned deterministic rules"]
         Volumes["Volume and power adapters"]
         CommandAdapter["SystemCommandAdapter\nOptional and read-only"]
-        Store["Persistence adapter\nGRDB/SQLite, WAL"]
+        Store["Persistence adapter\nSQLite, WAL; GRDB candidate"]
         Diagnostics["Local diagnostics\nos.Logger and signposts"]
     end
 
@@ -240,7 +240,7 @@ This choice keeps FDA scope, code signing, crash recovery, and updates understan
 | UI state | `@MainActor` | Render cached state, send intents, consume progress snapshots |
 | `ScanCoordinator` | Swift actor | State machine, queues, leases, policy, cancellation, backpressure |
 | FSEvents callback | Dedicated serial `DispatchQueue` | Copy callback data into owned values and enqueue it; never scan or query UI |
-| Database | `DatabaseActor` wrapping GRDB `DatabasePool` | One logical writer, migrations, durable work, consistent reads |
+| Database | `DatabaseActor` wrapping a repository-isolated SQLite adapter | One logical writer, migrations, durable work; GRDB remains a gated candidate for future pooled reads |
 | File metadata | Dedicated utility QoS worker pool | Blocking enumeration/stat calls with at most two workers |
 | Classification | Pure tasks, bounded | Transform completed observations into evidence; no I/O |
 
@@ -504,7 +504,7 @@ No level is named “process attribution.”
 
 ## 13. SQLite persistence design
 
-SQLite runs in WAL mode with foreign keys enabled, a bounded busy timeout, `synchronous=NORMAL` for routine writes, and an explicit checkpoint policy. The persistence adapter uses GRDB for migrations, typed records, transactions, and observation; domain modules do not expose GRDB types.
+SQLite runs in WAL mode with foreign keys enabled, a bounded busy timeout, `synchronous=NORMAL` for routine writes, and an explicit checkpoint policy. The phase-one persistence adapter uses the native SQLite C API behind repository boundaries. GRDB 7.10.0 is a validated candidate for later pooled history reads, subject to ADR-004's parity, performance, signing, and runtime gates; domain modules expose neither SQLite nor GRDB types.
 
 ### 13.1 Suggested schema
 

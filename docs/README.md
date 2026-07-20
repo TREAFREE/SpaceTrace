@@ -25,8 +25,9 @@ This directory is the durable source of truth for product, architecture, enginee
 10. [User-Selected Directory UI and Sandbox Qualification](engineering/user-selected-directory-qualification.md) · [中文](engineering/user-selected-directory-qualification.zh-CN.md)
 11. [Authorized Directory Baseline and Overview](engineering/authorized-baseline-overview.md) · [中文](engineering/authorized-baseline-overview.zh-CN.md)
 12. [Scan Scheduling Lifecycle](engineering/scan-scheduling-lifecycle.md) · [中文](engineering/scan-scheduling-lifecycle.zh-CN.md)
-13. [Direct DMG Distribution and Code Signing](engineering/direct-distribution-signing.md) · [中文](engineering/direct-distribution-signing.zh-CN.md)
-14. [Contributing](../CONTRIBUTING.md)
+13. [SQLite Adapter Evidence Review](engineering/sqlite-adapter-evidence-review.md) · [中文](engineering/sqlite-adapter-evidence-review.zh-CN.md)
+14. [Direct DMG Distribution and Code Signing](engineering/direct-distribution-signing.md) · [中文](engineering/direct-distribution-signing.zh-CN.md)
+15. [Contributing](../CONTRIBUTING.md)
 
 ### Product evidence
 

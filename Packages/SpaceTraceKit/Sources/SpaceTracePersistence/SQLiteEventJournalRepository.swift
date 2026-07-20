@@ -7,7 +7,7 @@ import Synchronization
 /// A dependency-free SQLite prototype for ADR-004. The actor is the sole
 /// owner of the connection and serializes every transaction and query.
 public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGenerationRepository, WatchedScopeBookmarkRepository, AuthorizedBaselineSnapshotRepository {
-    public static let currentSchemaVersion = 6
+    public static let currentSchemaVersion = 7
     private static let schemaVersion = Int32(currentSchemaVersion)
 
     /// `Mutex` makes the non-Sendable C handle safe to release from the
@@ -41,7 +41,10 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         }
 
         do {
-            try Self.configureAndMigrate(openedDatabase)
+            try Self.configureAndMigrate(
+                openedDatabase,
+                failurePoint: failurePoint
+            )
         } catch {
             _ = sqlite3_close_v2(openedDatabase)
             throw error
@@ -712,6 +715,45 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         return try readAuthorizedBaselineSnapshot(id: baselineID)
     }
 
+    /// Deletes only expired, replaceable history. Current directory truth,
+    /// unresolved dirty work, and the newest baseline for every scope are
+    /// deliberately outside the deletion set.
+    public func applyRetention(
+        _ policy: SQLiteRetentionPolicy = .default,
+        referenceDate: Date = Date()
+    ) throws -> SQLiteRetentionReport {
+        let cutoff = Self.milliseconds(policy.cutoff(referenceDate: referenceDate))
+        try execute("BEGIN IMMEDIATE TRANSACTION", operation: "begin retention")
+
+        do {
+            let deletedNodes = try deleteExpiredDeletedNodes(cutoff: cutoff)
+            try failIfRequested(at: .afterExpiredDeletedNodesBeforeBaselines)
+            let baselines = try deleteExpiredReplaceableBaselines(cutoff: cutoff)
+            let scanRuns = try deleteExpiredUnreferencedScanRuns(cutoff: cutoff)
+            try execute("COMMIT TRANSACTION", operation: "commit retention")
+            return SQLiteRetentionReport(
+                deletedNodeCount: deletedNodes,
+                baselineCount: baselines,
+                scanRunCount: scanRuns
+            )
+        } catch {
+            try rollback(after: error)
+        }
+    }
+
+    /// Restricts this test database to its current page count so the next
+    /// growing write exercises SQLite's real `SQLITE_FULL` path.
+    func constrainDatabaseGrowthForTesting() throws {
+        let pageCount = try readInt32Pragma("PRAGMA page_count")
+        guard pageCount > 0 else {
+            throw SQLiteEventJournalError.corruptStoredValue(field: "page_count")
+        }
+        try execute(
+            "PRAGMA max_page_count = \(pageCount)",
+            operation: "constrain test database growth"
+        )
+    }
+
     /// Explicitly releases SQLite resources. Calling close repeatedly is safe;
     /// repository operations after closing report `databaseClosed`.
     public func close() throws {
@@ -733,7 +775,10 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         }
     }
 
-    private static func configureAndMigrate(_ database: OpaquePointer) throws {
+    private static func configureAndMigrate(
+        _ database: OpaquePointer,
+        failurePoint: SQLiteEventJournalTestFailurePoint?
+    ) throws {
         let timeoutResult = sqlite3_busy_timeout(database, 5_000)
         guard timeoutResult == SQLITE_OK else {
             throw SQLiteEventJournalError.sqliteFailure(
@@ -743,6 +788,10 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             )
         }
 
+        // Read before any persistent pragma so an invalid/corrupt main file is
+        // classified without attempting to replace or rewrite it.
+        let currentVersion = try readSchemaVersion(from: database)
+
         try execute(on: database, "PRAGMA journal_mode = WAL", operation: "enable WAL mode")
         try execute(on: database, "PRAGMA foreign_keys = ON", operation: "enable foreign keys")
         try execute(
@@ -751,40 +800,56 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             operation: "configure synchronous mode"
         )
 
-        let currentVersion = try readSchemaVersion(from: database)
-
-        switch currentVersion {
-        case Self.schemaVersion:
-            break
-        case 0:
-            try migrateToVersionOne(database)
-            try migrateToVersionTwo(database)
-            try migrateToVersionThree(database)
-            try migrateToVersionFour(database)
-            try migrateToVersionFive(database)
-            try migrateToVersionSix(database)
-        case 1:
-            try migrateToVersionTwo(database)
-            try migrateToVersionThree(database)
-            try migrateToVersionFour(database)
-            try migrateToVersionFive(database)
-            try migrateToVersionSix(database)
-        case 2:
-            try migrateToVersionThree(database)
-            try migrateToVersionFour(database)
-            try migrateToVersionFive(database)
-            try migrateToVersionSix(database)
-        case 3:
-            try migrateToVersionFour(database)
-            try migrateToVersionFive(database)
-            try migrateToVersionSix(database)
-        case 4:
-            try migrateToVersionFive(database)
-            try migrateToVersionSix(database)
-        case 5:
-            try migrateToVersionSix(database)
-        default:
-            throw SQLiteEventJournalError.unsupportedSchemaVersion(currentVersion)
+        do {
+            switch currentVersion {
+            case Self.schemaVersion:
+                break
+            case 0:
+                try migrateToVersionOne(database)
+                try migrateToVersionTwo(database)
+                try migrateToVersionThree(database)
+                try migrateToVersionFour(database)
+                try migrateToVersionFive(database)
+                try migrateToVersionSix(database, failurePoint: failurePoint)
+                try migrateToVersionSeven(database, failurePoint: failurePoint)
+            case 1:
+                try migrateToVersionTwo(database)
+                try migrateToVersionThree(database)
+                try migrateToVersionFour(database)
+                try migrateToVersionFive(database)
+                try migrateToVersionSix(database, failurePoint: failurePoint)
+                try migrateToVersionSeven(database, failurePoint: failurePoint)
+            case 2:
+                try migrateToVersionThree(database)
+                try migrateToVersionFour(database)
+                try migrateToVersionFive(database)
+                try migrateToVersionSix(database, failurePoint: failurePoint)
+                try migrateToVersionSeven(database, failurePoint: failurePoint)
+            case 3:
+                try migrateToVersionFour(database)
+                try migrateToVersionFive(database)
+                try migrateToVersionSix(database, failurePoint: failurePoint)
+                try migrateToVersionSeven(database, failurePoint: failurePoint)
+            case 4:
+                try migrateToVersionFive(database)
+                try migrateToVersionSix(database, failurePoint: failurePoint)
+                try migrateToVersionSeven(database, failurePoint: failurePoint)
+            case 5:
+                try migrateToVersionSix(database, failurePoint: failurePoint)
+                try migrateToVersionSeven(database, failurePoint: failurePoint)
+            case 6:
+                try migrateToVersionSeven(database, failurePoint: failurePoint)
+            default:
+                throw SQLiteEventJournalError.unsupportedSchemaVersion(currentVersion)
+            }
+        } catch SQLiteEventJournalError.injectedFailure {
+            guard case let .beforeMigrationCommit(version)? = failurePoint else {
+                throw SQLiteEventJournalError.injectedFailure
+            }
+            throw SQLiteEventJournalError.migrationFailed(
+                fromVersion: currentVersion,
+                targetVersion: version
+            )
         }
 
         // A persisted "active" row describes the previous process's last
@@ -804,7 +869,63 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         try recoverInterruptedCalibrationRuns(database)
     }
 
-    private static func migrateToVersionSix(_ database: OpaquePointer) throws {
+    private static func migrateToVersionSeven(
+        _ database: OpaquePointer,
+        failurePoint: SQLiteEventJournalTestFailurePoint?
+    ) throws {
+        try execute(
+            on: database,
+            "BEGIN IMMEDIATE TRANSACTION",
+            operation: "begin schema migration v7"
+        )
+        do {
+            try execute(
+                on: database,
+                """
+                ALTER TABLE node_current ADD COLUMN deleted_at_ms INTEGER;
+
+                UPDATE node_current
+                SET deleted_at_ms = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+                WHERE deleted = 1;
+
+                CREATE INDEX node_current_expired_deleted
+                    ON node_current(deleted, deleted_at_ms);
+
+                INSERT INTO schema_migration(version, applied_at_ms, checksum)
+                VALUES(7, CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+                    'bounded-current-history-retention-v7');
+
+                PRAGMA user_version = 7;
+                """,
+                operation: "apply schema migration version 7"
+            )
+            try failMigrationIfRequested(version: 7, failurePoint: failurePoint)
+            try execute(
+                on: database,
+                "COMMIT TRANSACTION",
+                operation: "commit schema migration v7"
+            )
+        } catch let migrationError {
+            do {
+                try execute(
+                    on: database,
+                    "ROLLBACK TRANSACTION",
+                    operation: "roll back schema migration v7"
+                )
+            } catch let rollbackError {
+                throw SQLiteEventJournalError.rollbackFailed(
+                    original: String(describing: migrationError),
+                    rollback: String(describing: rollbackError)
+                )
+            }
+            throw migrationError
+        }
+    }
+
+    private static func migrateToVersionSix(
+        _ database: OpaquePointer,
+        failurePoint: SQLiteEventJournalTestFailurePoint?
+    ) throws {
         try execute(
             on: database,
             "BEGIN IMMEDIATE TRANSACTION",
@@ -873,6 +994,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 """,
                 operation: "apply schema migration version 6"
             )
+            try failMigrationIfRequested(version: 6, failurePoint: failurePoint)
             try execute(
                 on: database,
                 "COMMIT TRANSACTION",
@@ -1264,10 +1386,10 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             nil
         )
         guard prepareResult == SQLITE_OK, let statement else {
-            throw SQLiteEventJournalError.sqliteFailure(
+            throw classifiedSQLiteFailure(
                 operation: "prepare schema-version query",
                 code: prepareResult,
-                message: errorMessage(from: database)
+                database: database
             )
         }
         defer {
@@ -1276,10 +1398,10 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
 
         let stepResult = sqlite3_step(statement)
         guard stepResult == SQLITE_ROW else {
-            throw SQLiteEventJournalError.sqliteFailure(
+            throw classifiedSQLiteFailure(
                 operation: "step schema-version query",
                 code: stepResult,
-                message: errorMessage(from: database)
+                database: database
             )
         }
 
@@ -1985,7 +2107,9 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
     ) throws {
         let sql = """
             UPDATE node_current
-            SET deleted = 1, last_scan_run_id = ?1
+            SET deleted = 1,
+                deleted_at_ms = CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+                last_scan_run_id = ?1
             WHERE stream_id = ?2
                 AND (?3 = '/' OR path = ?3 OR substr(path, 1, length(?3) + 1) = ?3 || '/')
                 AND NOT EXISTS (
@@ -2014,10 +2138,11 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         let sql = """
             INSERT INTO node_current(
                 stream_id, path, logical_bytes, allocated_bytes,
-                descendant_count, coverage, last_scan_run_id, deleted
+                descendant_count, coverage, last_scan_run_id, deleted,
+                deleted_at_ms
             )
             SELECT ?1, path, logical_bytes, allocated_bytes,
-                descendant_count, coverage, scan_run_id, 0
+                descendant_count, coverage, scan_run_id, 0, NULL
             FROM scan_node_stage
             WHERE scan_run_id = ?2
             ON CONFLICT(stream_id, path) DO UPDATE SET
@@ -2026,7 +2151,8 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 descendant_count = excluded.descendant_count,
                 coverage = excluded.coverage,
                 last_scan_run_id = excluded.last_scan_run_id,
-                deleted = 0
+                deleted = 0,
+                deleted_at_ms = NULL
             """
         try withStatement(sql, operation: "publish staged directories") { statement in
             try streamID.rawValue.withCString { streamCString in
@@ -2086,6 +2212,83 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 try check(sqlite3_bind_text(statement, 1, runCString, -1, nil), operation: "bind staged deletion run")
                 try stepExpectingDone(statement, operation: "delete staged calibration rows")
             }
+        }
+    }
+
+    private func deleteExpiredDeletedNodes(cutoff: Int64) throws -> Int {
+        let sql = """
+            DELETE FROM node_current
+            WHERE deleted = 1
+                AND deleted_at_ms IS NOT NULL
+                AND deleted_at_ms < ?1
+            """
+        return try deleteRows(sql, cutoff: cutoff, operation: "delete expired nodes")
+    }
+
+    private func deleteExpiredReplaceableBaselines(cutoff: Int64) throws -> Int {
+        // A snapshot is replaceable only when every scope it represents has a
+        // newer snapshot. This preserves the newest complete baseline for each
+        // authorized scope even when it is older than the retention window.
+        let sql = """
+            DELETE FROM authorized_baseline_snapshot AS expired
+            WHERE expired.committed_at_ms < ?1
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM authorized_baseline_root AS expired_root
+                    WHERE expired_root.baseline_id = expired.id
+                        AND NOT EXISTS (
+                            SELECT 1
+                            FROM authorized_baseline_root AS newer_root
+                            JOIN authorized_baseline_snapshot AS newer
+                                ON newer.id = newer_root.baseline_id
+                            WHERE newer_root.scope_id = expired_root.scope_id
+                                AND (
+                                    newer.committed_at_ms > expired.committed_at_ms
+                                    OR (
+                                        newer.committed_at_ms = expired.committed_at_ms
+                                        AND newer.id > expired.id
+                                    )
+                                )
+                        )
+                )
+            """
+        return try deleteRows(
+            sql,
+            cutoff: cutoff,
+            operation: "delete expired replaceable baselines"
+        )
+    }
+
+    private func deleteExpiredUnreferencedScanRuns(cutoff: Int64) throws -> Int {
+        let sql = """
+            DELETE FROM scan_run
+            WHERE state != 'running'
+                AND finished_at_ms IS NOT NULL
+                AND finished_at_ms < ?1
+                AND NOT EXISTS (
+                    SELECT 1 FROM node_current
+                    WHERE node_current.last_scan_run_id = scan_run.id
+                )
+            """
+        return try deleteRows(
+            sql,
+            cutoff: cutoff,
+            operation: "delete expired unreferenced scan runs"
+        )
+    }
+
+    private func deleteRows(
+        _ sql: String,
+        cutoff: Int64,
+        operation: String
+    ) throws -> Int {
+        try withStatement(sql, operation: operation) { statement in
+            try check(
+                sqlite3_bind_int64(statement, 1, cutoff),
+                operation: "bind retention cutoff"
+            )
+            try stepExpectingDone(statement, operation: operation)
+            return Int(sqlite3_changes(try databaseHandle()))
         }
     }
 
@@ -2167,6 +2370,16 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         throw SQLiteEventJournalError.injectedFailure
     }
 
+    private static func failMigrationIfRequested(
+        version: Int32,
+        failurePoint: SQLiteEventJournalTestFailurePoint?
+    ) throws {
+        guard failurePoint == .beforeMigrationCommit(version: version) else {
+            return
+        }
+        throw SQLiteEventJournalError.injectedFailure
+    }
+
     private func rollback(after originalError: any Error) throws -> Never {
         do {
             try execute("ROLLBACK TRANSACTION", operation: "roll back transaction")
@@ -2211,7 +2424,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 message = Self.errorMessage(from: database)
             }
 
-            throw SQLiteEventJournalError.sqliteFailure(
+            throw classifiedSQLiteFailure(
                 operation: operation,
                 code: result,
                 message: message
@@ -2252,11 +2465,50 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
     }
 
     private func sqliteFailure(operation: String, code: Int32) -> SQLiteEventJournalError {
-        .sqliteFailure(
+        Self.classifiedSQLiteFailure(
             operation: operation,
             code: code,
             message: connection.withLock { Self.errorMessage(from: $0) }
         )
+    }
+
+    private static func classifiedSQLiteFailure(
+        operation: String,
+        code: Int32,
+        database: OpaquePointer
+    ) -> SQLiteEventJournalError {
+        classifiedSQLiteFailure(
+            operation: operation,
+            code: code,
+            message: errorMessage(from: database)
+        )
+    }
+
+    private static func classifiedSQLiteFailure(
+        operation: String,
+        code: Int32,
+        message: String
+    ) -> SQLiteEventJournalError {
+        let primaryCode = code & 0xFF
+        switch primaryCode {
+        case SQLITE_FULL:
+            return .diskFull(operation: operation)
+        case SQLITE_CORRUPT, SQLITE_NOTADB:
+            return .databaseCorrupt
+        default:
+            return .sqliteFailure(operation: operation, code: code, message: message)
+        }
+    }
+
+    private func readInt32Pragma(_ sql: String) throws -> Int32 {
+        try withStatement(sql, operation: "read SQLite pragma") { statement in
+            let result = sqlite3_step(statement)
+            guard result == SQLITE_ROW,
+                  sqlite3_column_type(statement, 0) == SQLITE_INTEGER else {
+                throw sqliteFailure(operation: "step SQLite pragma", code: result)
+            }
+            return sqlite3_column_int(statement, 0)
+        }
     }
 
     private func readText(
@@ -2494,12 +2746,17 @@ private extension CalibrationCoverage {
 enum SQLiteEventJournalTestFailurePoint: Sendable, Equatable {
     case afterDirtyRegionsBeforeCheckpoint
     case afterRecoveryWorkBeforeCheckpointInvalidation
+    case afterExpiredDeletedNodesBeforeBaselines
+    case beforeMigrationCommit(version: Int32)
 }
 
 public enum SQLiteEventJournalError: Error, Sendable, Equatable {
     case invalidDatabaseLocation
     case openFailed(code: Int32, message: String)
     case databaseClosed
+    case databaseCorrupt
+    case diskFull(operation: String)
+    case migrationFailed(fromVersion: Int32, targetVersion: Int32)
     case unsupportedSchemaVersion(Int32)
     case cursorRegression(stored: UInt64, attempted: UInt64)
     case revisionOverflow(path: String)

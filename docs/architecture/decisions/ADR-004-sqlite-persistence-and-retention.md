@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — SQLite is selected; GRDB adoption is subject to dependency/licence/build validation in the architecture spike.
+Proposed — SQLite is selected. The 2026-07-20 evidence review found GRDB 7.10.0 viable, but retains the raw SQLite adapter for phase one pending parity, benchmark, signed/notarized-build, and oldest-OS evidence.
 
 Date: 2026-07-18
 
@@ -19,7 +19,7 @@ The application has no backend, multi-user database, or cross-device synchroniza
 1. Use one SQLite database in the user's SpaceTrace Application Support directory as the durable source of truth.
 2. Enable WAL mode, foreign keys, bounded busy timeout, `synchronous=NORMAL` for routine operation, and an idle checkpoint policy. Migrations and critical recovery transitions may temporarily use stronger synchronization.
 3. Use one logical database writer behind an actor. Permit consistent read snapshots through a pool so UI queries do not share mutable persistence state with scan code.
-4. Implement persistence through repository/transaction ports. GRDB is the proposed adapter because it provides typed records, migrations, pooling, and transaction primitives; no GRDB type crosses into domain/application modules.
+4. Implement persistence through repository/transaction ports. Keep the raw SQLite adapter for phase one. GRDB 7.10.0 remains the preferred candidate when concurrent history reads justify a pool, but adoption requires the gates in the [adapter evidence review](../../engineering/sqlite-adapter-evidence-review.md). No adapter type crosses into domain/application modules.
 5. Use staging tables for long scans and short atomic finalization transactions. Incomplete stages never appear as current truth.
 6. Persist all directory aggregates but only selected files: pinned, classified roots, top contributors, or files above the default large-file threshold. Do not retain every small file indefinitely.
 7. Apply a **30-day maximum default for path-level history**: hourly samples for 7 days, daily samples/path-bearing findings/deleted-node history through day 30, then transactional deletion. Only the minimum path-free gap/health marker needed to explain a discontinuity may remain after expiry.
@@ -34,8 +34,8 @@ The application has no backend, multi-user database, or cross-device synchroniza
 
 | Option | Benefits | Costs / failure modes | Assessment |
 | --- | --- | --- | --- |
-| SQLite + GRDB adapter | ACID, WAL, migrations, concurrent reads, mature Swift API | Third-party dependency and supply-chain review | Selected pending adapter validation |
-| Raw SQLite C API | Minimal dependencies and complete control | Significant statement/migration/concurrency boilerplate; higher defect risk | Viable fallback |
+| SQLite + GRDB adapter | ACID, WAL, migrations, concurrent reads, mature Swift API | Third-party dependency, adapter translation, and supply-chain review | Viable preferred candidate for the history phase; not yet adopted |
+| Raw SQLite C API | Minimal dependencies and complete control | Significant statement/migration/concurrency boilerplate; higher defect risk | Selected for phase one with repository isolation |
 | Core Data / SwiftData | Apple-integrated object graph and UI tooling | Less explicit transaction/cursor semantics; migration/debugging complexity; framework coupling | Rejected for core journal protocol |
 | JSON/plist files | Easy inspection | Weak atomic multi-entity updates, poor queries, corruption/rewrite risk | Rejected |
 | Embedded analytical DB | Powerful columnar history queries | Larger dependency/footprint and weak fit for durable work queue | Rejected |
@@ -71,7 +71,7 @@ The application has no backend, multi-user database, or cross-device synchroniza
 
 ## Validation plan
 
-1. Spike GRDB against the selected minimum OS and Swift toolchain; confirm static integration, license, signed/notarized build, and no domain leakage.
+1. GRDB 7.10.0 license, manifest, local exact-version SPM Release build, static/default-product linkage, system-SQLite linkage, and domain isolation are reviewed. Signed/notarized distribution and macOS 15.6 runtime evidence remain open.
 2. Simulate termination/power loss around every cursor, dirty-row, staging, and finalization boundary.
 3. Generate the PRD 30-day benchmark databases at 500,000 and 1,000,000 entries; verify the <250 MB gate and measure write latency, query p95, checkpoint, and retention time.
 4. Fill the volume during WAL growth, staging, migration backup, and finalization; verify read-only recovery.
@@ -89,3 +89,7 @@ The application has no backend, multi-user database, or cross-device synchroniza
 - Product requires cross-device sync, multi-user access, or concurrent writers in separate processes.
 - A validated threat model requires database encryption beyond FileVault/user permissions.
 - External volumes or removable database placement become requirements.
+
+## Evidence review
+
+The completed comparison, primary-source links, reproducible local spike, explicit non-claims, and GRDB adoption gates are recorded in [SQLite Adapter Evidence Review](../../engineering/sqlite-adapter-evidence-review.md). This review narrows the phase-one implementation choice but does not accept this ADR; the remaining validation plan still includes recovery UI, migration backups, full history retention, benchmarks, distribution signing, and oldest-supported-OS qualification.

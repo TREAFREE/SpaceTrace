@@ -5,6 +5,7 @@ import SpaceTraceApplication
 protocol AuthorizedBaselineScanCoordinating: Sendable {
     func updates() async -> AsyncStream<AuthorizedBaselineScanState>
     func start(scopeID: WatchedScopeID) async -> Bool
+    func start(request: AuthorizedBaselineScanRequest) async -> Bool
     func restoreLatest(scopeID: WatchedScopeID) async
     func cancel() async
 }
@@ -44,6 +45,20 @@ final class BaselineScanViewModel {
             return
         }
         _ = await coordinator.start(scopeID: scopeID)
+    }
+
+    func start(scopeIDs: [WatchedScopeID]) async {
+        guard let coordinator else {
+            handleCompositionFailure(scopeID: scopeIDs.first)
+            return
+        }
+        do {
+            _ = await coordinator.start(
+                request: try AuthorizedBaselineScanRequest(scopeIDs: scopeIDs)
+            )
+        } catch {
+            handleCompositionFailure(scopeID: scopeIDs.first)
+        }
     }
 
     func restore(scopeID: WatchedScopeID?) async {

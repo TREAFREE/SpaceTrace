@@ -93,12 +93,13 @@ struct OverviewView: View {
         switch currentBaselineState(for: scopeID) {
         case .idle:
             baselineIdle(scopeID: scopeID)
-        case let .preparing(_, startedAt):
+        case let .preparing(request, startedAt):
             baselineActive(
                 title: "正在准备扫描",
                 detail: "正在确认授权目录与当前 FSEvents 监控代次。",
                 startedAt: startedAt,
-                progress: nil
+                progress: nil,
+                totalRootCount: request.scopeIDs.count
             )
         case let .scanning(progress):
             baselineActive(
@@ -143,7 +144,8 @@ struct OverviewView: View {
         title: LocalizedStringKey,
         detail: LocalizedStringKey,
         startedAt: Date,
-        progress: AuthorizedBaselineScanProgress?
+        progress: AuthorizedBaselineScanProgress?,
+        totalRootCount: Int = 1
     ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
@@ -160,7 +162,7 @@ struct OverviewView: View {
             }
             LabeledContent(
                 "根目录进度",
-                value: "\(progress?.completedRootCount ?? 0) / \(progress?.totalRootCount ?? 1)"
+                value: "\(progress?.completedRootCount ?? 0) / \(progress?.totalRootCount ?? totalRootCount)"
             )
             LabeledContent("不可完整读取的根目录", value: "\(progress?.unreadableRootCount ?? 0)")
             if let progress, progress.entriesVisited > 0 {
@@ -255,10 +257,13 @@ struct OverviewView: View {
                 LabeledContent("扫描条目", value: result.report.entriesVisited.formatted())
                 LabeledContent("目录摘要", value: result.report.directoriesStaged.formatted())
                 LabeledContent("访问缺口", value: result.report.gaps.count.formatted())
-                LabeledContent("完成根目录", value: "0 / 1")
+                LabeledContent(
+                    "完成根目录",
+                    value: "\(result.completedRootCount) / \(result.totalRootCount)"
+                )
                 LabeledContent(
                     "不可完整读取的根目录",
-                    value: result.reason == .partialCoverage ? "1" : "0"
+                    value: result.unreadableRootCount.formatted()
                 )
             }
             Text("由于没有完整发布，SpaceTrace 不会把暂存的字节数当作当前基线。")
@@ -408,7 +413,7 @@ struct OverviewView: View {
         switch state {
         case .idle:
             return .idle
-        case let .preparing(stateScopeID, _) where stateScopeID == scopeID:
+        case let .preparing(request, _) where request.scopeIDs.contains(scopeID):
             return state
         case let .scanning(progress) where progress.context.scopeID == scopeID:
             return state

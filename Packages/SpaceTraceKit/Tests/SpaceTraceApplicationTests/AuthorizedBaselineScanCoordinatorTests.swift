@@ -252,6 +252,196 @@ struct AuthorizedBaselineScanCoordinatorTests {
         }
         #expect(failure.code == .baselinePersistenceFailed)
     }
+
+    @Test("Multiple roots scan in deterministic order and commit one snapshot")
+    func publishesOneMultiRootSnapshot() async throws {
+        let fixture = try Fixture()
+        let contexts = try makeMultiRootContexts()
+        let request = try AuthorizedBaselineScanRequest(
+            scopeIDs: contexts.reversed().map(\.scopeID)
+        )
+        let outcomes = try Dictionary(
+            uniqueKeysWithValues: contexts.enumerated().map { index, context in
+                (
+                    context.scopeID,
+                    AuthorizedBaselineCalibrationOutcome.published(
+                        try DirectoryMetadataAggregate(
+                            path: context.root,
+                            logicalBytes: ByteCount(Int64((index + 1) * 1_000)),
+                            allocatedBytes: ByteCount(Int64((index + 1) * 2_000)),
+                            descendantCount: Int64(index + 1),
+                            coverage: .complete
+                        ),
+                        fixture.completeReport
+                    )
+                )
+            }
+        )
+        let runner = MultiBaselineCalibrationRunnerFake(outcomes: outcomes)
+        let repository = BaselineSnapshotRepositoryFake()
+        let coordinator = AuthorizedBaselineScanCoordinator(
+            contextProvider: BaselineContextMapProviderFake(contexts: contexts),
+            calibrationRunner: runner,
+            snapshotRepository: repository,
+            volumeCapacityProvider: BaselineVolumeCapacityProviderFake(
+                snapshot: fixture.volumeSnapshot
+            ),
+            buildMetadata: fixture.buildMetadata,
+            makeBaselineID: { fixture.baselineID },
+            now: { fixture.timestamp }
+        )
+        let recorder = BaselineProgressRecorder()
+        let updates = await coordinator.updates()
+        let observation = Task {
+            for await state in updates {
+                await recorder.record(state)
+                if case .completed = state { return }
+            }
+        }
+
+        #expect(await coordinator.start(request: request))
+        await coordinator.waitForCurrentScan()
+        await observation.value
+
+        guard case let .completed(result) = await coordinator.state() else {
+            Issue.record("Expected one completed multi-root baseline.")
+            return
+        }
+        let expectedScopeIDs = contexts.map(\.scopeID)
+        #expect(request.scopeIDs == expectedScopeIDs)
+        #expect(result.snapshot.roots.map(\.context.scopeID) == expectedScopeIDs)
+        #expect(await runner.visitedScopeIDs == expectedScopeIDs)
+        #expect(await repository.savedSnapshots == [result.snapshot])
+        #expect(await recorder.completedRootCounts == [0, 0, 1, 1])
+        #expect(await recorder.totalRootCounts == [2, 2, 2, 2])
+    }
+
+    @Test("A partial later root prevents the whole multi-root snapshot commit")
+    func multiRootPartialDoesNotCommit() async throws {
+        let fixture = try Fixture()
+        let contexts = try makeMultiRootContexts()
+        let partialReport = try CalibrationReport(
+            coverage: .partial,
+            entriesVisited: 3,
+            directoriesStaged: 1,
+            gaps: [
+                CalibrationGap(path: contexts[1].root, reason: .permissionDenied),
+            ]
+        )
+        let outcomes: [WatchedScopeID: AuthorizedBaselineCalibrationOutcome] = [
+            contexts[0].scopeID: .published(
+                try DirectoryMetadataAggregate(
+                    path: contexts[0].root,
+                    logicalBytes: ByteCount(1_000),
+                    allocatedBytes: ByteCount(2_000),
+                    descendantCount: 1,
+                    coverage: .complete
+                ),
+                fixture.completeReport
+            ),
+            contexts[1].scopeID: .incomplete(partialReport, .partialCoverage),
+        ]
+        let repository = BaselineSnapshotRepositoryFake()
+        let coordinator = AuthorizedBaselineScanCoordinator(
+            contextProvider: BaselineContextMapProviderFake(contexts: contexts),
+            calibrationRunner: MultiBaselineCalibrationRunnerFake(outcomes: outcomes),
+            snapshotRepository: repository,
+            volumeCapacityProvider: BaselineVolumeCapacityProviderFake(
+                snapshot: fixture.volumeSnapshot
+            ),
+            buildMetadata: fixture.buildMetadata,
+            makeBaselineID: { fixture.baselineID },
+            now: { fixture.timestamp }
+        )
+
+        let request = try AuthorizedBaselineScanRequest(
+            scopeIDs: contexts.map(\.scopeID)
+        )
+        #expect(await coordinator.start(request: request))
+        await coordinator.waitForCurrentScan()
+
+        guard case let .incomplete(result) = await coordinator.state() else {
+            Issue.record("Expected the multi-root baseline to remain uncommitted.")
+            return
+        }
+        #expect(result.context == contexts[1])
+        #expect(result.completedRootCount == 1)
+        #expect(result.totalRootCount == 2)
+        #expect(result.unreadableRootCount == 1)
+        #expect(await repository.savedSnapshots.isEmpty)
+    }
+
+    @Test("Cancelling a later root reports completed work and awaits shutdown")
+    func cancelsLaterMultiRootScan() async throws {
+        let fixture = try Fixture()
+        let contexts = try makeMultiRootContexts()
+        let runner = SecondRootBlockingCalibrationRunnerFake(
+            firstContext: contexts[0],
+            report: fixture.completeReport
+        )
+        let coordinator = AuthorizedBaselineScanCoordinator(
+            contextProvider: BaselineContextMapProviderFake(contexts: contexts),
+            calibrationRunner: runner,
+            snapshotRepository: BaselineSnapshotRepositoryFake(),
+            volumeCapacityProvider: BaselineVolumeCapacityProviderFake(
+                snapshot: fixture.volumeSnapshot
+            ),
+            buildMetadata: fixture.buildMetadata,
+            makeBaselineID: { fixture.baselineID },
+            now: { fixture.timestamp }
+        )
+        let request = try AuthorizedBaselineScanRequest(
+            scopeIDs: contexts.map(\.scopeID)
+        )
+
+        #expect(await coordinator.start(request: request))
+        await runner.waitUntilSecondRootStarted()
+        await coordinator.cancel()
+
+        guard case let .cancelled(result) = await coordinator.state() else {
+            Issue.record("Expected a completed cancellation state.")
+            return
+        }
+        #expect(result.requestedScopeIDs == request.scopeIDs)
+        #expect(result.context == contexts[1])
+        #expect(result.completedRootCount == 1)
+        #expect(await runner.observedCancellation)
+    }
+
+    @Test("Multi-root requests reject empty and duplicate scope sets")
+    func validatesMultiRootRequests() throws {
+        let scopeID = try WatchedScopeID("scope-duplicate")
+        #expect(throws: AuthorizedBaselineScanRequestError.emptyScopes) {
+            try AuthorizedBaselineScanRequest(scopeIDs: [])
+        }
+        #expect(throws: AuthorizedBaselineScanRequestError.duplicateScope) {
+            try AuthorizedBaselineScanRequest(scopeIDs: [scopeID, scopeID])
+        }
+        let excessiveScopes = try (0...AuthorizedBaselineScanRequest.maximumScopeCount)
+            .map { try WatchedScopeID("scope-\($0)") }
+        #expect(
+            throws: AuthorizedBaselineScanRequestError.tooManyScopes(
+                maximum: AuthorizedBaselineScanRequest.maximumScopeCount
+            )
+        ) {
+            try AuthorizedBaselineScanRequest(scopeIDs: excessiveScopes)
+        }
+    }
+}
+
+private func makeMultiRootContexts() throws -> [AuthorizedBaselineScanContext] {
+    [
+        AuthorizedBaselineScanContext(
+            scopeID: try WatchedScopeID("scope-a"),
+            root: try DirtyRegionPath("/Users/example/A"),
+            streamID: try EventStreamID("stream-a")
+        ),
+        AuthorizedBaselineScanContext(
+            scopeID: try WatchedScopeID("scope-b"),
+            root: try DirtyRegionPath("/Users/example/B"),
+            streamID: try EventStreamID("stream-b")
+        ),
+    ]
 }
 
 private struct Fixture: Sendable {
@@ -355,6 +545,22 @@ private struct BaselineContextProviderFake: AuthorizedBaselineScanContextProvidi
     }
 }
 
+private struct BaselineContextMapProviderFake: AuthorizedBaselineScanContextProviding {
+    let contexts: [WatchedScopeID: AuthorizedBaselineScanContext]
+
+    init(contexts: [AuthorizedBaselineScanContext]) {
+        self.contexts = Dictionary(
+            uniqueKeysWithValues: contexts.map { ($0.scopeID, $0) }
+        )
+    }
+
+    func context(
+        for scopeID: WatchedScopeID
+    ) throws -> AuthorizedBaselineScanContext {
+        try #require(contexts[scopeID])
+    }
+}
+
 private struct BaselineCalibrationRunnerFake: AuthorizedBaselineCalibrationRunning {
     let outcome: AuthorizedBaselineCalibrationOutcome
 
@@ -397,6 +603,102 @@ private actor BlockingBaselineCalibrationRunnerFake: AuthorizedBaselineCalibrati
         await withCheckedContinuation { continuation in
             startWaiters.append(continuation)
         }
+    }
+}
+
+private actor MultiBaselineCalibrationRunnerFake: AuthorizedBaselineCalibrationRunning {
+    let outcomes: [WatchedScopeID: AuthorizedBaselineCalibrationOutcome]
+    private(set) var visitedScopeIDs: [WatchedScopeID] = []
+
+    init(outcomes: [WatchedScopeID: AuthorizedBaselineCalibrationOutcome]) {
+        self.outcomes = outcomes
+    }
+
+    func run(
+        context: AuthorizedBaselineScanContext,
+        onProgress: @escaping @Sendable (AuthorizedBaselineCalibrationProgress) async -> Void
+    ) async throws -> AuthorizedBaselineCalibrationOutcome {
+        visitedScopeIDs.append(context.scopeID)
+        let outcome = try #require(outcomes[context.scopeID])
+        await onProgress(.scanning(context))
+        if case let .published(_, report) = outcome {
+            await onProgress(.publishing(context, report))
+        }
+        return outcome
+    }
+}
+
+private actor SecondRootBlockingCalibrationRunnerFake: AuthorizedBaselineCalibrationRunning {
+    let firstContext: AuthorizedBaselineScanContext
+    let report: CalibrationReport
+    private var invocationCount = 0
+    private var secondRootStarted = false
+    private var secondRootWaiters: [CheckedContinuation<Void, Never>] = []
+    private(set) var observedCancellation = false
+
+    init(
+        firstContext: AuthorizedBaselineScanContext,
+        report: CalibrationReport
+    ) {
+        self.firstContext = firstContext
+        self.report = report
+    }
+
+    func run(
+        context: AuthorizedBaselineScanContext,
+        onProgress: @escaping @Sendable (AuthorizedBaselineCalibrationProgress) async -> Void
+    ) async throws -> AuthorizedBaselineCalibrationOutcome {
+        invocationCount += 1
+        await onProgress(.scanning(context))
+        if invocationCount == 1 {
+            await onProgress(.publishing(context, report))
+            return .published(
+                try DirectoryMetadataAggregate(
+                    path: firstContext.root,
+                    logicalBytes: ByteCount(1_000),
+                    allocatedBytes: ByteCount(2_000),
+                    descendantCount: 1,
+                    coverage: .complete
+                ),
+                report
+            )
+        }
+
+        secondRootStarted = true
+        secondRootWaiters.forEach { $0.resume() }
+        secondRootWaiters.removeAll()
+        do {
+            try await Task.sleep(for: .seconds(3_600))
+            preconditionFailure("The second root fixture must be cancelled.")
+        } catch is CancellationError {
+            observedCancellation = true
+            throw CancellationError()
+        }
+    }
+
+    func waitUntilSecondRootStarted() async {
+        if secondRootStarted { return }
+        await withCheckedContinuation { continuation in
+            secondRootWaiters.append(continuation)
+        }
+    }
+}
+
+private actor BaselineProgressRecorder {
+    private(set) var completedRootCounts: [Int] = []
+    private(set) var totalRootCounts: [Int] = []
+
+    func record(_ state: AuthorizedBaselineScanState) {
+        let progress: AuthorizedBaselineScanProgress?
+        switch state {
+        case let .scanning(value), let .publishing(value):
+            progress = value
+        default:
+            progress = nil
+        }
+        guard let progress else { return }
+        completedRootCounts.append(progress.completedRootCount)
+        totalRootCounts.append(progress.totalRootCount)
     }
 }
 

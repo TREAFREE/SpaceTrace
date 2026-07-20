@@ -16,6 +16,7 @@ public actor AuthorizedBaselineScanCoordinator {
     private var currentTask: Task<Void, Never>?
     private var operationID: UUID?
     private var activeContext: AuthorizedBaselineScanContext?
+    private var completedRootCount = 0
     private var isRestoring = false
     private var observers: [UUID: Observer] = [:]
 
@@ -60,15 +61,26 @@ public actor AuthorizedBaselineScanCoordinator {
 
     @discardableResult
     public func start(scopeID: WatchedScopeID) -> Bool {
+        start(request: AuthorizedBaselineScanRequest(singleScopeID: scopeID))
+    }
+
+    @discardableResult
+    public func start(request: AuthorizedBaselineScanRequest) -> Bool {
         guard currentTask == nil, isRestoring == false else { return false }
         let operationID = UUID()
         let startedAt = now()
         self.operationID = operationID
         activeContext = nil
-        publish(.preparing(scopeID: scopeID, startedAt: startedAt))
+        completedRootCount = 0
+        publish(
+            .preparing(
+                request: request,
+                startedAt: startedAt
+            )
+        )
         currentTask = Task { @concurrent [weak self] in
             await self?.execute(
-                scopeID: scopeID,
+                request: request,
                 operationID: operationID,
                 startedAt: startedAt
             )
@@ -128,98 +140,121 @@ public actor AuthorizedBaselineScanCoordinator {
     }
 
     private func execute(
-        scopeID: WatchedScopeID,
+        request: AuthorizedBaselineScanRequest,
         operationID: UUID,
         startedAt: Date
     ) async {
         defer { finish(operationID: operationID) }
+        var currentScopeID = request.scopeIDs[0]
         do {
-            let context = try await contextProvider.context(for: scopeID)
-            try Task.checkCancellation()
-            guard self.operationID == operationID else { return }
-            activeContext = context
+            var roots: [AuthorizedBaselineRootSnapshot] = []
+            roots.reserveCapacity(request.scopeIDs.count)
 
-            let outcome = try await calibrationRunner.run(context: context) { [weak self] update in
-                await self?.receive(
-                    update,
-                    operationID: operationID,
-                    startedAt: startedAt
-                )
-            }
-            try Task.checkCancellation()
-            guard self.operationID == operationID else { return }
-
-            switch outcome {
-            case let .published(aggregate, report):
-                guard let logicalBytes = aggregate.logicalBytes,
-                      let allocatedBytes = aggregate.allocatedBytes else {
-                    publishFailure(
-                        scopeID: scopeID,
-                        code: .publishedRootMissing,
-                        operationID: operationID
-                    )
-                    return
-                }
-                let volumeSnapshot = await volumeCapacityProvider.snapshot()
+            for scopeID in request.scopeIDs {
+                currentScopeID = scopeID
+                // Do not attribute an authorization/monitoring lookup or its
+                // cancellation to the previously completed root.
+                activeContext = nil
+                let context = try await contextProvider.context(for: scopeID)
                 try Task.checkCancellation()
-                let completedAt = now()
-                let rootSnapshot = try AuthorizedBaselineRootSnapshot(
-                    context: context,
-                    logicalBytes: logicalBytes,
-                    allocatedBytes: allocatedBytes,
-                    descendantCount: aggregate.descendantCount,
-                    entriesVisited: report.entriesVisited,
-                    directoriesObserved: report.directoriesStaged
-                )
-                let snapshot = try AuthorizedBaselineSnapshot(
-                    id: makeBaselineID(),
-                    startedAt: startedAt,
-                    committedAt: completedAt,
-                    build: buildMetadata,
-                    startupVolume: volumeSnapshot,
-                    roots: [rootSnapshot]
-                )
-                do {
-                    try await snapshotRepository.saveAuthorizedBaseline(snapshot)
-                } catch {
-                    publishFailure(
-                        scopeID: scopeID,
-                        code: .baselinePersistenceFailed,
-                        operationID: operationID
+                guard self.operationID == operationID else { return }
+                activeContext = context
+
+                let completedBeforeRoot = roots.count
+                let outcome = try await calibrationRunner.run(context: context) { [weak self] update in
+                    await self?.receive(
+                        update,
+                        operationID: operationID,
+                        startedAt: startedAt,
+                        completedRootCount: completedBeforeRoot,
+                        totalRootCount: request.scopeIDs.count
+                    )
+                }
+                try Task.checkCancellation()
+                guard self.operationID == operationID else { return }
+
+                switch outcome {
+                case let .published(aggregate, report):
+                    guard let logicalBytes = aggregate.logicalBytes,
+                          let allocatedBytes = aggregate.allocatedBytes else {
+                        publishFailure(
+                            scopeID: scopeID,
+                            code: .publishedRootMissing,
+                            operationID: operationID
+                        )
+                        return
+                    }
+                    roots.append(
+                        try AuthorizedBaselineRootSnapshot(
+                            context: context,
+                            logicalBytes: logicalBytes,
+                            allocatedBytes: allocatedBytes,
+                            descendantCount: aggregate.descendantCount,
+                            entriesVisited: report.entriesVisited,
+                            directoriesObserved: report.directoriesStaged
+                        )
+                    )
+                    completedRootCount = roots.count
+                case let .incomplete(report, reason):
+                    publish(
+                        .incomplete(
+                            AuthorizedBaselineIncompleteResult(
+                                context: context,
+                                reason: reason,
+                                report: report,
+                                startedAt: startedAt,
+                                completedAt: now(),
+                                completedRootCount: roots.count,
+                                totalRootCount: request.scopeIDs.count,
+                                unreadableRootCount: reason == .partialCoverage ? 1 : 0
+                            )
+                        )
                     )
                     return
                 }
-                publish(
-                    .completed(
-                        try AuthorizedBaselineScanResult(
-                            snapshot: snapshot,
-                            scopeID: scopeID,
-                            origin: .completedScan
-                        )
-                    )
-                )
-            case let .incomplete(report, reason):
-                publish(
-                    .incomplete(
-                        AuthorizedBaselineIncompleteResult(
-                            context: context,
-                            reason: reason,
-                            report: report,
-                            startedAt: startedAt,
-                            completedAt: now()
-                        )
-                    )
-                )
             }
+
+            let volumeSnapshot = await volumeCapacityProvider.snapshot()
+            try Task.checkCancellation()
+            let completedAt = now()
+            let snapshot = try AuthorizedBaselineSnapshot(
+                id: makeBaselineID(),
+                startedAt: startedAt,
+                committedAt: completedAt,
+                build: buildMetadata,
+                startupVolume: volumeSnapshot,
+                roots: roots
+            )
+            do {
+                try await snapshotRepository.saveAuthorizedBaseline(snapshot)
+            } catch {
+                publishFailure(
+                    scopeID: currentScopeID,
+                    code: .baselinePersistenceFailed,
+                    operationID: operationID
+                )
+                return
+            }
+            publish(
+                .completed(
+                    try AuthorizedBaselineScanResult(
+                        snapshot: snapshot,
+                        scopeID: request.scopeIDs[0],
+                        origin: .completedScan
+                    )
+                )
+            )
         } catch is CancellationError {
             guard self.operationID == operationID else { return }
             publish(
                 .cancelled(
                     AuthorizedBaselineScanCancellation(
-                        scopeID: scopeID,
+                        scopeID: request.scopeIDs[0],
+                        requestedScopeIDs: request.scopeIDs,
                         context: activeContext,
                         startedAt: startedAt,
-                        cancelledAt: now()
+                        cancelledAt: now(),
+                        completedRootCount: completedRootCount
                     )
                 )
             )
@@ -228,22 +263,28 @@ public actor AuthorizedBaselineScanCoordinator {
             case .scopeNotAuthorized: .scopeNotAuthorized
             case .monitoringNotReady: .monitoringNotReady
             }
-            publishFailure(scopeID: scopeID, code: code, operationID: operationID)
+            publishFailure(scopeID: currentScopeID, code: code, operationID: operationID)
         } catch let error as AuthorizedBaselineCalibrationRunnerError {
             let code: AuthorizedBaselineScanFailureCode = switch error {
             case .publishedRootMissing: .publishedRootMissing
             case .missingAttempt: .operationFailed
             }
-            publishFailure(scopeID: scopeID, code: code, operationID: operationID)
+            publishFailure(scopeID: currentScopeID, code: code, operationID: operationID)
         } catch {
-            publishFailure(scopeID: scopeID, code: .operationFailed, operationID: operationID)
+            publishFailure(
+                scopeID: currentScopeID,
+                code: .operationFailed,
+                operationID: operationID
+            )
         }
     }
 
     private func receive(
         _ update: AuthorizedBaselineCalibrationProgress,
         operationID: UUID,
-        startedAt: Date
+        startedAt: Date,
+        completedRootCount: Int,
+        totalRootCount: Int
     ) {
         guard self.operationID == operationID, Task.isCancelled == false else { return }
         switch update {
@@ -252,7 +293,9 @@ public actor AuthorizedBaselineScanCoordinator {
                 .scanning(
                     AuthorizedBaselineScanProgress(
                         context: context,
-                        startedAt: startedAt
+                        startedAt: startedAt,
+                        completedRootCount: completedRootCount,
+                        totalRootCount: totalRootCount
                     )
                 )
             )
@@ -262,6 +305,8 @@ public actor AuthorizedBaselineScanCoordinator {
                     AuthorizedBaselineScanProgress(
                         context: context,
                         startedAt: startedAt,
+                        completedRootCount: completedRootCount,
+                        totalRootCount: totalRootCount,
                         entriesVisited: report.entriesVisited,
                         directoriesObserved: report.directoriesStaged
                     )
@@ -292,6 +337,7 @@ public actor AuthorizedBaselineScanCoordinator {
         currentTask = nil
         self.operationID = nil
         activeContext = nil
+        completedRootCount = 0
     }
 
     private func publish(_ state: AuthorizedBaselineScanState) {

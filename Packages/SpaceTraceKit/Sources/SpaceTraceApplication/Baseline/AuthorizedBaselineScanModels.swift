@@ -26,6 +26,32 @@ public enum AuthorizedBaselineScanContextError: Error, Sendable, Equatable {
     case monitoringNotReady
 }
 
+public struct AuthorizedBaselineScanRequest: Sendable, Equatable {
+    public static let maximumScopeCount = 64
+    public let scopeIDs: [WatchedScopeID]
+
+    public init(
+        scopeIDs: [WatchedScopeID]
+    ) throws(AuthorizedBaselineScanRequestError) {
+        guard scopeIDs.isEmpty == false else { throw .emptyScopes }
+        guard scopeIDs.count <= Self.maximumScopeCount else {
+            throw .tooManyScopes(maximum: Self.maximumScopeCount)
+        }
+        guard Set(scopeIDs).count == scopeIDs.count else { throw .duplicateScope }
+        self.scopeIDs = scopeIDs.sorted { $0.rawValue < $1.rawValue }
+    }
+
+    init(singleScopeID: WatchedScopeID) {
+        scopeIDs = [singleScopeID]
+    }
+}
+
+public enum AuthorizedBaselineScanRequestError: Error, Sendable, Equatable {
+    case emptyScopes
+    case tooManyScopes(maximum: Int)
+    case duplicateScope
+}
+
 public struct AuthorizedBaselineScanProgress: Sendable, Equatable {
     public let context: AuthorizedBaselineScanContext
     public let startedAt: Date
@@ -96,38 +122,53 @@ public struct AuthorizedBaselineIncompleteResult: Sendable, Equatable {
     public let report: CalibrationReport
     public let startedAt: Date
     public let completedAt: Date
+    public let completedRootCount: Int
+    public let totalRootCount: Int
+    public let unreadableRootCount: Int
 
     public init(
         context: AuthorizedBaselineScanContext,
         reason: AuthorizedBaselineIncompleteReason,
         report: CalibrationReport,
         startedAt: Date,
-        completedAt: Date
+        completedAt: Date,
+        completedRootCount: Int = 0,
+        totalRootCount: Int = 1,
+        unreadableRootCount: Int = 1
     ) {
         self.context = context
         self.reason = reason
         self.report = report
         self.startedAt = startedAt
         self.completedAt = completedAt
+        self.completedRootCount = completedRootCount
+        self.totalRootCount = totalRootCount
+        self.unreadableRootCount = unreadableRootCount
     }
 }
 
 public struct AuthorizedBaselineScanCancellation: Sendable, Equatable {
     public let scopeID: WatchedScopeID
+    public let requestedScopeIDs: [WatchedScopeID]
     public let context: AuthorizedBaselineScanContext?
     public let startedAt: Date
     public let cancelledAt: Date
+    public let completedRootCount: Int
 
     public init(
         scopeID: WatchedScopeID,
+        requestedScopeIDs: [WatchedScopeID]? = nil,
         context: AuthorizedBaselineScanContext?,
         startedAt: Date,
-        cancelledAt: Date
+        cancelledAt: Date,
+        completedRootCount: Int = 0
     ) {
         self.scopeID = scopeID
+        self.requestedScopeIDs = requestedScopeIDs ?? [scopeID]
         self.context = context
         self.startedAt = startedAt
         self.cancelledAt = cancelledAt
+        self.completedRootCount = completedRootCount
     }
 }
 
@@ -157,7 +198,7 @@ public struct AuthorizedBaselineScanFailure: Sendable, Equatable {
 
 public enum AuthorizedBaselineScanState: Sendable, Equatable {
     case idle
-    case preparing(scopeID: WatchedScopeID, startedAt: Date)
+    case preparing(request: AuthorizedBaselineScanRequest, startedAt: Date)
     case scanning(AuthorizedBaselineScanProgress)
     case publishing(AuthorizedBaselineScanProgress)
     case completed(AuthorizedBaselineScanResult)

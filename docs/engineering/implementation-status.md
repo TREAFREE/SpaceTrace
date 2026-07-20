@@ -57,7 +57,7 @@ The strict-concurrency run is an audit for newly introduced package code. The ap
 
 ## Deliberately not claimed
 
-- The user-facing single-authorized-directory baseline is implemented, but the full FR-002 baseline is not complete: startup data-volume capacity/available samples, multiple roots, resumable work, and power/thermal scheduling remain. History, growth explanation, 24-hour menu-bar metrics, and export are not implemented.
+- The user-facing single-authorized-directory baseline, startup data-volume capacity sample, version/schema metadata, restart restoration, and bounded application-layer multi-root scheduling are implemented. The permission UI still exposes one primary directory, and true mid-scan continuation plus power/thermal scheduling remain outside this slice. History, growth explanation, 24-hour menu-bar metrics, and export are not implemented.
 - Scan scheduling does not yet react to thermal state, battery state, or system load. Hard-link deduplication is bounded by the entry budget but remains in memory for each scan run.
 - Real sandbox Powerbox presentation and stale/identity-failure reauthorization UI are implemented. Current-host persistent selection, same-bundle relaunch, explicit app-level removal, and same-image external-volume return have passed. Genuine stale evidence, the different-UUID replacement subcase in the UI flow, Apple-identity signing, and the macOS 15.6 runtime matrix remain incomplete or blocked by the available host.
 - No exact byte delta or process attribution is inferred from FSEvents.
@@ -69,7 +69,7 @@ The strict-concurrency run is an audit for newly introduced package code. The ap
 
 ## Next acceptance gates
 
-1. Complete the remaining FR-002 baseline record: startup data-volume capacity/available samples, version/schema metadata, multi-root progress, and safe restart/resume policy.
+1. Connect the permission UI's authorized-directory list to the bounded multi-root request, including user-visible aggregate progress, removal behavior, and batch rescan entry points. Do not describe restart restoration as mid-scan continuation.
 2. Capture genuine daemon drop/wrap evidence only when it is safely reproducible under the continuity-loss qualification protocol, and qualify recovery on the oldest supported macOS runtime.
 3. Complete the ADR-004 GRDB-versus-raw-SQLite review, including license, build, migration, and notarization evidence.
 4. Expand the schema migration fixture matrix and add disk-full/corruption tests, retention behavior, and oldest-supported-OS qualification.

@@ -8,7 +8,7 @@ Chinese companion translation: [authorized-baseline-overview.zh-CN.md](authorize
 
 ## Purpose and scope
 
-This slice connects one restored, user-selected directory to a cancellable metadata baseline and renders only verifiable results in the overview. The committed record now includes a startup-data-volume capacity sample and survives an application restart. It implements the single-active-root portion of FR-002. It does **not** yet implement a multi-root scan scheduler, true mid-scan continuation, thermal or power scheduling, or historical comparison points.
+This slice connects restored, user-selected directories to a cancellable metadata baseline and renders only verifiable results in the overview. The committed record includes a startup-data-volume capacity sample and survives an application restart. The application layer now supports a bounded multi-root request; the current permission UI still exposes one primary directory and will adopt the batch entry point in a separate presentation change. FR-002 still does **not** implement true mid-scan continuation, thermal or power scheduling, or historical comparison points.
 
 ## Ownership and data flow
 
@@ -28,12 +28,12 @@ Overview button
     -> SQLite v6 authorized baseline snapshot transaction
          -> app/schema version
          -> volume total/current-available/important-usage estimate
-         -> ordered root summaries (multi-root capable record shape)
+         -> ordered root summaries
     -> new result, restored committed result, or typed non-publication result
     -> overview
 ```
 
-The context provider accepts only an already active `WatchedScopeID`. It returns the exact restored root and the stream ID of the active mount generation. The UI never constructs a capability or stream identity from path text.
+The context provider accepts only an already active `WatchedScopeID`. It returns the exact restored root and the stream ID of the active mount generation. The UI never constructs a capability or stream identity from path text. A request accepts 1–64 unique scope IDs and sorts them by stable ID before work begins.
 
 The authorization coordinator cancels and awaits an in-flight baseline before replacing or revoking the permission capability. Application termination follows the same cancellation path before the security-scoped lease is released.
 
@@ -52,6 +52,14 @@ The application-owned state is one of:
 
 The overview uses an indeterminate progress indicator because the scanner does not know the final entry count before enumeration. It shows elapsed time and root counters without inventing a percentage. Entry and directory counts appear only after the scanner has produced them.
 
+## Multi-root scheduling policy
+
+- The coordinator actor owns one batch task and scans roots sequentially in stable scope-ID order. This deliberately avoids multiplying disk pressure with parallel recursive enumeration.
+- Progress carries the current root context plus `completedRootCount`, `totalRootCount`, and unreadable-root evidence. Moving to the next root is the proof that the prior root published successfully.
+- The complete baseline snapshot is written exactly once, after every requested root has complete coverage. A partial or superseded root stops the batch and commits no snapshot, even if earlier directory aggregates were safely published to `node_current`.
+- Cancellation cancels and awaits the active root runner. The cancellation state records every requested scope and the count already completed, but no partial batch is relabeled as a committed baseline.
+- The request cap of 64 roots, per-root scan budgets, and sequential execution create an explicit upper bound. This is a safety limit, not a recommendation that the UI should encourage 64 roots.
+
 ## Publication and coverage rules
 
 1. Starting a baseline writes a cursor-free, scope-root `requiresCalibration` dirty region. An existing descendant region is conservatively coalesced under that root.
@@ -67,7 +75,7 @@ These rules preserve the architecture invariant that unknown is not zero.
 
 ## Durable metadata and restart policy
 
-Schema v6 adds `authorized_baseline_snapshot` and `authorized_baseline_root`. Each committed snapshot records its start/commit times, App version, schema version, complete coverage, volume observation time and optional capacity values. Roots are stored as an ordered collection with unique scope IDs, so persistence does not need another shape migration when a future scheduler scans multiple authorized roots.
+Schema v6 adds `authorized_baseline_snapshot` and `authorized_baseline_root`. Each committed snapshot records its start/commit times, App version, schema version, complete coverage, volume observation time and optional capacity values. Roots are stored as the same ordered, unique-scope collection produced by the multi-root scheduler.
 
 On startup, SQLite performs a bounded recovery transaction. Any `running` calibration row belongs to the dead process: its staging rows are deleted, it is marked failed, and its durable dirty work remains. SpaceTrace deliberately does not claim that arbitrary filesystem enumeration can resume from an in-memory midpoint. After authorization restoration, the coordinator loads only the latest committed baseline containing that scope and labels the UI result as restored.
 
@@ -93,6 +101,6 @@ Partial coverage, revision supersession, cancellation, and failures have distinc
 
 ## Verification boundary
 
-Deterministic package tests cover complete publication, partial non-publication, revision supersession, cancellation, typed progress order, context failures, capacity sampling, multi-root snapshot round-trip, restart restoration, interrupted-staging cleanup, and preservation of dirty work. Application tests cover the MainActor projection, restoration command, and command forwarding. Full repository verification builds Debug and Release app configurations and executes package and application unit suites.
+Deterministic package tests cover complete publication, partial non-publication, revision supersession, cancellation, typed progress order, context failures, capacity sampling, deterministic multi-root ordering, one-snapshot commit, later-root partial failure, later-root cancellation, request bounds, snapshot round-trip, restart restoration, interrupted-staging cleanup, and preservation of dirty work. Application tests cover the MainActor projection, single/multi-root command forwarding, and restoration command. Full repository verification builds Debug and Release app configurations and executes package and application unit suites.
 
 Native security-scoped selection and mount lifecycle remain covered by their existing signed-sandbox and APFS-image protocols. This slice does not claim that the full FR-002 journey has passed on macOS 15.6; deployment-target compilation on a newer host is not runtime qualification.

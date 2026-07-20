@@ -1,6 +1,14 @@
 import Foundation
 
 public actor AuthorizedBaselineScanCoordinator {
+    private enum ActiveRootResult: Sendable {
+        case completed(AuthorizedBaselineCalibrationOutcome)
+        case deferred(
+            reason: AuthorizedBaselineScanDeferralReason,
+            snapshot: ScanSchedulingSnapshot
+        )
+    }
+
     private struct Observer {
         let continuation: AsyncStream<AuthorizedBaselineScanState>.Continuation
     }
@@ -9,6 +17,7 @@ public actor AuthorizedBaselineScanCoordinator {
     private let calibrationRunner: any AuthorizedBaselineCalibrationRunning
     private let snapshotRepository: any AuthorizedBaselineSnapshotRepository
     private let volumeCapacityProvider: any StartupVolumeCapacitySnapshotProviding
+    private let scheduler: any AuthorizedBaselineScanScheduling
     private let buildMetadata: AuthorizedBaselineBuildMetadata
     private let makeBaselineID: @Sendable () -> AuthorizedBaselineID
     private let now: @Sendable () -> Date
@@ -25,6 +34,7 @@ public actor AuthorizedBaselineScanCoordinator {
         calibrationRunner: any AuthorizedBaselineCalibrationRunning,
         snapshotRepository: any AuthorizedBaselineSnapshotRepository,
         volumeCapacityProvider: any StartupVolumeCapacitySnapshotProviding,
+        scheduler: any AuthorizedBaselineScanScheduling = UnconstrainedAuthorizedBaselineScanScheduler(),
         buildMetadata: AuthorizedBaselineBuildMetadata,
         makeBaselineID: @escaping @Sendable () -> AuthorizedBaselineID = {
             AuthorizedBaselineID()
@@ -35,6 +45,7 @@ public actor AuthorizedBaselineScanCoordinator {
         self.calibrationRunner = calibrationRunner
         self.snapshotRepository = snapshotRepository
         self.volumeCapacityProvider = volumeCapacityProvider
+        self.scheduler = scheduler
         self.buildMetadata = buildMetadata
         self.makeBaselineID = makeBaselineID
         self.now = now
@@ -161,15 +172,13 @@ public actor AuthorizedBaselineScanCoordinator {
                 activeContext = context
 
                 let completedBeforeRoot = roots.count
-                let outcome = try await calibrationRunner.run(context: context) { [weak self] update in
-                    await self?.receive(
-                        update,
-                        operationID: operationID,
-                        startedAt: startedAt,
-                        completedRootCount: completedBeforeRoot,
-                        totalRootCount: request.scopeIDs.count
-                    )
-                }
+                let outcome = try await runRootWhenEligible(
+                    context: context,
+                    request: request,
+                    operationID: operationID,
+                    startedAt: startedAt,
+                    completedRootCount: completedBeforeRoot
+                )
                 try Task.checkCancellation()
                 guard self.operationID == operationID else { return }
 
@@ -214,6 +223,13 @@ public actor AuthorizedBaselineScanCoordinator {
                 }
             }
 
+            try await waitUntilEligible(
+                request: request,
+                context: activeContext,
+                operationID: operationID,
+                startedAt: startedAt,
+                completedRootCount: roots.count
+            )
             let volumeSnapshot = await volumeCapacityProvider.snapshot()
             try Task.checkCancellation()
             let completedAt = now()
@@ -277,6 +293,227 @@ public actor AuthorizedBaselineScanCoordinator {
                 operationID: operationID
             )
         }
+    }
+
+    private func runRootWhenEligible(
+        context: AuthorizedBaselineScanContext,
+        request: AuthorizedBaselineScanRequest,
+        operationID: UUID,
+        startedAt: Date,
+        completedRootCount: Int
+    ) async throws -> AuthorizedBaselineCalibrationOutcome {
+        var clearedReason: AuthorizedBaselineScanDeferralReason?
+        var lastDeferralDecision: AuthorizedBaselineScanSchedulingDecision?
+
+        while true {
+            try Task.checkCancellation()
+            guard self.operationID == operationID else { throw CancellationError() }
+
+            let decisions = await scheduler.decisions()
+            var iterator = decisions.makeAsyncIterator()
+            guard var decision = await iterator.next() else {
+                throw CancellationError()
+            }
+
+            while case let .deferred(reason, snapshot) = decision {
+                if lastDeferralDecision != decision {
+                    publishDeferral(
+                        request: request,
+                        context: context,
+                        reason: reason,
+                        snapshot: snapshot,
+                        operationID: operationID,
+                        startedAt: startedAt,
+                        completedRootCount: completedRootCount
+                    )
+                    lastDeferralDecision = decision
+                }
+                clearedReason = reason
+                try Task.checkCancellation()
+                guard let nextDecision = await iterator.next() else {
+                    throw CancellationError()
+                }
+                decision = nextDecision
+            }
+
+            guard case let .runnable(snapshot) = decision else {
+                continue
+            }
+            if let clearedReason {
+                publishResume(
+                    request: request,
+                    context: context,
+                    clearedReason: clearedReason,
+                    snapshot: snapshot,
+                    operationID: operationID,
+                    startedAt: startedAt,
+                    completedRootCount: completedRootCount
+                )
+            }
+            lastDeferralDecision = nil
+
+            let result = try await raceRootAgainstDeferral(
+                context: context,
+                operationID: operationID,
+                startedAt: startedAt,
+                completedRootCount: completedRootCount,
+                totalRootCount: request.scopeIDs.count
+            )
+            switch result {
+            case let .completed(outcome):
+                return outcome
+            case let .deferred(reason, snapshot):
+                let decision = AuthorizedBaselineScanSchedulingDecision.deferred(
+                    reason: reason,
+                    snapshot: snapshot
+                )
+                publishDeferral(
+                    request: request,
+                    context: context,
+                    reason: reason,
+                    snapshot: snapshot,
+                    operationID: operationID,
+                    startedAt: startedAt,
+                    completedRootCount: completedRootCount
+                )
+                lastDeferralDecision = decision
+                clearedReason = reason
+            }
+        }
+    }
+
+    private func raceRootAgainstDeferral(
+        context: AuthorizedBaselineScanContext,
+        operationID: UUID,
+        startedAt: Date,
+        completedRootCount: Int,
+        totalRootCount: Int
+    ) async throws -> ActiveRootResult {
+        try await withThrowingTaskGroup(of: ActiveRootResult.self) { group in
+            group.addTask { [calibrationRunner] in
+                .completed(
+                    try await calibrationRunner.run(context: context) { [weak self] update in
+                        await self?.receive(
+                            update,
+                            operationID: operationID,
+                            startedAt: startedAt,
+                            completedRootCount: completedRootCount,
+                            totalRootCount: totalRootCount
+                        )
+                    }
+                )
+            }
+            group.addTask { [scheduler] in
+                let decisions = await scheduler.decisions()
+                for await decision in decisions {
+                    try Task.checkCancellation()
+                    if case let .deferred(reason, snapshot) = decision {
+                        return .deferred(reason: reason, snapshot: snapshot)
+                    }
+                }
+                while true {
+                    try await Task.sleep(for: .seconds(3_600))
+                }
+            }
+
+            guard let result = try await group.next() else {
+                throw CancellationError()
+            }
+            group.cancelAll()
+            return result
+        }
+    }
+
+    private func waitUntilEligible(
+        request: AuthorizedBaselineScanRequest,
+        context: AuthorizedBaselineScanContext?,
+        operationID: UUID,
+        startedAt: Date,
+        completedRootCount: Int
+    ) async throws {
+        let decisions = await scheduler.decisions()
+        var clearedReason: AuthorizedBaselineScanDeferralReason?
+        for await decision in decisions {
+            try Task.checkCancellation()
+            guard self.operationID == operationID else { throw CancellationError() }
+            switch decision {
+            case let .deferred(reason, snapshot):
+                clearedReason = reason
+                publishDeferral(
+                    request: request,
+                    context: context,
+                    reason: reason,
+                    snapshot: snapshot,
+                    operationID: operationID,
+                    startedAt: startedAt,
+                    completedRootCount: completedRootCount
+                )
+            case let .runnable(snapshot):
+                if let clearedReason {
+                    publishResume(
+                        request: request,
+                        context: context,
+                        clearedReason: clearedReason,
+                        snapshot: snapshot,
+                        operationID: operationID,
+                        startedAt: startedAt,
+                        completedRootCount: completedRootCount
+                    )
+                }
+                return
+            }
+        }
+        throw CancellationError()
+    }
+
+    private func publishDeferral(
+        request: AuthorizedBaselineScanRequest,
+        context: AuthorizedBaselineScanContext?,
+        reason: AuthorizedBaselineScanDeferralReason,
+        snapshot: ScanSchedulingSnapshot,
+        operationID: UUID,
+        startedAt: Date,
+        completedRootCount: Int
+    ) {
+        guard self.operationID == operationID, Task.isCancelled == false else { return }
+        publish(
+            .deferred(
+                AuthorizedBaselineScanDeferral(
+                    request: request,
+                    context: context,
+                    reason: reason,
+                    snapshot: snapshot,
+                    startedAt: startedAt,
+                    deferredAt: now(),
+                    completedRootCount: completedRootCount
+                )
+            )
+        )
+    }
+
+    private func publishResume(
+        request: AuthorizedBaselineScanRequest,
+        context: AuthorizedBaselineScanContext?,
+        clearedReason: AuthorizedBaselineScanDeferralReason,
+        snapshot: ScanSchedulingSnapshot,
+        operationID: UUID,
+        startedAt: Date,
+        completedRootCount: Int
+    ) {
+        guard self.operationID == operationID, Task.isCancelled == false else { return }
+        publish(
+            .resuming(
+                AuthorizedBaselineScanResume(
+                    request: request,
+                    context: context,
+                    clearedReason: clearedReason,
+                    snapshot: snapshot,
+                    startedAt: startedAt,
+                    resumedAt: now(),
+                    completedRootCount: completedRootCount
+                )
+            )
+        )
     }
 
     private func receive(

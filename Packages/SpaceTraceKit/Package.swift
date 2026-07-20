@@ -50,7 +50,9 @@ let package = Package(
                 "SpaceTraceDomain",
             ],
             linkerSettings: [
+                .linkedFramework("AppKit"),
                 .linkedFramework("DiskArbitration"),
+                .linkedFramework("IOKit"),
             ]
         ),
         .target(

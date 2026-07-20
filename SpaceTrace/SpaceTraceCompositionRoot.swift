@@ -8,6 +8,7 @@ import SpaceTracePlatform
 struct SpaceTraceCompositionRoot {
     let authorizationCoordinator: WatchedScopeAuthorizationCoordinator
     let baselineScanCoordinator: AuthorizedBaselineScanCoordinator
+    let scanSchedulingMonitor: NativeScanSchedulingMonitor
 
     static func make(fileManager: FileManager = .default) throws -> Self {
         let applicationSupportRoot = try applicationSupportDirectory(using: fileManager)
@@ -36,6 +37,10 @@ struct SpaceTraceCompositionRoot {
             catalog: catalog,
             runtime: runtime
         )
+        let schedulingSnapshotProvider = FoundationScanSchedulingSnapshotProvider()
+        let schedulingGate = AuthorizedBaselineScanSchedulingGate(
+            initialSnapshot: schedulingSnapshotProvider.snapshot(systemActivity: .awake)
+        )
         let baselineScanCoordinator = AuthorizedBaselineScanCoordinator(
             contextProvider: baselineContextProvider,
             calibrationRunner: EventJournalAuthorizedBaselineCalibrationRunner(
@@ -46,11 +51,17 @@ struct SpaceTraceCompositionRoot {
             volumeCapacityProvider: FoundationStartupVolumeCapacityProvider(
                 dataDirectoryURL: applicationSupportRoot
             ),
+            scheduler: schedulingGate,
             buildMetadata: try AuthorizedBaselineBuildMetadata(
                 appVersion: appVersion(),
                 schemaVersion: SQLiteEventJournalRepository.currentSchemaVersion
             )
         )
+        let schedulingMonitor = NativeScanSchedulingMonitor(
+            receiver: schedulingGate,
+            snapshotProvider: schedulingSnapshotProvider
+        )
+        schedulingMonitor.start()
         return Self(
             authorizationCoordinator: WatchedScopeAuthorizationCoordinator(
                 catalog: catalog,
@@ -59,7 +70,8 @@ struct SpaceTraceCompositionRoot {
                     await baselineScanCoordinator.cancel()
                 }
             ),
-            baselineScanCoordinator: baselineScanCoordinator
+            baselineScanCoordinator: baselineScanCoordinator,
+            scanSchedulingMonitor: schedulingMonitor
         )
     }
 

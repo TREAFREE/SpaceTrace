@@ -101,6 +101,16 @@ struct OverviewView: View {
                 progress: nil,
                 totalRootCount: request.scopeIDs.count
             )
+        case let .deferred(deferral):
+            baselineDeferred(deferral)
+        case let .resuming(resume):
+            baselineActive(
+                title: "系统条件已恢复",
+                detail: "正在重新核验当前根目录；被暂停的部分结果不会直接发布。",
+                startedAt: resume.startedAt,
+                progress: nil,
+                totalRootCount: resume.request.scopeIDs.count
+            )
         case let .scanning(progress):
             baselineActive(
                 title: "正在扫描目录",
@@ -123,6 +133,45 @@ struct OverviewView: View {
             baselineCancelled(cancellation, scopeIDs: scopeIDs)
         case let .failed(failure):
             baselineFailed(failure, scopeIDs: scopeIDs)
+        }
+    }
+
+    private func baselineDeferred(
+        _ deferral: AuthorizedBaselineScanDeferral
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            coverageHeader(
+                title: "扫描已安全暂停",
+                detail: "等待系统恢复",
+                symbol: "pause.circle.fill",
+                color: .orange
+            )
+            Text(deferralDetail(deferral.reason))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(deferralResumeCondition(deferral.reason))
+                .font(.callout.weight(.medium))
+            TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                LabeledContent(
+                    "任务已用时间",
+                    value: elapsedText(from: deferral.startedAt, to: timeline.date)
+                )
+            }
+            LabeledContent(
+                "已完成根目录",
+                value: "\(deferral.completedRootCount) / \(deferral.request.scopeIDs.count)"
+            )
+            LabeledContent(
+                "供电来源",
+                value: powerSourceLabel(deferral.snapshot.powerSource)
+            )
+            Text("当前根目录的未完成扫描已被取消并保留待校准标记；恢复后会重新扫描，不会把中途结果当作完整基线。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("取消扫描", role: .cancel) {
+                Task { await baselineScanModel.cancel() }
+            }
+            .accessibilityIdentifier("overview-cancel-deferred-baseline")
         }
     }
 
@@ -416,7 +465,7 @@ struct OverviewView: View {
     private var baselineWorkflowState: WorkflowStepState {
         guard scopeIDs.isEmpty == false else { return .waiting }
         switch currentBaselineState(for: scopeIDs) {
-        case .preparing, .scanning, .publishing:
+        case .preparing, .deferred, .resuming, .scanning, .publishing:
             return .active
         case .completed:
             return .ready
@@ -433,6 +482,10 @@ struct OverviewView: View {
         case .idle:
             return .idle
         case let .preparing(request, _) where request.scopeIDs == scopeIDs:
+            return state
+        case let .deferred(deferral) where deferral.request.scopeIDs == scopeIDs:
+            return state
+        case let .resuming(resume) where resume.request.scopeIDs == scopeIDs:
             return state
         case let .scanning(progress)
             where progress.totalRootCount == scopeIDs.count
@@ -559,6 +612,50 @@ struct OverviewView: View {
             String(localized: "已发布目录聚合，但基线记录未能安全写入或恢复。SpaceTrace 不会把它展示为持久基线，请重试或检查本地数据库状态。")
         case .operationFailed:
             String(localized: "扫描或本地数据库操作失败。没有发布新的基线，请稍后重试。")
+        }
+    }
+
+    private func deferralDetail(
+        _ reason: AuthorizedBaselineScanDeferralReason
+    ) -> String {
+        switch reason {
+        case .systemSleeping:
+            String(localized: "Mac 正在进入休眠。SpaceTrace 已停止活动扫描，避免让文件系统工作跨越休眠边界。")
+        case let .thermalPressure(pressure):
+            String(localized: "Mac 当前温度压力为\(thermalPressureLabel(pressure))。SpaceTrace 会让出 CPU 与磁盘资源。")
+        case .lowPowerMode:
+            String(localized: "低电量模式已开启。用户基线扫描会暂停，以优先保证续航。")
+        }
+    }
+
+    private func deferralResumeCondition(
+        _ reason: AuthorizedBaselineScanDeferralReason
+    ) -> String {
+        switch reason {
+        case .systemSleeping:
+            String(localized: "Mac 唤醒后自动恢复")
+        case .thermalPressure:
+            String(localized: "温度压力降到正常或轻度后自动恢复")
+        case .lowPowerMode:
+            String(localized: "关闭低电量模式后自动恢复")
+        }
+    }
+
+    private func thermalPressureLabel(_ pressure: ScanThermalPressure) -> String {
+        switch pressure {
+        case .nominal: String(localized: "正常")
+        case .fair: String(localized: "轻度")
+        case .serious: String(localized: "严重")
+        case .critical: String(localized: "危急")
+        case .unknown: String(localized: "未知")
+        }
+    }
+
+    private func powerSourceLabel(_ source: ScanPowerSource) -> String {
+        switch source {
+        case .external: String(localized: "外接电源")
+        case .battery: String(localized: "电池")
+        case .unknown: String(localized: "未知")
         }
     }
 }

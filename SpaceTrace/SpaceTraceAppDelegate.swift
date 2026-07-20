@@ -2,6 +2,7 @@ import AppKit
 import OSLog
 import SpaceTraceApplication
 import SpaceTraceMonitoring
+import SpaceTracePlatform
 
 @MainActor
 final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
@@ -47,7 +48,7 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         _ = sender
-        guard let coordinator = compositionRoot?.authorizationCoordinator else {
+        guard let compositionRoot else {
             return .terminateNow
         }
         guard shutdownTask == nil else {
@@ -55,8 +56,12 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
         }
 
         startupTask?.cancel()
+        compositionRoot.scanSchedulingMonitor.stop()
+        let authorizationCoordinator = compositionRoot.authorizationCoordinator
+        let baselineScanCoordinator = compositionRoot.baselineScanCoordinator
         shutdownTask = Task { @concurrent in
-            await coordinator.stop()
+            await baselineScanCoordinator.cancel()
+            await authorizationCoordinator.stop()
             await MainActor.run {
                 NSApplication.shared.reply(toApplicationShouldTerminate: true)
             }

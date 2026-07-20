@@ -172,6 +172,62 @@ public struct AuthorizedBaselineScanCancellation: Sendable, Equatable {
     }
 }
 
+public struct AuthorizedBaselineScanDeferral: Sendable, Equatable {
+    public let request: AuthorizedBaselineScanRequest
+    public let context: AuthorizedBaselineScanContext?
+    public let reason: AuthorizedBaselineScanDeferralReason
+    public let snapshot: ScanSchedulingSnapshot
+    public let startedAt: Date
+    public let deferredAt: Date
+    public let completedRootCount: Int
+
+    public init(
+        request: AuthorizedBaselineScanRequest,
+        context: AuthorizedBaselineScanContext?,
+        reason: AuthorizedBaselineScanDeferralReason,
+        snapshot: ScanSchedulingSnapshot,
+        startedAt: Date,
+        deferredAt: Date,
+        completedRootCount: Int
+    ) {
+        self.request = request
+        self.context = context
+        self.reason = reason
+        self.snapshot = snapshot
+        self.startedAt = startedAt
+        self.deferredAt = deferredAt
+        self.completedRootCount = completedRootCount
+    }
+}
+
+public struct AuthorizedBaselineScanResume: Sendable, Equatable {
+    public let request: AuthorizedBaselineScanRequest
+    public let context: AuthorizedBaselineScanContext?
+    public let clearedReason: AuthorizedBaselineScanDeferralReason
+    public let snapshot: ScanSchedulingSnapshot
+    public let startedAt: Date
+    public let resumedAt: Date
+    public let completedRootCount: Int
+
+    public init(
+        request: AuthorizedBaselineScanRequest,
+        context: AuthorizedBaselineScanContext?,
+        clearedReason: AuthorizedBaselineScanDeferralReason,
+        snapshot: ScanSchedulingSnapshot,
+        startedAt: Date,
+        resumedAt: Date,
+        completedRootCount: Int
+    ) {
+        self.request = request
+        self.context = context
+        self.clearedReason = clearedReason
+        self.snapshot = snapshot
+        self.startedAt = startedAt
+        self.resumedAt = resumedAt
+        self.completedRootCount = completedRootCount
+    }
+}
+
 public enum AuthorizedBaselineScanFailureCode: Sendable, Equatable {
     case scopeNotAuthorized
     case monitoringNotReady
@@ -199,6 +255,8 @@ public struct AuthorizedBaselineScanFailure: Sendable, Equatable {
 public enum AuthorizedBaselineScanState: Sendable, Equatable {
     case idle
     case preparing(request: AuthorizedBaselineScanRequest, startedAt: Date)
+    case deferred(AuthorizedBaselineScanDeferral)
+    case resuming(AuthorizedBaselineScanResume)
     case scanning(AuthorizedBaselineScanProgress)
     case publishing(AuthorizedBaselineScanProgress)
     case completed(AuthorizedBaselineScanResult)

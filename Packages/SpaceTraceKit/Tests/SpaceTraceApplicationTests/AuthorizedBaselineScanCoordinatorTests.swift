@@ -427,6 +427,130 @@ struct AuthorizedBaselineScanCoordinatorTests {
             try AuthorizedBaselineScanRequest(scopeIDs: excessiveScopes)
         }
     }
+
+    @Test("A deferred start waits without invoking the scanner and resumes automatically")
+    func waitsForRunnableSystemState() async throws {
+        let fixture = try Fixture()
+        let scheduler = AuthorizedBaselineScanSchedulingGate(
+            initialSnapshot: ScanSchedulingSnapshot(
+                powerSource: .battery,
+                isLowPowerModeEnabled: false,
+                thermalPressure: .nominal,
+                systemActivity: .sleeping
+            )
+        )
+        let runner = InvocationCountingBaselineCalibrationRunnerFake(
+            outcome: .published(
+                try DirectoryMetadataAggregate(
+                    path: fixture.context.root,
+                    logicalBytes: ByteCount(100),
+                    allocatedBytes: ByteCount(200),
+                    descendantCount: 1,
+                    coverage: .complete
+                ),
+                fixture.completeReport
+            )
+        )
+        let coordinator = AuthorizedBaselineScanCoordinator(
+            contextProvider: BaselineContextProviderFake(context: fixture.context),
+            calibrationRunner: runner,
+            snapshotRepository: BaselineSnapshotRepositoryFake(),
+            volumeCapacityProvider: BaselineVolumeCapacityProviderFake(
+                snapshot: fixture.volumeSnapshot
+            ),
+            scheduler: scheduler,
+            buildMetadata: fixture.buildMetadata,
+            makeBaselineID: { fixture.baselineID },
+            now: { fixture.timestamp }
+        )
+        let updates = await coordinator.updates()
+        let deferredState = Task {
+            for await state in updates {
+                if case .deferred = state { return state }
+            }
+            return AuthorizedBaselineScanState.idle
+        }
+
+        #expect(await coordinator.start(scopeID: fixture.scopeID))
+        guard case let .deferred(deferral) = await deferredState.value else {
+            Issue.record("Expected the scan to enter a typed deferred state.")
+            return
+        }
+        #expect(deferral.reason == .systemSleeping)
+        #expect(await runner.invocationCount == 0)
+
+        await scheduler.update(.unconstrained)
+        await coordinator.waitForCurrentScan()
+
+        guard case .completed = await coordinator.state() else {
+            Issue.record("Expected the scan to resume and complete.")
+            return
+        }
+        #expect(await runner.invocationCount == 1)
+    }
+
+    @Test("A mid-scan constraint cancels transient work and retries the same root")
+    func restartsCurrentRootAfterMidScanDeferral() async throws {
+        let fixture = try Fixture()
+        let scheduler = AuthorizedBaselineScanSchedulingGate()
+        let runner = RestartingBaselineCalibrationRunnerFake(
+            outcome: .published(
+                try DirectoryMetadataAggregate(
+                    path: fixture.context.root,
+                    logicalBytes: ByteCount(300),
+                    allocatedBytes: ByteCount(600),
+                    descendantCount: 2,
+                    coverage: .complete
+                ),
+                fixture.completeReport
+            )
+        )
+        let coordinator = AuthorizedBaselineScanCoordinator(
+            contextProvider: BaselineContextProviderFake(context: fixture.context),
+            calibrationRunner: runner,
+            snapshotRepository: BaselineSnapshotRepositoryFake(),
+            volumeCapacityProvider: BaselineVolumeCapacityProviderFake(
+                snapshot: fixture.volumeSnapshot
+            ),
+            scheduler: scheduler,
+            buildMetadata: fixture.buildMetadata,
+            makeBaselineID: { fixture.baselineID },
+            now: { fixture.timestamp }
+        )
+        let updates = await coordinator.updates()
+        let deferredState = Task {
+            for await state in updates {
+                if case .deferred = state { return state }
+            }
+            return AuthorizedBaselineScanState.idle
+        }
+
+        #expect(await coordinator.start(scopeID: fixture.scopeID))
+        await runner.waitUntilFirstInvocationStarted()
+        await scheduler.update(
+            ScanSchedulingSnapshot(
+                powerSource: .battery,
+                isLowPowerModeEnabled: true,
+                thermalPressure: .nominal,
+                systemActivity: .awake
+            )
+        )
+        guard case let .deferred(deferral) = await deferredState.value else {
+            Issue.record("Expected a low-power deferral.")
+            return
+        }
+        #expect(deferral.reason == .lowPowerMode)
+        #expect(await runner.firstInvocationObservedCancellation)
+
+        await scheduler.update(.unconstrained)
+        await coordinator.waitForCurrentScan()
+
+        guard case .completed = await coordinator.state() else {
+            Issue.record("Expected the restarted root to complete.")
+            return
+        }
+        #expect(await runner.invocationCount == 2)
+    }
 }
 
 private func makeMultiRootContexts() throws -> [AuthorizedBaselineScanContext] {
@@ -684,6 +808,75 @@ private actor SecondRootBlockingCalibrationRunnerFake: AuthorizedBaselineCalibra
     }
 }
 
+private actor InvocationCountingBaselineCalibrationRunnerFake:
+    AuthorizedBaselineCalibrationRunning
+{
+    let outcome: AuthorizedBaselineCalibrationOutcome
+    private(set) var invocationCount = 0
+
+    init(outcome: AuthorizedBaselineCalibrationOutcome) {
+        self.outcome = outcome
+    }
+
+    func run(
+        context: AuthorizedBaselineScanContext,
+        onProgress: @escaping @Sendable (AuthorizedBaselineCalibrationProgress) async -> Void
+    ) async -> AuthorizedBaselineCalibrationOutcome {
+        invocationCount += 1
+        await onProgress(.scanning(context))
+        if case let .published(_, report) = outcome {
+            await onProgress(.publishing(context, report))
+        }
+        return outcome
+    }
+}
+
+private actor RestartingBaselineCalibrationRunnerFake:
+    AuthorizedBaselineCalibrationRunning
+{
+    let outcome: AuthorizedBaselineCalibrationOutcome
+    private var firstInvocationStarted = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private(set) var invocationCount = 0
+    private(set) var firstInvocationObservedCancellation = false
+
+    init(outcome: AuthorizedBaselineCalibrationOutcome) {
+        self.outcome = outcome
+    }
+
+    func run(
+        context: AuthorizedBaselineScanContext,
+        onProgress: @escaping @Sendable (AuthorizedBaselineCalibrationProgress) async -> Void
+    ) async throws -> AuthorizedBaselineCalibrationOutcome {
+        invocationCount += 1
+        await onProgress(.scanning(context))
+        if invocationCount == 1 {
+            firstInvocationStarted = true
+            startWaiters.forEach { $0.resume() }
+            startWaiters.removeAll()
+            do {
+                try await Task.sleep(for: .seconds(3_600))
+                preconditionFailure("The first invocation must be cancelled by the scheduler.")
+            } catch is CancellationError {
+                firstInvocationObservedCancellation = true
+                throw CancellationError()
+            }
+        }
+
+        if case let .published(_, report) = outcome {
+            await onProgress(.publishing(context, report))
+        }
+        return outcome
+    }
+
+    func waitUntilFirstInvocationStarted() async {
+        if firstInvocationStarted { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+}
+
 private actor BaselineProgressRecorder {
     private(set) var completedRootCounts: [Int] = []
     private(set) var totalRootCounts: [Int] = []
@@ -706,6 +899,8 @@ private actor BaselineStateRecorder {
     enum Phase: Sendable, Equatable {
         case idle
         case preparing
+        case deferred
+        case resuming
         case scanning
         case publishing
         case completed
@@ -720,6 +915,8 @@ private actor BaselineStateRecorder {
         switch state {
         case .idle: phases.append(.idle)
         case .preparing: phases.append(.preparing)
+        case .deferred: phases.append(.deferred)
+        case .resuming: phases.append(.resuming)
         case .scanning: phases.append(.scanning)
         case .publishing: phases.append(.publishing)
         case .completed: phases.append(.completed)

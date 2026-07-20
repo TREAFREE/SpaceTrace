@@ -8,7 +8,7 @@ Chinese companion translation: [authorized-baseline-overview.zh-CN.md](authorize
 
 ## Purpose and scope
 
-This slice connects restored, user-selected directories to a cancellable metadata baseline and renders only verifiable results in the overview. The committed record includes a startup-data-volume capacity sample and survives an application restart. The application layer now supports a bounded multi-root request; the current permission UI still exposes one primary directory and will adopt the batch entry point in a separate presentation change. FR-002 still does **not** implement true mid-scan continuation, thermal or power scheduling, or historical comparison points.
+This slice connects restored, user-selected directories to a cancellable metadata baseline and renders only verifiable results in the overview. The committed record includes a startup-data-volume capacity sample and survives an application restart. The permission UI now projects every configured scope independently and sends all currently active scope IDs through the bounded multi-root request. FR-002 still does **not** implement true mid-scan continuation, thermal or power scheduling, or historical comparison points.
 
 ## Ownership and data flow
 
@@ -33,7 +33,7 @@ Overview button
     -> overview
 ```
 
-The context provider accepts only an already active `WatchedScopeID`. It returns the exact restored root and the stream ID of the active mount generation. The UI never constructs a capability or stream identity from path text. A request accepts 1–64 unique scope IDs and sorts them by stable ID before work begins.
+The context provider accepts only an already active `WatchedScopeID`. It returns the exact restored root and the stream ID of the active mount generation. The UI never constructs a capability or stream identity from path text. Each newly added directory receives a path-independent persistent ID; reauthorization and replacement reuse that ID. Exact duplicate roots are rejected by the capability catalog. A request accepts 1–64 unique scope IDs and sorts them by stable ID before work begins.
 
 The authorization coordinator cancels and awaits an in-flight baseline before replacing or revoking the permission capability. Application termination follows the same cancellation path before the security-scoped lease is released.
 
@@ -83,11 +83,11 @@ The startup-data-volume provider queries the volume containing the Application S
 
 ## User-visible behavior
 
-With an active directory grant, the overview offers **Start baseline scan**. During work it shows the current typed phase, elapsed time, root counters, any available scan counts, and a cancellation control.
+With one or more active directory grants, the overview offers **Start baseline scan** for the complete active set. A temporarily unavailable or stale entry remains independently visible and does not hide healthy grants. During work the overview shows the current typed phase, elapsed time, root counters, any available scan counts, and a cancellation control.
 
 A successful card shows:
 
-- exact authorized root;
+- every exact authorized root as a separate result, without inventing an overlap-prone aggregate byte total;
 - complete coverage;
 - logical and observable allocated size using binary units;
 - descendant and visited-entry counts;
@@ -101,6 +101,6 @@ Partial coverage, revision supersession, cancellation, and failures have distinc
 
 ## Verification boundary
 
-Deterministic package tests cover complete publication, partial non-publication, revision supersession, cancellation, typed progress order, context failures, capacity sampling, deterministic multi-root ordering, one-snapshot commit, later-root partial failure, later-root cancellation, request bounds, snapshot round-trip, restart restoration, interrupted-staging cleanup, and preservation of dirty work. Application tests cover the MainActor projection, single/multi-root command forwarding, and restoration command. Full repository verification builds Debug and Release app configurations and executes package and application unit suites.
+Deterministic package tests cover complete publication, partial non-publication, revision supersession, cancellation, typed progress order, context failures, capacity sampling, deterministic multi-root ordering, one-snapshot commit, later-root partial failure, later-root cancellation, request bounds, duplicate-root rejection, snapshot round-trip, restart restoration, interrupted-staging cleanup, and preservation of dirty work. Application tests cover the MainActor multi-scope projection, stable add/reauthorize/remove commands, mixed availability, mutation failure preservation, request limits, batch forwarding, and restoration. Full repository verification builds Debug and Release app configurations and executes package and application unit suites.
 
-Native security-scoped selection and mount lifecycle remain covered by their existing signed-sandbox and APFS-image protocols. This slice does not claim that the full FR-002 journey has passed on macOS 15.6; deployment-target compilation on a newer host is not runtime qualification.
+Native security-scoped selection and mount lifecycle remain covered by their existing signed-sandbox and APFS-image protocols. The multi-scope UI-test target compiles without signing, but its interactive run is not claimed because the current keychain contains no valid Apple code-signing identity. This slice does not claim that the full FR-002 journey has passed on macOS 15.6; deployment-target compilation on a newer host is not runtime qualification.

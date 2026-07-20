@@ -116,6 +116,33 @@ struct SecurityScopedWatchedScopeCatalogTests {
         #expect(leaseProbe.releaseCount == 1)
     }
 
+    @Test("A second scope cannot claim an already configured exact root")
+    func rejectsDuplicateRoot() async throws {
+        let repository = BookmarkRepositoryFake()
+        let leaseProbe = LeaseProbe()
+        let catalog = SecurityScopedWatchedScopeCatalog(
+            repository: repository,
+            codec: BookmarkCodecFake(leaseProbe: leaseProbe)
+        )
+        let firstID = try WatchedScopeID("scope-first")
+        let duplicateID = try WatchedScopeID("scope-duplicate")
+        let selectedURL = URL(
+            fileURLWithPath: "/Volumes/Test/Selected",
+            isDirectory: true
+        )
+        _ = try await catalog.acquire(selectedURL: selectedURL, scopeID: firstID)
+
+        await #expect(throws: SecurityScopedWatchedScopeError.duplicateScopeRoot) {
+            try await catalog.acquire(selectedURL: selectedURL, scopeID: duplicateID)
+        }
+
+        #expect(await repository.bookmarks().map(\.scopeID) == [firstID])
+        #expect(try await catalog.watchedScopes().map(\.id) == [firstID])
+        #expect(leaseProbe.releaseCount == 1)
+        await catalog.releaseAll()
+        #expect(leaseProbe.releaseCount == 2)
+    }
+
     @Test("The native codec round-trips an exact directory bookmark without UI")
     func nativeBookmarkRoundTrip() async throws {
         let directory = FileManager.default.temporaryDirectory

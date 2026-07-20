@@ -20,14 +20,14 @@ struct ContentView: View {
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 760, minHeight: 520)
         .task {
-            await authorizationModel.monitorUnavailableScope()
+            await authorizationModel.monitorUnavailableScopes()
         }
         .task {
             await baselineScanModel.monitor()
         }
-        .task(id: authorizationModel.authorizedScopeID) {
+        .task(id: authorizationModel.authorizedScopeIDs) {
             await baselineScanModel.restore(
-                scopeID: authorizationModel.authorizedScopeID
+                scopeID: authorizationModel.authorizedScopeIDs.first
             )
         }
     }
@@ -37,8 +37,8 @@ struct ContentView: View {
         switch selection ?? .overview {
         case .overview:
             OverviewView(
-                authorizationStatus: authorizationModel.status,
-                scopeID: authorizationModel.authorizedScopeID,
+                authorizationSummary: authorizationModel.summary,
+                scopeIDs: authorizationModel.authorizedScopeIDs,
                 baselineScanModel: baselineScanModel
             ) {
                 selection = .permissions
@@ -52,7 +52,7 @@ struct ContentView: View {
 #Preview {
     ContentView(
         authorizationModel: DirectoryAuthorizationViewModel(
-            initialStatus: .unconfigured
+            initialSummary: .unconfigured
         ),
         baselineScanModel: BaselineScanViewModel()
     )

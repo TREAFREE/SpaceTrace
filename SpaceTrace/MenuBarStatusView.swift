@@ -8,14 +8,14 @@ struct MenuBarStatusView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: model.status.symbolName)
+                Image(systemName: model.summary.symbolName)
                     .font(.title2)
-                    .foregroundStyle(model.status.symbolColor)
+                    .foregroundStyle(model.summary.symbolColor)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(model.status.title)
+                    Text(model.summary.title)
                         .font(.headline)
-                    Text(model.status.detail)
+                    Text(model.summary.detail)
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
@@ -32,8 +32,8 @@ struct MenuBarStatusView: View {
             .keyboardShortcut("o", modifiers: .command)
             .accessibilityIdentifier("menu-bar-open-main-window")
 
-            if case .unavailable = model.status {
-                Button("重新检查目录") {
+            if model.hasUnavailableScope {
+                Button("重新检查目录状态") {
                     Task { await model.refresh() }
                 }
                 .disabled(model.isBusy)

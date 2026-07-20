@@ -4,13 +4,13 @@ import SpaceTraceDomain
 import SwiftUI
 
 struct OverviewView: View {
-    let authorizationStatus: DirectoryAuthorizationStatus
-    let scopeID: WatchedScopeID?
+    let authorizationSummary: DirectoryAuthorizationSummary
+    let scopeIDs: [WatchedScopeID]
     @Bindable var baselineScanModel: BaselineScanViewModel
     let showPermissions: () -> Void
 
     private var readiness: OverviewReadiness {
-        OverviewReadiness(status: authorizationStatus)
+        OverviewReadiness(summary: authorizationSummary)
     }
 
     var body: some View {
@@ -72,8 +72,8 @@ struct OverviewView: View {
     private var baselineCard: some View {
         GroupBox("目录基线") {
             VStack(alignment: .leading, spacing: 16) {
-                if let scopeID, isAuthorized {
-                    baselineContent(scopeID: scopeID)
+                if scopeIDs.isEmpty == false {
+                    baselineContent(scopeIDs: scopeIDs)
                 } else {
                     Label("授权目录后才能建立基线", systemImage: "folder.badge.questionmark")
                         .font(.headline)
@@ -89,10 +89,10 @@ struct OverviewView: View {
     }
 
     @ViewBuilder
-    private func baselineContent(scopeID: WatchedScopeID) -> some View {
-        switch currentBaselineState(for: scopeID) {
+    private func baselineContent(scopeIDs: [WatchedScopeID]) -> some View {
+        switch currentBaselineState(for: scopeIDs) {
         case .idle:
-            baselineIdle(scopeID: scopeID)
+            baselineIdle(scopeIDs: scopeIDs)
         case let .preparing(request, startedAt):
             baselineActive(
                 title: "正在准备扫描",
@@ -116,24 +116,27 @@ struct OverviewView: View {
                 progress: progress
             )
         case let .completed(result):
-            baselineCompleted(result, scopeID: scopeID)
+            baselineCompleted(result, scopeIDs: scopeIDs)
         case let .incomplete(result):
-            baselineIncomplete(result, scopeID: scopeID)
+            baselineIncomplete(result, scopeIDs: scopeIDs)
         case let .cancelled(cancellation):
-            baselineCancelled(cancellation, scopeID: scopeID)
+            baselineCancelled(cancellation, scopeIDs: scopeIDs)
         case let .failed(failure):
-            baselineFailed(failure, scopeID: scopeID)
+            baselineFailed(failure, scopeIDs: scopeIDs)
         }
     }
 
-    private func baselineIdle(scopeID: WatchedScopeID) -> some View {
+    private func baselineIdle(scopeIDs: [WatchedScopeID]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("可以建立第一个目录基线", systemImage: "externaldrive.badge.checkmark")
+            Label(
+                "可以为 \(scopeIDs.count) 个已授权目录建立基线",
+                systemImage: "externaldrive.badge.checkmark"
+            )
                 .font(.headline)
-            Text("结果会区分逻辑大小与可观察分配大小，并明确标注完整或部分覆盖。")
+            Text("目录会按稳定顺序逐个扫描。结果区分逻辑大小与可观察分配大小，并明确标注完整或部分覆盖。")
                 .foregroundStyle(.secondary)
             Button("开始基线扫描") {
-                Task { await baselineScanModel.start(scopeID: scopeID) }
+                Task { await baselineScanModel.start(scopeIDs: scopeIDs) }
             }
             .buttonStyle(.borderedProminent)
             .accessibilityIdentifier("overview-start-baseline")
@@ -178,7 +181,7 @@ struct OverviewView: View {
 
     private func baselineCompleted(
         _ result: AuthorizedBaselineScanResult,
-        scopeID: WatchedScopeID
+        scopeIDs: [WatchedScopeID]
     ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             coverageHeader(
@@ -187,14 +190,7 @@ struct OverviewView: View {
                 symbol: "checkmark.seal.fill",
                 color: .green
             )
-            Text(result.context.root.rawValue)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
             metricGrid {
-                LabeledContent("逻辑大小", value: formatBytes(result.logicalBytes.value))
-                LabeledContent("可观察分配大小", value: formatBytes(result.allocatedBytes.value))
-                LabeledContent("后代条目", value: result.descendantCount.formatted())
-                LabeledContent("扫描条目", value: result.root.entriesVisited.formatted())
                 LabeledContent(
                     "完成根目录",
                     value: "\(result.snapshot.roots.count) / \(result.snapshot.roots.count)"
@@ -215,6 +211,26 @@ struct OverviewView: View {
                     )
                 )
             }
+            Text("目录结果")
+                .font(.headline)
+            ForEach(result.snapshot.roots, id: \.context.scopeID) { root in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(root.context.root.rawValue)
+                        .font(.callout.weight(.medium))
+                        .textSelection(.enabled)
+                    LabeledContent("逻辑大小", value: formatBytes(root.logicalBytes.value))
+                    LabeledContent(
+                        "可观察分配大小",
+                        value: formatBytes(root.allocatedBytes.value)
+                    )
+                    LabeledContent("后代条目", value: root.descendantCount.formatted())
+                    LabeledContent("扫描条目", value: root.entriesVisited.formatted())
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.quaternary.opacity(0.5))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
             Text("大小使用二进制单位。可观察分配大小不等于 APFS 唯一物理占用，也不代表可回收空间。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -232,7 +248,7 @@ struct OverviewView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
             Button("重新扫描") {
-                Task { await baselineScanModel.start(scopeID: scopeID) }
+                Task { await baselineScanModel.start(scopeIDs: scopeIDs) }
             }
             .accessibilityIdentifier("overview-rescan-baseline")
         }
@@ -240,7 +256,7 @@ struct OverviewView: View {
 
     private func baselineIncomplete(
         _ result: AuthorizedBaselineIncompleteResult,
-        scopeID: WatchedScopeID
+        scopeIDs: [WatchedScopeID]
     ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             coverageHeader(
@@ -270,7 +286,7 @@ struct OverviewView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Button("重新扫描") {
-                Task { await baselineScanModel.start(scopeID: scopeID) }
+                Task { await baselineScanModel.start(scopeIDs: scopeIDs) }
             }
             .accessibilityIdentifier("overview-retry-baseline")
         }
@@ -278,7 +294,7 @@ struct OverviewView: View {
 
     private func baselineCancelled(
         _ cancellation: AuthorizedBaselineScanCancellation,
-        scopeID: WatchedScopeID
+        scopeIDs: [WatchedScopeID]
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             coverageHeader(
@@ -293,8 +309,12 @@ struct OverviewView: View {
                 "已用时间",
                 value: elapsedText(from: cancellation.startedAt, to: cancellation.cancelledAt)
             )
+            LabeledContent(
+                "已完成根目录",
+                value: "\(cancellation.completedRootCount) / \(cancellation.requestedScopeIDs.count)"
+            )
             Button("重新开始") {
-                Task { await baselineScanModel.start(scopeID: scopeID) }
+                Task { await baselineScanModel.start(scopeIDs: scopeIDs) }
             }
             .accessibilityIdentifier("overview-restart-baseline")
         }
@@ -302,7 +322,7 @@ struct OverviewView: View {
 
     private func baselineFailed(
         _ failure: AuthorizedBaselineScanFailure,
-        scopeID: WatchedScopeID
+        scopeIDs: [WatchedScopeID]
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             coverageHeader(
@@ -321,9 +341,9 @@ struct OverviewView: View {
             ) {
                 Task {
                     if failure.code == .baselinePersistenceFailed {
-                        await baselineScanModel.restore(scopeID: scopeID)
+                        await baselineScanModel.restore(scopeID: scopeIDs.first)
                     } else {
-                        await baselineScanModel.start(scopeID: scopeID)
+                        await baselineScanModel.start(scopeIDs: scopeIDs)
                     }
                 }
             }
@@ -390,13 +410,12 @@ struct OverviewView: View {
     }
 
     private var isAuthorized: Bool {
-        if case .ready = readiness { return true }
-        return false
+        scopeIDs.isEmpty == false
     }
 
     private var baselineWorkflowState: WorkflowStepState {
-        guard let scopeID else { return .waiting }
-        switch currentBaselineState(for: scopeID) {
+        guard scopeIDs.isEmpty == false else { return .waiting }
+        switch currentBaselineState(for: scopeIDs) {
         case .preparing, .scanning, .publishing:
             return .active
         case .completed:
@@ -407,25 +426,32 @@ struct OverviewView: View {
     }
 
     private func currentBaselineState(
-        for scopeID: WatchedScopeID
+        for scopeIDs: [WatchedScopeID]
     ) -> AuthorizedBaselineScanState {
         let state = baselineScanModel.state
         switch state {
         case .idle:
             return .idle
-        case let .preparing(request, _) where request.scopeIDs.contains(scopeID):
+        case let .preparing(request, _) where request.scopeIDs == scopeIDs:
             return state
-        case let .scanning(progress) where progress.context.scopeID == scopeID:
+        case let .scanning(progress)
+            where progress.totalRootCount == scopeIDs.count
+                && scopeIDs.contains(progress.context.scopeID):
             return state
-        case let .publishing(progress) where progress.context.scopeID == scopeID:
+        case let .publishing(progress)
+            where progress.totalRootCount == scopeIDs.count
+                && scopeIDs.contains(progress.context.scopeID):
             return state
-        case let .completed(result) where result.context.scopeID == scopeID:
+        case let .completed(result)
+            where result.snapshot.roots.map(\.context.scopeID) == scopeIDs:
             return state
-        case let .incomplete(result) where result.context.scopeID == scopeID:
+        case let .incomplete(result)
+            where result.totalRootCount == scopeIDs.count
+                && scopeIDs.contains(result.context.scopeID):
             return state
-        case let .cancelled(result) where result.scopeID == scopeID:
+        case let .cancelled(result) where result.requestedScopeIDs == scopeIDs:
             return state
-        case let .failed(result) where result.scopeID == scopeID:
+        case let .failed(result) where scopeIDs.contains(result.scopeID):
             return state
         default:
             return .idle
@@ -447,10 +473,14 @@ struct OverviewView: View {
             String(localized: "正在恢复保存在此 Mac 上的只读授权。")
         case .needsAuthorization:
             String(localized: "SpaceTrace 不会自行扩大访问范围，也不会要求先授予 Full Disk Access。")
-        case let .ready(path):
-            String(localized: "已准备观察：\(path)。你现在可以在概览页建立可取消、覆盖范围明确的目录基线。")
-        case .needsAttention:
-            String(localized: "授权位置可能暂时不可用、已经变化或需要重新确认。进入目录授权页查看准确原因。")
+        case let .ready(authorizedCount):
+            String(localized: "已准备观察 \(authorizedCount) 个目录。你现在可以建立可取消、覆盖范围明确的批量基线。")
+        case let .needsAttention(authorizedCount, issueCount):
+            if authorizedCount > 0 {
+                String(localized: "\(authorizedCount) 个目录可用，\(issueCount) 个目录需要处理。可用目录仍可建立批量基线。")
+            } else {
+                String(localized: "当前没有可安全访问的目录。请处理 \(issueCount) 个授权问题后再建立基线。")
+            }
         }
     }
 

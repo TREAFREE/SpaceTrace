@@ -28,19 +28,24 @@ enum SpaceTraceSection: String, CaseIterable, Hashable, Identifiable {
 enum OverviewReadiness: Equatable {
     case preparing
     case needsAuthorization
-    case ready(path: String)
-    case needsAttention
+    case ready(authorizedCount: Int)
+    case needsAttention(authorizedCount: Int, issueCount: Int)
 
-    init(status: DirectoryAuthorizationStatus) {
-        switch status {
+    init(summary: DirectoryAuthorizationSummary) {
+        switch summary {
         case .loading:
             self = .preparing
         case .unconfigured:
             self = .needsAuthorization
-        case let .authorized(path):
-            self = .ready(path: path)
-        case .unavailable, .requiresReauthorization, .failed:
-            self = .needsAttention
+        case let .ready(authorizedCount):
+            self = .ready(authorizedCount: authorizedCount)
+        case let .needsAttention(authorizedCount, issueCount):
+            self = .needsAttention(
+                authorizedCount: authorizedCount,
+                issueCount: issueCount
+            )
+        case .failed:
+            self = .needsAttention(authorizedCount: 0, issueCount: 0)
         }
     }
 }

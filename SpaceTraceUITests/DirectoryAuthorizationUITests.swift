@@ -19,10 +19,10 @@ final class DirectoryAuthorizationUITests: XCTestCase {
         let app = launch(scenario: "stale")
         openPermissions(in: app)
 
-        assertStatus("需要重新授权", in: app)
-        XCTAssertTrue(app.buttons["reauthorize-directory-button"].exists)
-        XCTAssertTrue(app.buttons["revoke-directory-button"].exists)
-        XCTAssertFalse(app.buttons["refresh-directory-button"].exists)
+        assertStatus("部分目录需要处理", in: app)
+        XCTAssertTrue(app.buttons["reauthorize-directory-button-scope-ui-stale"].exists)
+        XCTAssertTrue(app.buttons["revoke-directory-button-scope-ui-stale"].exists)
+        XCTAssertFalse(app.buttons["refresh-directory-button-scope-ui-stale"].exists)
     }
 
     @MainActor
@@ -30,9 +30,9 @@ final class DirectoryAuthorizationUITests: XCTestCase {
         let app = launch(scenario: "unavailable")
         openPermissions(in: app)
 
-        assertStatus("目录当前不可用", in: app)
-        XCTAssertTrue(app.buttons["refresh-directory-button"].exists)
-        XCTAssertTrue(app.buttons["reauthorize-directory-button"].exists)
+        assertStatus("部分目录需要处理", in: app)
+        XCTAssertTrue(app.buttons["refresh-directory-button-scope-ui-unavailable"].exists)
+        XCTAssertTrue(app.buttons["reauthorize-directory-button-scope-ui-unavailable"].exists)
     }
 
     @MainActor
@@ -40,8 +40,21 @@ final class DirectoryAuthorizationUITests: XCTestCase {
         let app = launch(scenario: "authorized")
         openPermissions(in: app)
 
-        assertStatus("目录已授权", detail: "/Volumes/SpaceTraceFixture/Selected", in: app)
-        XCTAssertTrue(app.buttons["revoke-directory-button"].exists)
+        assertStatus("目录授权已就绪", in: app)
+        XCTAssertTrue(app.staticTexts["/Volumes/SpaceTraceFixture/Selected"].exists)
+        XCTAssertTrue(app.buttons["revoke-directory-button-scope-ui-authorized"].exists)
+    }
+
+    @MainActor
+    func testMultipleScopesRemainIndependentlyActionable() {
+        let app = launch(scenario: "multiple")
+        openPermissions(in: app)
+
+        assertStatus("部分目录需要处理", in: app)
+        XCTAssertTrue(app.buttons["add-directory-button"].exists)
+        XCTAssertTrue(app.buttons["revoke-directory-button-scope-ui-a"].exists)
+        XCTAssertTrue(app.buttons["revoke-directory-button-scope-ui-b"].exists)
+        XCTAssertTrue(app.buttons["reauthorize-directory-button-scope-ui-stale"].exists)
     }
 
     @MainActor
@@ -58,7 +71,6 @@ final class DirectoryAuthorizationUITests: XCTestCase {
     @MainActor
     private func assertStatus(
         _ title: String,
-        detail: String? = nil,
         in app: XCUIApplication,
         file: StaticString = #filePath,
         line: UInt = #line
@@ -67,9 +79,6 @@ final class DirectoryAuthorizationUITests: XCTestCase {
         XCTAssertTrue(element.waitForExistence(timeout: 3), file: file, line: line)
         let renderedValue = String(describing: element.value)
         XCTAssertTrue(renderedValue.contains(title), file: file, line: line)
-        if let detail {
-            XCTAssertTrue(renderedValue.contains(detail), file: file, line: line)
-        }
     }
 
     @MainActor

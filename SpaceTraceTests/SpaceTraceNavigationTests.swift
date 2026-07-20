@@ -12,18 +12,20 @@ struct SpaceTraceNavigationTests {
 
     @Test("Overview readiness never presents an unavailable grant as ready")
     func readinessRequiresAnActiveScope() {
-        #expect(OverviewReadiness(status: .loading) == .preparing)
-        #expect(OverviewReadiness(status: .unconfigured) == .needsAuthorization)
+        #expect(OverviewReadiness(summary: .loading) == .preparing)
+        #expect(OverviewReadiness(summary: .unconfigured) == .needsAuthorization)
         #expect(
-            OverviewReadiness(status: .authorized(path: "/Volumes/Fixture/Selected"))
-                == .ready(path: "/Volumes/Fixture/Selected")
+            OverviewReadiness(summary: .ready(authorizedCount: 2))
+                == .ready(authorizedCount: 2)
         )
-        #expect(OverviewReadiness(status: .unavailable) == .needsAttention)
         #expect(
             OverviewReadiness(
-                status: .requiresReauthorization(reason: .volumeIdentityChanged)
-            ) == .needsAttention
+                summary: .needsAttention(authorizedCount: 1, issueCount: 2)
+            ) == .needsAttention(authorizedCount: 1, issueCount: 2)
         )
-        #expect(OverviewReadiness(status: .failed) == .needsAttention)
+        #expect(
+            OverviewReadiness(summary: .failed)
+                == .needsAttention(authorizedCount: 0, issueCount: 0)
+        )
     }
 }

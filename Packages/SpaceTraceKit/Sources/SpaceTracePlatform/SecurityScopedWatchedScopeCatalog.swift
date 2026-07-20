@@ -55,6 +55,14 @@ public actor SecurityScopedWatchedScopeCatalog: MutableWatchedScopeCatalog {
         let epoch = operationEpoch
         let acquisition = try codec.acquire(selectedURL: selectedURL, scopeID: scopeID)
 
+        guard records.values.contains(where: {
+            $0.scopeID != scopeID
+                && $0.expectedRoot == acquisition.bookmark.expectedRoot
+        }) == false else {
+            acquisition.active.lease.release()
+            throw SecurityScopedWatchedScopeError.duplicateScopeRoot
+        }
+
         do {
             try await repository.upsertWatchedScopeBookmark(acquisition.bookmark)
         } catch {
@@ -389,6 +397,7 @@ public enum SecurityScopedWatchedScopeError: Error, Sendable, Equatable {
     case invalidResource
     case rootIdentityChanged
     case volumeIdentityChanged
+    case duplicateScopeRoot
     case operationCancelled
     case concurrentOperation
 
@@ -407,6 +416,8 @@ public enum SecurityScopedWatchedScopeError: Error, Sendable, Equatable {
             .rootIdentityChanged
         case .volumeIdentityChanged:
             .volumeIdentityChanged
+        case .duplicateScopeRoot:
+            .invalidResource
         }
     }
 }

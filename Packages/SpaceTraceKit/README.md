@@ -7,7 +7,7 @@
 | Module | Responsibility | Platform coupling |
 | --- | --- | --- |
 | `SpaceTraceDomain` | Validated storage quantities, observation identities, coverage, and deltas | None |
-| `SpaceTraceApplication` | Dirty-region planning, calibration orchestration, mount/event lifecycle state machines, opaque watched-scope bookmark contracts, ports, and crash-consistency contracts | Foundation |
+| `SpaceTraceApplication` | Dirty-region planning, cancellable authorized-baseline state, calibration orchestration, mount/event lifecycle state machines, opaque watched-scope bookmark contracts, ports, and crash-consistency contracts | Foundation |
 | `SpaceTraceFileSystem` | Per-device FSEvents identity/target resolution, callback bridge, conservative flag interpretation, semantic mapping, and a bounded metadata-only calibration scanner | CoreServices, Foundation, Darwin |
 | `SpaceTracePersistence` | Actor-isolated raw SQLite prototype for cursor, dirty work, scope mount generations, security-scoped bookmark records, staged directory aggregates, and revision-safe atomic publication | SQLite3 |
 | `SpaceTracePlatform` | Read-only Disk Arbitration callback bridge plus exact security-scoped bookmark acquisition/restoration and balanced access leases | Foundation, DiskArbitration, Dispatch |
@@ -22,6 +22,8 @@ The non-UI supervisor also owns post-start failure recovery. An unexpected termi
 The exact claim boundary for daemon-generated `UserDropped`, `KernelDropped`, and event-ID wrap is documented in the [FSEvents continuity-loss qualification protocol](../../docs/engineering/fsevents-continuity-qualification.md) and its [Chinese translation](../../docs/engineering/fsevents-continuity-qualification.zh-CN.md).
 
 The bookmark/catalog/application ownership contract is documented in [Security-Scoped Bookmark and Application Lifecycle](../../docs/engineering/security-scoped-bookmark-lifecycle.md) and its [Chinese translation](../../docs/engineering/security-scoped-bookmark-lifecycle.zh-CN.md).
+
+The authorized directory baseline, typed progress, cancellation, atomic-publication, and overview truth contract are documented in [Authorized Directory Baseline and Overview](../../docs/engineering/authorized-baseline-overview.md) and its [Chinese translation](../../docs/engineering/authorized-baseline-overview.zh-CN.md).
 
 An opt-in qualification test creates two 64 MiB APFS images with the same volume name, mounts only at a UUID-named path below `/tmp`, performs normal detach/remount/replacement, verifies distinct mount generations and restarted FSEvents delivery, then removes the images. It is intentionally excluded from normal `make verify` runs:
 

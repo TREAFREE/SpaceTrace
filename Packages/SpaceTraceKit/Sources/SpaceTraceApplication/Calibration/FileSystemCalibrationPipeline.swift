@@ -28,6 +28,33 @@ public protocol CalibrationScanner: Sendable {
     ) async throws -> CalibrationReport
 }
 
+public enum CalibrationPipelineProgress: Sendable, Equatable {
+    case scanning(DirtyRegionWorkItem)
+    case publishing(DirtyRegionWorkItem, CalibrationReport)
+}
+
+public enum CalibrationAttemptDisposition: Sendable, Equatable {
+    case published
+    case partialCoverage
+    case superseded
+}
+
+public struct CalibrationAttemptResult: Sendable, Equatable {
+    public let workItem: DirtyRegionWorkItem
+    public let report: CalibrationReport
+    public let disposition: CalibrationAttemptDisposition
+
+    public init(
+        workItem: DirtyRegionWorkItem,
+        report: CalibrationReport,
+        disposition: CalibrationAttemptDisposition
+    ) {
+        self.workItem = workItem
+        self.report = report
+        self.disposition = disposition
+    }
+}
+
 public actor FileSystemCalibrationPipeline {
     private let streamID: EventStreamID
     private let watchRoot: DirtyRegionPath
@@ -91,12 +118,25 @@ public actor FileSystemCalibrationPipeline {
     /// scan because `resolve` compares the revision captured before scanning.
     @discardableResult
     public func calibratePending(limit: Int) async throws -> Int {
-        guard limit > 0 else { return 0 }
+        try await calibratePendingResults(limit: limit)
+            .filter { $0.disposition == .published }
+            .count
+    }
+
+    /// Returns evidence for every attempted region without weakening the
+    /// existing atomic-publication contract. Partial and superseded scans are
+    /// reported to callers but never published as current complete truth.
+    public func calibratePendingResults(
+        limit: Int,
+        onProgress: @escaping @Sendable (CalibrationPipelineProgress) async -> Void = { _ in }
+    ) async throws -> [CalibrationAttemptResult] {
+        guard limit > 0 else { return [] }
         let workItems = try await repository.pendingDirtyWork(for: streamID, limit: limit)
-        var resolvedCount = 0
+        var results: [CalibrationAttemptResult] = []
 
         for workItem in workItems {
             try Task.checkCancellation()
+            await onProgress(.scanning(workItem))
             let request = CalibrationRequest(
                 streamID: streamID,
                 workItem: workItem,
@@ -113,16 +153,29 @@ public actor FileSystemCalibrationPipeline {
                         disposition: .partial,
                         report: report
                     )
+                    results.append(
+                        CalibrationAttemptResult(
+                            workItem: workItem,
+                            report: report,
+                            disposition: .partialCoverage
+                        )
+                    )
                     continue
                 }
-                if try await repository.finalizeCalibration(
+                await onProgress(.publishing(workItem, report))
+                let didPublish = try await repository.finalizeCalibration(
                     runID,
                     report: report,
                     workItem: workItem,
                     streamID: streamID
-                ) {
-                    resolvedCount += 1
-                }
+                )
+                results.append(
+                    CalibrationAttemptResult(
+                        workItem: workItem,
+                        report: report,
+                        disposition: didPublish ? .published : .superseded
+                    )
+                )
             } catch is CancellationError {
                 try? await repository.discardCalibration(
                     runID,
@@ -139,6 +192,6 @@ public actor FileSystemCalibrationPipeline {
                 throw error
             }
         }
-        return resolvedCount
+        return results
     }
 }

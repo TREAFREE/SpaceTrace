@@ -1,0 +1,73 @@
+public actor EventJournalAuthorizedBaselineCalibrationRunner: AuthorizedBaselineCalibrationRunning {
+    private let repository: any EventJournalRepository
+    private let scanner: any CalibrationScanner
+    private let scanBudget: CalibrationScanBudget
+
+    public init(
+        repository: any EventJournalRepository,
+        scanner: any CalibrationScanner,
+        scanBudget: CalibrationScanBudget = .incremental
+    ) {
+        self.repository = repository
+        self.scanner = scanner
+        self.scanBudget = scanBudget
+    }
+
+    public func run(
+        context: AuthorizedBaselineScanContext,
+        onProgress: @escaping @Sendable (AuthorizedBaselineCalibrationProgress) async -> Void
+    ) async throws -> AuthorizedBaselineCalibrationOutcome {
+        let region = try DirtyRegion(
+            path: context.root,
+            reasons: [.mustScanSubdirectories, .requiresCalibration],
+            maximumCursor: nil
+        )
+        try await repository.markDirty(
+            streamID: context.streamID,
+            regions: [region]
+        )
+
+        let pipeline = FileSystemCalibrationPipeline(
+            streamID: context.streamID,
+            watchRoot: context.root,
+            repository: repository,
+            scanner: scanner,
+            scanBudget: scanBudget
+        )
+        let attempts = try await pipeline.calibratePendingResults(limit: 1) { update in
+            switch update {
+            case .scanning:
+                await onProgress(.scanning(context))
+            case let .publishing(_, report):
+                await onProgress(.publishing(context, report))
+            }
+        }
+        guard let attempt = attempts.first,
+              attempt.workItem.region.path == context.root else {
+            throw AuthorizedBaselineCalibrationRunnerError.missingAttempt
+        }
+
+        switch attempt.disposition {
+        case .partialCoverage:
+            return .incomplete(attempt.report, .partialCoverage)
+        case .superseded:
+            return .incomplete(attempt.report, .changedDuringScan)
+        case .published:
+            let aggregate = try await repository
+                .currentDirectoryAggregates(for: context.streamID)
+                .first { $0.path == context.root }
+            guard let aggregate,
+                  aggregate.coverage == .complete,
+                  aggregate.logicalBytes != nil,
+                  aggregate.allocatedBytes != nil else {
+                throw AuthorizedBaselineCalibrationRunnerError.publishedRootMissing
+            }
+            return .published(aggregate, attempt.report)
+        }
+    }
+}
+
+public enum AuthorizedBaselineCalibrationRunnerError: Error, Sendable, Equatable {
+    case missingAttempt
+    case publishedRootMissing
+}

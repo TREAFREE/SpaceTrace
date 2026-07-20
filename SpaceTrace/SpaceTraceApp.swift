@@ -14,7 +14,10 @@ struct SpaceTraceApp: App {
 
     var body: some Scene {
         Window("SpaceTrace", id: "main") {
-            ContentView(model: appDelegate.authorizationModel)
+            ContentView(
+                authorizationModel: appDelegate.authorizationModel,
+                baselineScanModel: appDelegate.baselineScanModel
+            )
         }
         .defaultSize(width: 920, height: 620)
         .windowToolbarStyle(.unified)

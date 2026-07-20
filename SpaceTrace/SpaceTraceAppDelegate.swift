@@ -1,10 +1,12 @@
 import AppKit
 import OSLog
+import SpaceTraceApplication
 import SpaceTraceMonitoring
 
 @MainActor
 final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
     let authorizationModel = DirectoryAuthorizationViewModel()
+    let baselineScanModel = BaselineScanViewModel()
 
     private let logger = Logger(
         subsystem: "com.TREAFREE.SpaceTrace",
@@ -25,11 +27,13 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
             let compositionRoot = try SpaceTraceCompositionRoot.make()
             self.compositionRoot = compositionRoot
             authorizationModel.connect(compositionRoot.authorizationCoordinator)
+            baselineScanModel.connect(compositionRoot.baselineScanCoordinator)
             startupTask = Task { [weak self] in
                 await self?.authorizationModel.start()
             }
         } catch {
             authorizationModel.handleCompositionFailure()
+            baselineScanModel.handleCompositionFailure()
             logger.error("Application composition failed with private diagnostic context.")
         }
     }

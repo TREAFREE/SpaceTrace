@@ -12,9 +12,13 @@ struct WatchedScopeAuthorizationCoordinatorTests {
             catalog: catalog,
             runtime: runtime
         )
+        let baseline = BaselineCancellationRecorder()
         let coordinator = WatchedScopeAuthorizationCoordinator(
             catalog: catalog,
-            lifecycle: lifecycle
+            lifecycle: lifecycle,
+            cancelBaselineScan: {
+                await baseline.cancel()
+            }
         )
         let scopeID = try WatchedScopeID("scope-primary")
 
@@ -28,6 +32,7 @@ struct WatchedScopeAuthorizationCoordinatorTests {
         #expect(report.configuredScopeCount == 1)
         #expect(report.scopes.map(\.id) == [scopeID])
         #expect(await catalog.acquiredScopeIDs == [scopeID])
+        #expect(await baseline.cancelCount == 1)
         #expect(await lifecycle.state() == .monitoring)
         await coordinator.stop()
     }
@@ -117,6 +122,14 @@ struct WatchedScopeAuthorizationCoordinatorTests {
         }
         #expect(await runtime.startCount == 0)
         #expect(await lifecycle.state() == .stopped)
+    }
+}
+
+private actor BaselineCancellationRecorder {
+    private(set) var cancelCount = 0
+
+    func cancel() {
+        cancelCount += 1
     }
 }
 

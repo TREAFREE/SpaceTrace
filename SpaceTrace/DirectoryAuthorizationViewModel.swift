@@ -94,6 +94,11 @@ final class DirectoryAuthorizationViewModel {
         currentScopeID != nil
     }
 
+    var authorizedScopeID: WatchedScopeID? {
+        guard case .authorized = status else { return nil }
+        return currentScopeID
+    }
+
     init(
         picker: (any DirectorySelecting)? = nil,
         coordinator: (any WatchedScopeAuthorizationCoordinating)? = nil,

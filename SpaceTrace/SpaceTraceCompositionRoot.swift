@@ -7,6 +7,7 @@ import SpaceTracePlatform
 
 struct SpaceTraceCompositionRoot {
     let authorizationCoordinator: WatchedScopeAuthorizationCoordinator
+    let baselineScanCoordinator: AuthorizedBaselineScanCoordinator
 
     static func make(fileManager: FileManager = .default) throws -> Self {
         let applicationSupportRoot = try applicationSupportDirectory(using: fileManager)
@@ -31,11 +32,26 @@ struct SpaceTraceCompositionRoot {
             catalog: catalog,
             runtime: runtime
         )
+        let baselineContextProvider = NativeAuthorizedBaselineScanContextProvider(
+            catalog: catalog,
+            runtime: runtime
+        )
+        let baselineScanCoordinator = AuthorizedBaselineScanCoordinator(
+            contextProvider: baselineContextProvider,
+            calibrationRunner: EventJournalAuthorizedBaselineCalibrationRunner(
+                repository: repository,
+                scanner: scanner
+            )
+        )
         return Self(
             authorizationCoordinator: WatchedScopeAuthorizationCoordinator(
                 catalog: catalog,
-                lifecycle: lifecycle
-            )
+                lifecycle: lifecycle,
+                cancelBaselineScan: {
+                    await baselineScanCoordinator.cancel()
+                }
+            ),
+            baselineScanCoordinator: baselineScanCoordinator
         )
     }
 

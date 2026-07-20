@@ -1,11 +1,16 @@
+import Foundation
+import SpaceTraceApplication
+import SpaceTraceDomain
 import SwiftUI
 
 struct OverviewView: View {
-    let status: DirectoryAuthorizationStatus
+    let authorizationStatus: DirectoryAuthorizationStatus
+    let scopeID: WatchedScopeID?
+    @Bindable var baselineScanModel: BaselineScanViewModel
     let showPermissions: () -> Void
 
     private var readiness: OverviewReadiness {
-        OverviewReadiness(status: status)
+        OverviewReadiness(status: authorizationStatus)
     }
 
     var body: some View {
@@ -13,6 +18,7 @@ struct OverviewView: View {
             VStack(alignment: .leading, spacing: 24) {
                 header
                 readinessCard
+                baselineCard
                 workflow
             }
             .padding(32)
@@ -51,7 +57,7 @@ struct OverviewView: View {
                     Button(readinessActionTitle) {
                         showPermissions()
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.bordered)
                     .accessibilityIdentifier("overview-permissions-button")
                 }
 
@@ -61,6 +67,256 @@ struct OverviewView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("监控准备状态")
+    }
+
+    private var baselineCard: some View {
+        GroupBox("目录基线") {
+            VStack(alignment: .leading, spacing: 16) {
+                if let scopeID, isAuthorized {
+                    baselineContent(scopeID: scopeID)
+                } else {
+                    Label("授权目录后才能建立基线", systemImage: "folder.badge.questionmark")
+                        .font(.headline)
+                    Text("扫描只会读取你明确选择的目录；没有授权时不会启动，也不会展示猜测值。")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("目录基线扫描")
+    }
+
+    @ViewBuilder
+    private func baselineContent(scopeID: WatchedScopeID) -> some View {
+        switch currentBaselineState(for: scopeID) {
+        case .idle:
+            baselineIdle(scopeID: scopeID)
+        case let .preparing(_, startedAt):
+            baselineActive(
+                title: "正在准备扫描",
+                detail: "正在确认授权目录与当前 FSEvents 监控代次。",
+                startedAt: startedAt,
+                progress: nil
+            )
+        case let .scanning(progress):
+            baselineActive(
+                title: "正在扫描目录",
+                detail: "扫描受条目数、深度和时间预算约束；当前不伪造完成百分比。",
+                startedAt: progress.startedAt,
+                progress: progress
+            )
+        case let .publishing(progress):
+            baselineActive(
+                title: "正在原子发布结果",
+                detail: "只有完整、且未被新事件取代的结果才会成为当前基线。",
+                startedAt: progress.startedAt,
+                progress: progress
+            )
+        case let .completed(result):
+            baselineCompleted(result, scopeID: scopeID)
+        case let .incomplete(result):
+            baselineIncomplete(result, scopeID: scopeID)
+        case let .cancelled(cancellation):
+            baselineCancelled(cancellation, scopeID: scopeID)
+        case let .failed(failure):
+            baselineFailed(failure, scopeID: scopeID)
+        }
+    }
+
+    private func baselineIdle(scopeID: WatchedScopeID) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("可以建立第一个目录基线", systemImage: "externaldrive.badge.checkmark")
+                .font(.headline)
+            Text("结果会区分逻辑大小与可观察分配大小，并明确标注完整或部分覆盖。")
+                .foregroundStyle(.secondary)
+            Button("开始基线扫描") {
+                Task { await baselineScanModel.start(scopeID: scopeID) }
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("overview-start-baseline")
+        }
+    }
+
+    private func baselineActive(
+        title: LocalizedStringKey,
+        detail: LocalizedStringKey,
+        startedAt: Date,
+        progress: AuthorizedBaselineScanProgress?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(title)
+                    .font(.headline)
+            }
+            Text(detail)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                LabeledContent("已用时间", value: elapsedText(from: startedAt, to: timeline.date))
+            }
+            LabeledContent(
+                "根目录进度",
+                value: "\(progress?.completedRootCount ?? 0) / \(progress?.totalRootCount ?? 1)"
+            )
+            LabeledContent("不可完整读取的根目录", value: "\(progress?.unreadableRootCount ?? 0)")
+            if let progress, progress.entriesVisited > 0 {
+                LabeledContent("已核验条目", value: progress.entriesVisited.formatted())
+                LabeledContent("已生成目录摘要", value: progress.directoriesObserved.formatted())
+            }
+            Button("取消扫描", role: .cancel) {
+                Task { await baselineScanModel.cancel() }
+            }
+            .accessibilityIdentifier("overview-cancel-baseline")
+        }
+    }
+
+    private func baselineCompleted(
+        _ result: AuthorizedBaselineScanResult,
+        scopeID: WatchedScopeID
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            coverageHeader(
+                title: "基线已发布",
+                detail: "完整覆盖",
+                symbol: "checkmark.seal.fill",
+                color: .green
+            )
+            Text(result.context.root.rawValue)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            metricGrid {
+                LabeledContent("逻辑大小", value: formatBytes(result.logicalBytes.value))
+                LabeledContent("可观察分配大小", value: formatBytes(result.allocatedBytes.value))
+                LabeledContent("后代条目", value: result.descendantCount.formatted())
+                LabeledContent("扫描条目", value: result.report.entriesVisited.formatted())
+                LabeledContent("完成根目录", value: "1 / 1")
+                LabeledContent("不可完整读取的根目录", value: "0")
+            }
+            Text("大小使用二进制单位。可观察分配大小不等于 APFS 唯一物理占用，也不代表可回收空间。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("发布于 \(result.completedAt.formatted(date: .abbreviated, time: .standard))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("重新扫描") {
+                Task { await baselineScanModel.start(scopeID: scopeID) }
+            }
+            .accessibilityIdentifier("overview-rescan-baseline")
+        }
+    }
+
+    private func baselineIncomplete(
+        _ result: AuthorizedBaselineIncompleteResult,
+        scopeID: WatchedScopeID
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            coverageHeader(
+                title: incompleteTitle(result.reason),
+                detail: "结果未发布",
+                symbol: "exclamationmark.triangle.fill",
+                color: .orange
+            )
+            Text(incompleteDetail(result.reason))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            metricGrid {
+                LabeledContent("覆盖状态", value: coverageLabel(result.report.coverage))
+                LabeledContent("扫描条目", value: result.report.entriesVisited.formatted())
+                LabeledContent("目录摘要", value: result.report.directoriesStaged.formatted())
+                LabeledContent("访问缺口", value: result.report.gaps.count.formatted())
+                LabeledContent("完成根目录", value: "0 / 1")
+                LabeledContent(
+                    "不可完整读取的根目录",
+                    value: result.reason == .partialCoverage ? "1" : "0"
+                )
+            }
+            Text("由于没有完整发布，SpaceTrace 不会把暂存的字节数当作当前基线。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("重新扫描") {
+                Task { await baselineScanModel.start(scopeID: scopeID) }
+            }
+            .accessibilityIdentifier("overview-retry-baseline")
+        }
+    }
+
+    private func baselineCancelled(
+        _ cancellation: AuthorizedBaselineScanCancellation,
+        scopeID: WatchedScopeID
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            coverageHeader(
+                title: "扫描已取消",
+                detail: "未发布新基线",
+                symbol: "stop.circle.fill",
+                color: .secondary
+            )
+            Text("取消会丢弃本次暂存结果并保留待校准标记，不会把部分数据标记为完整。")
+                .foregroundStyle(.secondary)
+            LabeledContent(
+                "已用时间",
+                value: elapsedText(from: cancellation.startedAt, to: cancellation.cancelledAt)
+            )
+            Button("重新开始") {
+                Task { await baselineScanModel.start(scopeID: scopeID) }
+            }
+            .accessibilityIdentifier("overview-restart-baseline")
+        }
+    }
+
+    private func baselineFailed(
+        _ failure: AuthorizedBaselineScanFailure,
+        scopeID: WatchedScopeID
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            coverageHeader(
+                title: "基线扫描未完成",
+                detail: "没有发布不可信结果",
+                symbol: "xmark.octagon.fill",
+                color: .red
+            )
+            Text(failureDetail(failure.code))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("重试") {
+                Task { await baselineScanModel.start(scopeID: scopeID) }
+            }
+            .accessibilityIdentifier("overview-retry-failed-baseline")
+        }
+    }
+
+    private func coverageHeader(
+        title: LocalizedStringKey,
+        detail: LocalizedStringKey,
+        symbol: String,
+        color: Color
+    ) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .foregroundStyle(color)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.headline)
+            Text(detail)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(color)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(color.opacity(0.12))
+                .clipShape(Capsule())
+        }
+    }
+
+    private func metricGrid<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            content()
+        }
     }
 
     private var workflow: some View {
@@ -73,19 +329,19 @@ struct OverviewView: View {
                     number: 1,
                     title: "选择目录",
                     detail: "只读访问由你明确选择的位置。",
-                    isReady: isAuthorized
+                    state: isAuthorized ? .ready : .waiting
                 )
                 WorkflowStep(
                     number: 2,
                     title: "建立基线",
                     detail: "用有界扫描记录目录摘要和覆盖范围。",
-                    isReady: false
+                    state: baselineWorkflowState
                 )
                 WorkflowStep(
                     number: 3,
                     title: "解释变化",
                     detail: "把时间窗口、大小口径和证据放在一起。",
-                    isReady: false
+                    state: .planned
                 )
             }
         }
@@ -94,6 +350,44 @@ struct OverviewView: View {
     private var isAuthorized: Bool {
         if case .ready = readiness { return true }
         return false
+    }
+
+    private var baselineWorkflowState: WorkflowStepState {
+        guard let scopeID else { return .waiting }
+        switch currentBaselineState(for: scopeID) {
+        case .preparing, .scanning, .publishing:
+            return .active
+        case .completed:
+            return .ready
+        case .idle, .incomplete, .cancelled, .failed:
+            return .waiting
+        }
+    }
+
+    private func currentBaselineState(
+        for scopeID: WatchedScopeID
+    ) -> AuthorizedBaselineScanState {
+        let state = baselineScanModel.state
+        switch state {
+        case .idle:
+            return .idle
+        case let .preparing(stateScopeID, _) where stateScopeID == scopeID:
+            return state
+        case let .scanning(progress) where progress.context.scopeID == scopeID:
+            return state
+        case let .publishing(progress) where progress.context.scopeID == scopeID:
+            return state
+        case let .completed(result) where result.context.scopeID == scopeID:
+            return state
+        case let .incomplete(result) where result.context.scopeID == scopeID:
+            return state
+        case let .cancelled(result) where result.scopeID == scopeID:
+            return state
+        case let .failed(result) where result.scopeID == scopeID:
+            return state
+        default:
+            return .idle
+        }
     }
 
     private var readinessTitle: LocalizedStringKey {
@@ -112,7 +406,7 @@ struct OverviewView: View {
         case .needsAuthorization:
             String(localized: "SpaceTrace 不会自行扩大访问范围，也不会要求先授予 Full Disk Access。")
         case let .ready(path):
-            String(localized: "已准备观察：\(path)。基线扫描与变化解释将在后续里程碑接入，本页不会展示虚构数据。")
+            String(localized: "已准备观察：\(path)。你现在可以在概览页建立可取消、覆盖范围明确的目录基线。")
         case .needsAttention:
             String(localized: "授权位置可能暂时不可用、已经变化或需要重新确认。进入目录授权页查看准确原因。")
         }
@@ -141,13 +435,84 @@ struct OverviewView: View {
         case .preparing, .needsAuthorization: .secondary
         }
     }
+
+    private func elapsedText(from start: Date, to end: Date) -> String {
+        let seconds = max(0, Int(end.timeIntervalSince(start)))
+        return Duration.seconds(seconds).formatted(.units(allowed: [.minutes, .seconds]))
+    }
+
+    private func formatBytes(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .binary)
+    }
+
+    private func coverageLabel(_ coverage: CalibrationCoverage) -> String {
+        switch coverage {
+        case .complete: String(localized: "完整")
+        case .partial: String(localized: "部分")
+        }
+    }
+
+    private func incompleteTitle(
+        _ reason: AuthorizedBaselineIncompleteReason
+    ) -> LocalizedStringKey {
+        switch reason {
+        case .partialCoverage: "扫描仅获得部分覆盖"
+        case .changedDuringScan: "扫描期间目录继续变化"
+        }
+    }
+
+    private func incompleteDetail(_ reason: AuthorizedBaselineIncompleteReason) -> String {
+        switch reason {
+        case .partialCoverage:
+            String(localized: "部分位置无法读取或触及扫描预算；访问缺口保留为未知，而不是零。")
+        case .changedDuringScan:
+            String(localized: "新文件系统事件使本次扫描的修订令牌失效。待校准工作仍然保留，可以再次扫描。")
+        }
+    }
+
+    private func failureDetail(_ code: AuthorizedBaselineScanFailureCode) -> String {
+        switch code {
+        case .scopeNotAuthorized:
+            String(localized: "当前目录授权已经变化。请先在目录授权页确认状态。")
+        case .monitoringNotReady:
+            String(localized: "目录监控代次尚未激活或正在恢复。请稍后重试；SpaceTrace 不会绕过监控连续性直接发布结果。")
+        case .publishedRootMissing:
+            String(localized: "原子发布完成后没有找到可验证的根目录摘要。旧数据保持不变。")
+        case .operationFailed:
+            String(localized: "扫描或本地数据库操作失败。没有发布新的基线，请稍后重试。")
+        }
+    }
+}
+
+private enum WorkflowStepState {
+    case ready
+    case active
+    case waiting
+    case planned
+
+    var label: LocalizedStringKey {
+        switch self {
+        case .ready: "已就绪"
+        case .active: "进行中"
+        case .waiting: "等待操作"
+        case .planned: "后续阶段"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .ready: .green
+        case .active: .blue
+        case .waiting, .planned: .secondary
+        }
+    }
 }
 
 private struct WorkflowStep: View {
     let number: Int
     let title: LocalizedStringKey
     let detail: LocalizedStringKey
-    let isReady: Bool
+    let state: WorkflowStepState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -155,7 +520,7 @@ private struct WorkflowStep: View {
                 Text("\(number)")
                     .font(.caption.weight(.bold))
                     .frame(width: 24, height: 24)
-                    .background(isReady ? Color.green.opacity(0.16) : Color.secondary.opacity(0.12))
+                    .background(state.color.opacity(0.16))
                     .clipShape(Circle())
                 Text(title)
                     .font(.headline)
@@ -163,9 +528,9 @@ private struct WorkflowStep: View {
             Text(detail)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(isReady ? "已就绪" : "尚未接入")
+            Text(state.label)
                 .font(.caption.weight(.medium))
-                .foregroundStyle(isReady ? Color.green : Color.secondary)
+                .foregroundStyle(state.color)
         }
         .padding(16)
         .frame(maxWidth: .infinity, minHeight: 138, alignment: .topLeading)

@@ -23,7 +23,8 @@ This directory is the durable source of truth for product, architecture, enginee
 8. [FSEvents Continuity-Loss Qualification](engineering/fsevents-continuity-qualification.md) · [中文](engineering/fsevents-continuity-qualification.zh-CN.md)
 9. [Security-Scoped Bookmark and Application Lifecycle](engineering/security-scoped-bookmark-lifecycle.md) · [中文](engineering/security-scoped-bookmark-lifecycle.zh-CN.md)
 10. [User-Selected Directory UI and Sandbox Qualification](engineering/user-selected-directory-qualification.md) · [中文](engineering/user-selected-directory-qualification.zh-CN.md)
-11. [Contributing](../CONTRIBUTING.md)
+11. [Authorized Directory Baseline and Overview](engineering/authorized-baseline-overview.md) · [中文](engineering/authorized-baseline-overview.zh-CN.md)
+12. [Contributing](../CONTRIBUTING.md)
 
 ### Product evidence
 

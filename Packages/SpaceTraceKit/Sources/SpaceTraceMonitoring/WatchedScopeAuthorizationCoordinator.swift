@@ -7,15 +7,18 @@ import SpaceTraceApplication
 public actor WatchedScopeAuthorizationCoordinator {
     private let catalog: any MutableWatchedScopeCatalog
     private let lifecycle: NativeMonitoringApplicationLifecycle
+    private let cancelBaselineScan: @Sendable () async -> Void
     private var isTransitioning = false
     private var operationEpoch: UInt64 = 0
 
     public init(
         catalog: any MutableWatchedScopeCatalog,
-        lifecycle: NativeMonitoringApplicationLifecycle
+        lifecycle: NativeMonitoringApplicationLifecycle,
+        cancelBaselineScan: @escaping @Sendable () async -> Void = {}
     ) {
         self.catalog = catalog
         self.lifecycle = lifecycle
+        self.cancelBaselineScan = cancelBaselineScan
     }
 
     @discardableResult
@@ -30,6 +33,7 @@ public actor WatchedScopeAuthorizationCoordinator {
     public func stop() async {
         operationEpoch &+= 1
         isTransitioning = true
+        await cancelBaselineScan()
         await lifecycle.stop()
         isTransitioning = false
     }
@@ -52,6 +56,8 @@ public actor WatchedScopeAuthorizationCoordinator {
         let epoch = try beginTransition()
         defer { finishTransition(epoch: epoch) }
 
+        await cancelBaselineScan()
+        try checkTransition(epoch)
         await lifecycle.stop()
         try checkTransition(epoch)
         do {
@@ -73,6 +79,8 @@ public actor WatchedScopeAuthorizationCoordinator {
         let epoch = try beginTransition()
         defer { finishTransition(epoch: epoch) }
 
+        await cancelBaselineScan()
+        try checkTransition(epoch)
         await lifecycle.stop()
         try checkTransition(epoch)
         do {

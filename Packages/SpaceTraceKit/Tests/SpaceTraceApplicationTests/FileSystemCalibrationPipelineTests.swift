@@ -14,6 +14,24 @@ struct FileSystemCalibrationPipelineTests {
         #expect(await scanner.requestCount == 1)
     }
 
+    @Test("Typed progress distinguishes scanning, atomic publication, and the final result")
+    func reportsTypedPublicationProgress() async throws {
+        let repository = InMemoryEventJournalRepository()
+        let scanner = FakeCalibrationScanner(coverage: .complete)
+        let pipeline = try makePipeline(repository: repository, scanner: scanner)
+        let progress = ProgressRecorder()
+
+        try await pipeline.ingest([try fileInvalidation(cursor: 1)])
+        let results = try await pipeline.calibratePendingResults(limit: 1) { update in
+            await progress.record(update)
+        }
+
+        let result = try #require(results.first)
+        #expect(result.disposition == .published)
+        #expect(result.report.coverage == .complete)
+        #expect(await progress.phases == [.scanning, .publishing])
+    }
+
     @Test("Partial calibration never clears work")
     func preservesPartialCalibration() async throws {
         let repository = InMemoryEventJournalRepository()
@@ -25,6 +43,25 @@ struct FileSystemCalibrationPipelineTests {
         try await pipeline.ingest([try fileInvalidation(cursor: 1)])
         #expect(try await pipeline.calibratePending(limit: 10) == 0)
         #expect(try await repository.dirtyRegions(for: streamID()).count == 1)
+    }
+
+    @Test("Partial evidence is returned without entering the publication phase")
+    func reportsPartialAttemptWithoutPublishing() async throws {
+        let repository = InMemoryEventJournalRepository()
+        let pipeline = try makePipeline(
+            repository: repository,
+            scanner: FakeCalibrationScanner(coverage: .partial)
+        )
+        let progress = ProgressRecorder()
+
+        try await pipeline.ingest([try fileInvalidation(cursor: 1)])
+        let results = try await pipeline.calibratePendingResults(limit: 1) { update in
+            await progress.record(update)
+        }
+
+        #expect(results.map(\.disposition) == [.partialCoverage])
+        #expect(await progress.phases == [.scanning])
+        #expect(try await repository.currentDirectoryAggregates(for: streamID()).isEmpty)
     }
 
     @Test("A newer event arriving during a scan defeats the stale resolution token")
@@ -122,6 +159,24 @@ struct FileSystemCalibrationPipelineTests {
 
     private func streamID() throws -> EventStreamID {
         try EventStreamID("volume-a:generation-1")
+    }
+}
+
+private actor ProgressRecorder {
+    enum Phase: Sendable, Equatable {
+        case scanning
+        case publishing
+    }
+
+    private(set) var phases: [Phase] = []
+
+    func record(_ progress: CalibrationPipelineProgress) {
+        switch progress {
+        case .scanning:
+            phases.append(.scanning)
+        case .publishing:
+            phases.append(.publishing)
+        }
     }
 }
 

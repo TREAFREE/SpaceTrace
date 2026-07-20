@@ -5,6 +5,39 @@ import SpaceTraceFileSystem
 @testable import SpaceTracePersistence
 
 struct CalibrationPipelineIntegrationTests {
+    @Test("Authorized baseline runner publishes the real root aggregate through SQLite")
+    func authorizedBaselinePublishesRootAggregate() async throws {
+        let fixture = try PipelineTemporaryDatabase()
+        let repository = try SQLiteEventJournalRepository(databaseURL: fixture.databaseURL)
+        defer { fixture.remove() }
+        let root = try DirtyRegionPath("/Users/example/Authorized")
+        let context = AuthorizedBaselineScanContext(
+            scopeID: try WatchedScopeID("scope-primary"),
+            root: root,
+            streamID: try EventStreamID("authorized-baseline-integration")
+        )
+        let runner = EventJournalAuthorizedBaselineCalibrationRunner(
+            repository: repository,
+            scanner: IntegrationScanner()
+        )
+
+        let outcome = try await runner.run(context: context) { _ in }
+
+        guard case let .published(aggregate, report) = outcome else {
+            Issue.record("Expected the baseline root to be atomically published.")
+            return
+        }
+        #expect(aggregate.path == root)
+        #expect(aggregate.coverage == .complete)
+        #expect(report.coverage == .complete)
+        #expect(try await repository.dirtyRegions(for: context.streamID).isEmpty)
+        #expect(
+            try await repository.currentDirectoryAggregates(for: context.streamID)
+                .map(\.path) == [root]
+        )
+        try await repository.close()
+    }
+
     @Test("FSEvents mapping flows through durable dirty work into calibration")
     func endToEndPipeline() async throws {
         let fixture = try PipelineTemporaryDatabase()

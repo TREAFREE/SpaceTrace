@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct ContentView: View {
-    @Bindable var model: DirectoryAuthorizationViewModel
+    @Bindable var authorizationModel: DirectoryAuthorizationViewModel
+    @Bindable var baselineScanModel: BaselineScanViewModel
     @State private var selection: SpaceTraceSection? = .overview
 
     var body: some View {
@@ -19,7 +20,10 @@ struct ContentView: View {
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 760, minHeight: 520)
         .task {
-            await model.monitorUnavailableScope()
+            await authorizationModel.monitorUnavailableScope()
+        }
+        .task {
+            await baselineScanModel.monitor()
         }
     }
 
@@ -27,19 +31,24 @@ struct ContentView: View {
     private var detail: some View {
         switch selection ?? .overview {
         case .overview:
-            OverviewView(status: model.status) {
+            OverviewView(
+                authorizationStatus: authorizationModel.status,
+                scopeID: authorizationModel.authorizedScopeID,
+                baselineScanModel: baselineScanModel
+            ) {
                 selection = .permissions
             }
         case .permissions:
-            DirectoryAuthorizationView(model: model)
+            DirectoryAuthorizationView(model: authorizationModel)
         }
     }
 }
 
 #Preview {
     ContentView(
-        model: DirectoryAuthorizationViewModel(
+        authorizationModel: DirectoryAuthorizationViewModel(
             initialStatus: .unconfigured
-        )
+        ),
+        baselineScanModel: BaselineScanViewModel()
     )
 }

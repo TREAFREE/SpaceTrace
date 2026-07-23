@@ -6,8 +6,8 @@ import Synchronization
 
 /// A dependency-free SQLite prototype for ADR-004. The actor is the sole
 /// owner of the connection and serializes every transaction and query.
-public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGenerationRepository, WatchedScopeBookmarkRepository, AuthorizedBaselineSnapshotRepository, DirectoryHistoryRepository {
-    public static let currentSchemaVersion = 8
+public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGenerationRepository, WatchedScopeBookmarkRepository, AuthorizedBaselineSnapshotRepository, DirectoryHistoryRepository, StartupVolumeCapacityHistoryRepository {
+    public static let currentSchemaVersion = 9
     private static let schemaVersion = Int32(currentSchemaVersion)
 
     /// `Mutex` makes the non-Sendable C handle safe to release from the
@@ -779,17 +779,22 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             FROM directory_history_sample
             WHERE stream_id = ?1 AND bucket_kind = ?2
                 AND (
-                    ?3 = '/'
-                    OR path = ?3
-                    OR substr(path, 1, length(?3) + 1) = ?3 || '/'
+                    path = ?3
+                    OR (path >= ?4 AND path < ?5)
                 )
-                AND bucket_start_ms > ?4 AND bucket_start_ms <= ?5
+                AND bucket_start_ms > ?6 AND bucket_start_ms <= ?7
                 AND logical_delta IS NOT NULL
             GROUP BY path
             HAVING SUM(logical_delta) > 0
             ORDER BY delta DESC, path ASC
-            LIMIT ?6
+            LIMIT ?8
             """
+        let descendantPrefix = root.rawValue == "/" ? "/" : root.rawValue + "/"
+        // BINARY collation places every value beginning with `root + "/"` below
+        // the same prefix whose final slash is advanced to ASCII "0". This
+        // remains correct even when the next path component starts with the
+        // maximum Unicode scalar, unlike appending a scalar sentinel.
+        let descendantUpperBound = root.rawValue == "/" ? "0" : root.rawValue + "0"
         return try withStatement(sql, operation: "read top directory growth") { statement in
             try streamID.rawValue.withCString { streamCString in
                 try bucket.rawValue.withCString { bucketCString in
@@ -797,9 +802,21 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                         try check(sqlite3_bind_text(statement, 1, streamCString, -1, nil), operation: "bind growth stream")
                         try check(sqlite3_bind_text(statement, 2, bucketCString, -1, nil), operation: "bind growth bucket")
                         try check(sqlite3_bind_text(statement, 3, rootCString, -1, nil), operation: "bind growth root")
-                        try check(sqlite3_bind_int64(statement, 4, Self.milliseconds(start)), operation: "bind growth start")
-                        try check(sqlite3_bind_int64(statement, 5, Self.milliseconds(end)), operation: "bind growth end")
-                        try check(sqlite3_bind_int64(statement, 6, Int64(limit)), operation: "bind growth limit")
+                        try bind(
+                            descendantPrefix,
+                            to: statement,
+                            index: 4,
+                            operation: "bind growth descendant lower bound"
+                        )
+                        try bind(
+                            descendantUpperBound,
+                            to: statement,
+                            index: 5,
+                            operation: "bind growth descendant upper bound"
+                        )
+                        try check(sqlite3_bind_int64(statement, 6, Self.milliseconds(start)), operation: "bind growth start")
+                        try check(sqlite3_bind_int64(statement, 7, Self.milliseconds(end)), operation: "bind growth end")
+                        try check(sqlite3_bind_int64(statement, 8, Int64(limit)), operation: "bind growth limit")
                         var results: [DirectoryGrowthSample] = []
                         while true {
                             switch sqlite3_step(statement) {
@@ -935,6 +952,10 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                     ordinal: ordinal
                 )
             }
+            try insertStartupVolumeCapacity(
+                snapshot.startupVolume,
+                source: .baseline
+            )
             try execute(
                 "COMMIT TRANSACTION",
                 operation: "commit authorized baseline snapshot write"
@@ -951,6 +972,115 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             return nil
         }
         return try readAuthorizedBaselineSnapshot(id: baselineID)
+    }
+
+    public func recordStartupVolumeCapacity(
+        _ snapshot: StartupVolumeCapacitySnapshot,
+        source: StartupVolumeCapacitySampleSource
+    ) throws {
+        try insertStartupVolumeCapacity(snapshot, source: source)
+    }
+
+    public func startupVolumeCapacityHistory(
+        from start: Date,
+        through end: Date
+    ) throws -> [StartupVolumeCapacityHistorySample] {
+        guard start <= end else {
+            throw SQLiteEventJournalError.corruptStoredValue(
+                field: "startup_volume_capacity_sample.query_window"
+            )
+        }
+        let sql = """
+            SELECT sequence, observed_at_ms, volume_uuid, total_bytes,
+                available_bytes, important_available_bytes, source
+            FROM startup_volume_capacity_sample
+            WHERE observed_at_ms >= ?1 AND observed_at_ms <= ?2
+            ORDER BY sequence ASC
+            """
+        return try withStatement(
+            sql,
+            operation: "read startup volume capacity history"
+        ) { statement in
+            try check(
+                sqlite3_bind_int64(statement, 1, Self.milliseconds(start)),
+                operation: "bind capacity history start"
+            )
+            try check(
+                sqlite3_bind_int64(statement, 2, Self.milliseconds(end)),
+                operation: "bind capacity history end"
+            )
+            var samples: [StartupVolumeCapacityHistorySample] = []
+            while true {
+                let result = sqlite3_step(statement)
+                switch result {
+                case SQLITE_ROW:
+                    let sequence = try readNonnegativeInt64(
+                        from: statement,
+                        column: 0,
+                        field: "startup_volume_capacity_sample.sequence"
+                    )
+                    guard sequence > 0 else {
+                        throw SQLiteEventJournalError.corruptStoredValue(
+                            field: "startup_volume_capacity_sample.sequence"
+                        )
+                    }
+                    let sourceText = try readText(
+                        from: statement,
+                        column: 6,
+                        field: "startup_volume_capacity_sample.source"
+                    )
+                    guard let source = StartupVolumeCapacitySampleSource(
+                        rawValue: sourceText
+                    ) else {
+                        throw SQLiteEventJournalError.corruptStoredValue(
+                            field: "startup_volume_capacity_sample.source"
+                        )
+                    }
+                    samples.append(
+                        StartupVolumeCapacityHistorySample(
+                            sequence: sequence,
+                            snapshot: StartupVolumeCapacitySnapshot(
+                                observedAt: try readDate(
+                                    from: statement,
+                                    column: 1,
+                                    field: "startup_volume_capacity_sample.observed_at_ms"
+                                ),
+                                volumeUUID: try readOptionalUUID(
+                                    from: statement,
+                                    column: 2,
+                                    field: "startup_volume_capacity_sample.volume_uuid"
+                                ),
+                                totalBytes: try readOptionalByteCount(
+                                    from: statement,
+                                    column: 3,
+                                    field: "startup_volume_capacity_sample.total_bytes"
+                                ),
+                                availableBytes: try readOptionalByteCount(
+                                    from: statement,
+                                    column: 4,
+                                    field: "startup_volume_capacity_sample.available_bytes"
+                                ),
+                                availableForImportantUsageBytes:
+                                    try readOptionalByteCount(
+                                        from: statement,
+                                        column: 5,
+                                        field:
+                                            "startup_volume_capacity_sample.important_available_bytes"
+                                    )
+                            ),
+                            source: source
+                        )
+                    )
+                case SQLITE_DONE:
+                    return samples
+                default:
+                    throw sqliteFailure(
+                        operation: "step startup volume capacity history",
+                        code: result
+                    )
+                }
+            }
+        }
     }
 
     /// Deletes only expired, replaceable history. Current directory truth,
@@ -970,6 +1100,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         try execute("BEGIN IMMEDIATE TRANSACTION", operation: "begin retention")
 
         do {
+            let volumeHistory = try deleteExpiredStartupVolumeHistory(cutoff: cutoff)
             let hourlyHistory = try deleteExpiredHourlyHistory(cutoff: hourlyCutoff)
             let pathHistory = try deleteExpiredPathHistory(cutoff: cutoff)
             let agedDirtyPaths = try ageDirtyPaths(cutoff: dirtyCutoff)
@@ -984,7 +1115,8 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 scanRunCount: scanRuns,
                 hourlyHistoryCount: hourlyHistory,
                 pathHistoryCount: pathHistory,
-                agedDirtyPathCount: agedDirtyPaths
+                agedDirtyPathCount: agedDirtyPaths,
+                volumeHistoryCount: volumeHistory
             )
         } catch {
             try rollback(after: error)
@@ -1075,6 +1207,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 try migrateToVersionSix(database, failurePoint: failurePoint)
                 try migrateToVersionSeven(database, failurePoint: failurePoint)
                 try migrateToVersionEight(database, failurePoint: failurePoint)
+                try migrateToVersionNine(database, failurePoint: failurePoint)
             case 1:
                 try migrateToVersionTwo(database)
                 try migrateToVersionThree(database)
@@ -1083,6 +1216,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 try migrateToVersionSix(database, failurePoint: failurePoint)
                 try migrateToVersionSeven(database, failurePoint: failurePoint)
                 try migrateToVersionEight(database, failurePoint: failurePoint)
+                try migrateToVersionNine(database, failurePoint: failurePoint)
             case 2:
                 try migrateToVersionThree(database)
                 try migrateToVersionFour(database)
@@ -1090,26 +1224,34 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 try migrateToVersionSix(database, failurePoint: failurePoint)
                 try migrateToVersionSeven(database, failurePoint: failurePoint)
                 try migrateToVersionEight(database, failurePoint: failurePoint)
+                try migrateToVersionNine(database, failurePoint: failurePoint)
             case 3:
                 try migrateToVersionFour(database)
                 try migrateToVersionFive(database)
                 try migrateToVersionSix(database, failurePoint: failurePoint)
                 try migrateToVersionSeven(database, failurePoint: failurePoint)
                 try migrateToVersionEight(database, failurePoint: failurePoint)
+                try migrateToVersionNine(database, failurePoint: failurePoint)
             case 4:
                 try migrateToVersionFive(database)
                 try migrateToVersionSix(database, failurePoint: failurePoint)
                 try migrateToVersionSeven(database, failurePoint: failurePoint)
                 try migrateToVersionEight(database, failurePoint: failurePoint)
+                try migrateToVersionNine(database, failurePoint: failurePoint)
             case 5:
                 try migrateToVersionSix(database, failurePoint: failurePoint)
                 try migrateToVersionSeven(database, failurePoint: failurePoint)
                 try migrateToVersionEight(database, failurePoint: failurePoint)
+                try migrateToVersionNine(database, failurePoint: failurePoint)
             case 6:
                 try migrateToVersionSeven(database, failurePoint: failurePoint)
                 try migrateToVersionEight(database, failurePoint: failurePoint)
+                try migrateToVersionNine(database, failurePoint: failurePoint)
             case 7:
                 try migrateToVersionEight(database, failurePoint: failurePoint)
+                try migrateToVersionNine(database, failurePoint: failurePoint)
+            case 8:
+                try migrateToVersionNine(database, failurePoint: failurePoint)
             default:
                 throw SQLiteEventJournalError.unsupportedSchemaVersion(currentVersion)
             }
@@ -1213,6 +1355,94 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                     on: database,
                     "ROLLBACK TRANSACTION",
                     operation: "roll back schema migration v8"
+                )
+            } catch let rollbackError {
+                throw SQLiteEventJournalError.rollbackFailed(
+                    original: String(describing: migrationError),
+                    rollback: String(describing: rollbackError)
+                )
+            }
+            throw migrationError
+        }
+    }
+
+    private static func migrateToVersionNine(
+        _ database: OpaquePointer,
+        failurePoint: SQLiteEventJournalTestFailurePoint?
+    ) throws {
+        try execute(
+            on: database,
+            "BEGIN IMMEDIATE TRANSACTION",
+            operation: "begin schema migration v9"
+        )
+        do {
+            try execute(
+                on: database,
+                """
+                ALTER TABLE authorized_baseline_root ADD COLUMN volume_uuid TEXT;
+
+                UPDATE authorized_baseline_root
+                SET volume_uuid = COALESCE(
+                    (
+                        SELECT watched_scope_bookmark.expected_volume_uuid
+                        FROM watched_scope_bookmark
+                        WHERE watched_scope_bookmark.scope_id =
+                            authorized_baseline_root.scope_id
+                    ),
+                    (
+                        SELECT scope_mount_generation.volume_uuid
+                        FROM scope_mount_generation
+                        WHERE scope_mount_generation.scope_id =
+                            authorized_baseline_root.scope_id
+                    )
+                );
+
+                CREATE TABLE startup_volume_capacity_sample (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    observed_at_ms INTEGER NOT NULL,
+                    volume_uuid TEXT,
+                    total_bytes INTEGER
+                        CHECK(total_bytes IS NULL OR total_bytes >= 0),
+                    available_bytes INTEGER
+                        CHECK(available_bytes IS NULL OR available_bytes >= 0),
+                    important_available_bytes INTEGER
+                        CHECK(important_available_bytes IS NULL
+                            OR important_available_bytes >= 0),
+                    source TEXT NOT NULL CHECK(source IN ('lifecycle', 'baseline'))
+                );
+
+                CREATE INDEX startup_volume_capacity_window
+                    ON startup_volume_capacity_sample(observed_at_ms, sequence);
+
+                INSERT INTO startup_volume_capacity_sample(
+                    observed_at_ms, volume_uuid, total_bytes, available_bytes,
+                    important_available_bytes, source
+                )
+                SELECT volume_observed_at_ms, volume_uuid, volume_total_bytes,
+                    volume_available_bytes, volume_important_available_bytes,
+                    'baseline'
+                FROM authorized_baseline_snapshot
+                ORDER BY committed_at_ms ASC, id ASC;
+
+                INSERT INTO schema_migration(version, applied_at_ms, checksum)
+                VALUES(9, CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+                    'startup-volume-capacity-sequence-root-volume-v9');
+                PRAGMA user_version = 9;
+                """,
+                operation: "apply schema migration version 9"
+            )
+            try failMigrationIfRequested(version: 9, failurePoint: failurePoint)
+            try execute(
+                on: database,
+                "COMMIT TRANSACTION",
+                operation: "commit schema migration v9"
+            )
+        } catch let migrationError {
+            do {
+                try execute(
+                    on: database,
+                    "ROLLBACK TRANSACTION",
+                    operation: "roll back schema migration v9"
                 )
             } catch let rollbackError {
                 throw SQLiteEventJournalError.rollbackFailed(
@@ -1829,6 +2059,62 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         }
     }
 
+    private func insertStartupVolumeCapacity(
+        _ snapshot: StartupVolumeCapacitySnapshot,
+        source: StartupVolumeCapacitySampleSource
+    ) throws {
+        let sql = """
+            INSERT INTO startup_volume_capacity_sample(
+                observed_at_ms, volume_uuid, total_bytes, available_bytes,
+                important_available_bytes, source
+            ) VALUES(?1, ?2, ?3, ?4, ?5, ?6)
+            """
+        try withStatement(sql, operation: "insert startup volume capacity") { statement in
+            try check(
+                sqlite3_bind_int64(
+                    statement,
+                    1,
+                    Self.milliseconds(snapshot.observedAt)
+                ),
+                operation: "bind capacity observation time"
+            )
+            try bind(
+                snapshot.volumeUUID?.uuidString.lowercased(),
+                to: statement,
+                index: 2,
+                operation: "bind capacity volume UUID"
+            )
+            try bind(
+                snapshot.totalBytes?.value,
+                to: statement,
+                index: 3,
+                operation: "bind capacity total"
+            )
+            try bind(
+                snapshot.availableBytes?.value,
+                to: statement,
+                index: 4,
+                operation: "bind capacity available"
+            )
+            try bind(
+                snapshot.availableForImportantUsageBytes?.value,
+                to: statement,
+                index: 5,
+                operation: "bind capacity important-usage available"
+            )
+            try bind(
+                source.rawValue,
+                to: statement,
+                index: 6,
+                operation: "bind capacity source"
+            )
+            try stepExpectingDone(
+                statement,
+                operation: "write startup volume capacity"
+            )
+        }
+    }
+
     private func insertAuthorizedBaselineRoot(
         _ root: AuthorizedBaselineRootSnapshot,
         baselineID: AuthorizedBaselineID,
@@ -1838,8 +2124,10 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             INSERT INTO authorized_baseline_root(
                 baseline_id, ordinal, scope_id, stream_id, root_path,
                 logical_bytes, allocated_bytes, descendant_count,
-                entries_visited, directories_observed, coverage
-            ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'complete')
+                entries_visited, directories_observed, coverage, volume_uuid
+            ) VALUES(
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'complete', ?11
+            )
             """
         try withStatement(sql, operation: "insert authorized baseline root") { statement in
             try bind(baselineID.rawValue, to: statement, index: 1, operation: "bind root baseline ID")
@@ -1852,6 +2140,12 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             try check(sqlite3_bind_int64(statement, 8, root.descendantCount), operation: "bind root descendants")
             try check(sqlite3_bind_int64(statement, 9, root.entriesVisited), operation: "bind root entries")
             try check(sqlite3_bind_int64(statement, 10, root.directoriesObserved), operation: "bind root directories")
+            try bind(
+                root.context.volumeUUID?.uuidString.lowercased(),
+                to: statement,
+                index: 11,
+                operation: "bind root volume UUID"
+            )
             try stepExpectingDone(statement, operation: "write authorized baseline root")
         }
     }
@@ -1968,7 +2262,8 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
     ) throws -> [AuthorizedBaselineRootSnapshot] {
         let sql = """
             SELECT scope_id, stream_id, root_path, logical_bytes, allocated_bytes,
-                descendant_count, entries_visited, directories_observed
+                descendant_count, entries_visited, directories_observed,
+                volume_uuid
             FROM authorized_baseline_root
             WHERE baseline_id = ?1
             ORDER BY ordinal ASC
@@ -1984,7 +2279,12 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                         let context = AuthorizedBaselineScanContext(
                             scopeID: try WatchedScopeID(readText(from: statement, column: 0, field: "authorized_baseline_root.scope_id")),
                             root: try DirtyRegionPath(readText(from: statement, column: 2, field: "authorized_baseline_root.root_path")),
-                            streamID: try EventStreamID(readText(from: statement, column: 1, field: "authorized_baseline_root.stream_id"))
+                            streamID: try EventStreamID(readText(from: statement, column: 1, field: "authorized_baseline_root.stream_id")),
+                            volumeUUID: try readOptionalUUID(
+                                from: statement,
+                                column: 8,
+                                field: "authorized_baseline_root.volume_uuid"
+                            )
                         )
                         roots.append(
                             try AuthorizedBaselineRootSnapshot(
@@ -2632,6 +2932,17 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 }
             }
         }
+    }
+
+    private func deleteExpiredStartupVolumeHistory(cutoff: Int64) throws -> Int {
+        try deleteRows(
+            """
+            DELETE FROM startup_volume_capacity_sample
+            WHERE observed_at_ms < ?1
+            """,
+            cutoff: cutoff,
+            operation: "delete expired startup volume history"
+        )
     }
 
     private func deleteExpiredHourlyHistory(cutoff: Int64) throws -> Int {

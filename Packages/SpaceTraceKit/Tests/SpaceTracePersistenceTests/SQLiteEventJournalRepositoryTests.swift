@@ -109,6 +109,145 @@ struct SQLiteEventJournalRepositoryTests {
         }
     }
 
+    @Test("Capacity history keeps commit order when wall-clock time repeats or rolls back")
+    func capacityHistoryUsesMonotonicSequence() async throws {
+        try await withRepository { repository in
+            let volumeUUID = try #require(
+                UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+            )
+            for (time, available) in [(100.0, 9_000), (100.0, 8_000), (50.0, 7_000)] {
+                try await repository.recordStartupVolumeCapacity(
+                    StartupVolumeCapacitySnapshot(
+                        observedAt: Date(timeIntervalSince1970: time),
+                        volumeUUID: volumeUUID,
+                        totalBytes: try ByteCount(10_000),
+                        availableBytes: try ByteCount(Int64(available)),
+                        availableForImportantUsageBytes: nil
+                    ),
+                    source: .lifecycle
+                )
+            }
+
+            let samples = try await repository.startupVolumeCapacityHistory(
+                from: Date(timeIntervalSince1970: 0),
+                through: Date(timeIntervalSince1970: 200)
+            )
+            #expect(samples.map(\.sequence) == [1, 2, 3])
+            #expect(samples.map(\.snapshot.availableBytes?.value) == [9_000, 8_000, 7_000])
+            #expect(samples.allSatisfy { $0.source == .lifecycle })
+        }
+    }
+
+    @Test("Baseline commit atomically records capacity and root volume identity")
+    func baselineCommitRecordsCapacityAndRootVolume() async throws {
+        try await withRepository { repository in
+            let scopeID = try WatchedScopeID("scope-capacity-baseline")
+            let volumeUUID = try #require(
+                UUID(uuidString: "bbbbbbbb-cccc-dddd-eeee-ffffffffffff")
+            )
+            let timestamp = Date(timeIntervalSince1970: 1_750_100_000)
+            let snapshot = try makeAuthorizedBaselineSnapshot(
+                id: "baseline-capacity-history",
+                timestamp: timestamp,
+                roots: [(scopeID, "/Users/example/Capacity", "stream-capacity", 1_024)],
+                rootVolumeUUID: volumeUUID
+            )
+
+            try await repository.saveAuthorizedBaseline(snapshot)
+
+            let stored = try #require(
+                try await repository.latestAuthorizedBaseline(for: scopeID)
+            )
+            #expect(stored.roots.first?.context.volumeUUID == volumeUUID)
+            let samples = try await repository.startupVolumeCapacityHistory(
+                from: timestamp.addingTimeInterval(-1),
+                through: timestamp.addingTimeInterval(1)
+            )
+            #expect(samples.count == 1)
+            #expect(samples.first?.source == .baseline)
+            #expect(samples.first?.snapshot == snapshot.startupVolume)
+        }
+    }
+
+    @Test("Schema version eight migrates capacity history and root volume identity")
+    func migratesVersionEightCapacityHistory() async throws {
+        let fixture = try TemporaryDatabase()
+        let volumeUUID = try #require(
+            UUID(uuidString: "cccccccc-dddd-eeee-ffff-000000000000")
+        )
+        let scopeID = try WatchedScopeID("scope-v8-capacity")
+        let timestamp = Date(timeIntervalSince1970: 1_750_200_000)
+        try await createVersionEightFixture(
+            at: fixture.databaseURL,
+            snapshot: makeAuthorizedBaselineSnapshot(
+                id: "baseline-v8-capacity",
+                timestamp: timestamp,
+                roots: [(scopeID, "/Users/example/V8", "stream-v8-capacity", 2_048)],
+                rootVolumeUUID: volumeUUID
+            ),
+            streamVolumeUUID: volumeUUID
+        )
+
+        let repository = try SQLiteEventJournalRepository(
+            databaseURL: fixture.databaseURL
+        )
+        #expect(try await repository.latestAuthorizedBaseline(for: scopeID)?
+            .roots.first?.context.volumeUUID == volumeUUID)
+        let samples = try await repository.startupVolumeCapacityHistory(
+            from: timestamp.addingTimeInterval(-1),
+            through: timestamp.addingTimeInterval(1)
+        )
+        #expect(samples.count == 1)
+        #expect(samples.first?.source == .baseline)
+        #expect(try readSQLiteSchemaVersion(from: fixture.databaseURL) == 9)
+
+        try await repository.close()
+        fixture.remove()
+    }
+
+    @Test("A failed schema-v9 capacity migration rolls back every new object")
+    func versionNineMigrationFailureRollsBack() async throws {
+        let fixture = try TemporaryDatabase()
+        let volumeUUID = try #require(
+            UUID(uuidString: "dddddddd-eeee-ffff-0000-111111111111")
+        )
+        let scopeID = try WatchedScopeID("scope-v8-failure")
+        try await createVersionEightFixture(
+            at: fixture.databaseURL,
+            snapshot: makeAuthorizedBaselineSnapshot(
+                id: "baseline-v8-failure",
+                timestamp: Date(timeIntervalSince1970: 1_750_300_000),
+                roots: [(scopeID, "/Users/example/V8Failure", "stream-v8-failure", 1)],
+                rootVolumeUUID: volumeUUID
+            ),
+            streamVolumeUUID: volumeUUID
+        )
+
+        #expect(
+            throws: SQLiteEventJournalError.migrationFailed(
+                fromVersion: 8,
+                targetVersion: 9
+            )
+        ) {
+            _ = try SQLiteEventJournalRepository(
+                databaseURL: fixture.databaseURL,
+                failurePoint: .beforeMigrationCommit(version: 9)
+            )
+        }
+
+        #expect(try readSQLiteSchemaVersion(from: fixture.databaseURL) == 8)
+        #expect(try sqliteTableExists(
+            "startup_volume_capacity_sample",
+            in: fixture.databaseURL
+        ) == false)
+        #expect(try sqliteColumnExists(
+            "volume_uuid",
+            table: "authorized_baseline_root",
+            in: fixture.databaseURL
+        ) == false)
+        fixture.remove()
+    }
+
     @Test("Restart discards interrupted staging but preserves durable dirty work")
     func recoversInterruptedCalibrationRun() async throws {
         let fixture = try TemporaryDatabase()
@@ -967,7 +1106,8 @@ struct SQLiteEventJournalRepositoryTests {
             report == SQLiteRetentionReport(
                 deletedNodeCount: 1,
                 baselineCount: 1,
-                scanRunCount: 2
+                scanRunCount: 2,
+                volumeHistoryCount: 2
             )
         )
         #expect(try await reopened.latestAuthorizedBaseline(for: scopeID) == newestBaseline)
@@ -1175,6 +1315,80 @@ struct SQLiteEventJournalRepositoryTests {
             referenceDate: firstObservation.addingTimeInterval(31 * 86_400)
         )
         #expect(finalReport.pathHistoryCount == 2)
+        try await repository.close()
+        fixture.remove()
+    }
+
+    @Test("Indexable root ranges treat percent and underscore as literal path text")
+    func growthRootRangeDoesNotUseWildcards() async throws {
+        let fixture = try TemporaryDatabase()
+        let firstObservation = Date(timeIntervalSince1970: 1_700_100_000)
+        let clock = Mutex(firstObservation)
+        let repository = try SQLiteEventJournalRepository(
+            databaseURL: fixture.databaseURL,
+            failurePoint: nil,
+            now: { clock.withLock { $0 } }
+        )
+        let streamID = try EventStreamID("history-literal-range")
+        let authorizedRoot = try DirtyRegionPath("/History_%")
+        let authorizedChild = try DirtyRegionPath("/History_%/Child")
+        let maximumScalarChild = try DirtyRegionPath("/History_%/\u{10FFFF}/Leaf")
+        let deceptiveSibling = try DirtyRegionPath("/History_A/Child")
+
+        try await publishCalibration(
+            repository: repository,
+            streamID: streamID,
+            root: authorizedChild,
+            cursor: 1,
+            logicalBytes: 100
+        )
+        try await publishCalibration(
+            repository: repository,
+            streamID: streamID,
+            root: maximumScalarChild,
+            cursor: 2,
+            logicalBytes: 100
+        )
+        try await publishCalibration(
+            repository: repository,
+            streamID: streamID,
+            root: deceptiveSibling,
+            cursor: 3,
+            logicalBytes: 100
+        )
+        clock.withLock { $0 = firstObservation.addingTimeInterval(3_700) }
+        try await publishCalibration(
+            repository: repository,
+            streamID: streamID,
+            root: authorizedChild,
+            cursor: 4,
+            logicalBytes: 200
+        )
+        try await publishCalibration(
+            repository: repository,
+            streamID: streamID,
+            root: maximumScalarChild,
+            cursor: 5,
+            logicalBytes: 200
+        )
+        try await publishCalibration(
+            repository: repository,
+            streamID: streamID,
+            root: deceptiveSibling,
+            cursor: 6,
+            logicalBytes: 10_000
+        )
+
+        let growth = try await repository.topDirectoryGrowth(
+            for: streamID,
+            under: authorizedRoot,
+            bucket: .hourly,
+            from: firstObservation.addingTimeInterval(-3_600),
+            through: firstObservation.addingTimeInterval(7_200)
+        )
+
+        #expect(growth.map(\.path) == [authorizedChild, maximumScalarChild])
+        #expect(growth.allSatisfy { $0.logicalByteDelta == 100 })
         try await repository.close()
         fixture.remove()
     }
@@ -1533,6 +1747,35 @@ private func createVersionSevenFixture(at databaseURL: URL) async throws {
     )
 }
 
+private func createVersionEightFixture(
+    at databaseURL: URL,
+    snapshot: AuthorizedBaselineSnapshot,
+    streamVolumeUUID: UUID
+) async throws {
+    let repository = try SQLiteEventJournalRepository(databaseURL: databaseURL)
+    try await repository.saveAuthorizedBaseline(snapshot)
+    let root = try #require(snapshot.roots.first)
+    try await repository.upsertWatchedScopeBookmark(
+        WatchedScopeBookmark(
+            scopeID: root.context.scopeID,
+            bookmarkData: Data([0x08]),
+            expectedRoot: root.context.root,
+            expectedVolumeUUID: streamVolumeUUID
+        )
+    )
+    try await repository.close()
+    try executeFixtureSQL(
+        at: databaseURL,
+        sql: """
+            DROP INDEX startup_volume_capacity_window;
+            DROP TABLE startup_volume_capacity_sample;
+            ALTER TABLE authorized_baseline_root DROP COLUMN volume_uuid;
+            DELETE FROM schema_migration WHERE version = 9;
+            PRAGMA user_version = 8;
+            """
+    )
+}
+
 private let minimalCalibrationTablesSQL = """
     CREATE TABLE event_checkpoint (
         stream_id TEXT PRIMARY KEY NOT NULL,
@@ -1586,14 +1829,16 @@ private let minimalCalibrationTablesSQL = """
 private func makeAuthorizedBaselineSnapshot(
     id: String,
     timestamp: Date,
-    roots: [(WatchedScopeID, String, String, Int64)]
+    roots: [(WatchedScopeID, String, String, Int64)],
+    rootVolumeUUID: UUID? = nil
 ) throws -> AuthorizedBaselineSnapshot {
     let rootSnapshots = try roots.map { scopeID, path, streamID, logicalBytes in
         try AuthorizedBaselineRootSnapshot(
             context: AuthorizedBaselineScanContext(
                 scopeID: scopeID,
                 root: DirtyRegionPath(path),
-                streamID: EventStreamID(streamID)
+                streamID: EventStreamID(streamID),
+                volumeUUID: rootVolumeUUID
             ),
             logicalBytes: ByteCount(logicalBytes),
             allocatedBytes: ByteCount(logicalBytes * 2),
@@ -1816,15 +2061,16 @@ private enum MigrationFixtureError: Error {
 private func makeWatchedScopeBookmark(
     scopeID: String,
     root: String,
-    byte: UInt8
+    byte: UInt8,
+    volumeUUID: UUID = UUID(
+        uuidString: "11111111-2222-3333-4444-555555555555"
+    )!
 ) throws -> WatchedScopeBookmark {
     try WatchedScopeBookmark(
         scopeID: WatchedScopeID(scopeID),
         bookmarkData: Data([byte]),
         expectedRoot: DirtyRegionPath(root),
-        expectedVolumeUUID: UUID(
-            uuidString: "11111111-2222-3333-4444-555555555555"
-        )!
+        expectedVolumeUUID: volumeUUID
     )
 }
 

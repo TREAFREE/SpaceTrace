@@ -12,17 +12,17 @@ enum DirectoryHistoryViewState: Equatable {
 @MainActor
 @Observable
 final class DirectoryHistoryViewModel {
-    private var loader: (any DirectoryHistoryOverviewLoading)?
+    private var loader: (any StorageHistoryOverviewLoading)?
     private var contexts: [AuthorizedBaselineScanContext] = []
     private var loadGeneration = 0
     private let now: () -> Date
 
     private(set) var selectedWindow: DirectoryHistoryWindow
     private(set) var state: DirectoryHistoryViewState
-    private(set) var overview: DirectoryHistoryOverview?
+    private(set) var overview: StorageHistoryOverview?
 
     init(
-        loader: (any DirectoryHistoryOverviewLoading)? = nil,
+        loader: (any StorageHistoryOverviewLoading)? = nil,
         initialWindow: DirectoryHistoryWindow = .last24Hours,
         now: @escaping () -> Date = { Date() }
     ) {
@@ -32,33 +32,22 @@ final class DirectoryHistoryViewModel {
         self.now = now
     }
 
-    func connect(_ loader: any DirectoryHistoryOverviewLoading) {
+    func connect(_ loader: any StorageHistoryOverviewLoading) {
         self.loader = loader
     }
 
     func load(contexts: [AuthorizedBaselineScanContext]) async {
         self.contexts = contexts.sorted { $0.scopeID.rawValue < $1.scopeID.rawValue }
-        guard self.contexts.isEmpty == false else {
-            loadGeneration += 1
-            overview = nil
-            state = .waitingForBaseline
-            return
-        }
         await performLoad()
     }
 
     func selectWindow(_ window: DirectoryHistoryWindow) async {
         guard selectedWindow != window else { return }
         selectedWindow = window
-        guard contexts.isEmpty == false else { return }
         await performLoad()
     }
 
     func refresh() async {
-        guard contexts.isEmpty == false else {
-            state = .waitingForBaseline
-            return
-        }
         await performLoad()
     }
 
@@ -92,7 +81,7 @@ final class DirectoryHistoryViewModel {
         } catch is CancellationError {
             guard generation == loadGeneration else { return }
             overview = nil
-            state = contexts.isEmpty ? .waitingForBaseline : .failed
+            state = .failed
         } catch {
             guard generation == loadGeneration else { return }
             overview = nil

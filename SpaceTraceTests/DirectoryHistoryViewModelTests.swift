@@ -39,24 +39,32 @@ struct DirectoryHistoryViewModelTests {
         #expect(await loader.requestedWindows == [.last24Hours, .last7Days])
     }
 
-    @Test("Removing every context clears path-bearing history from the presentation model")
-    func clearsWhenNoBaselineContextRemains() async throws {
+    @Test("Removing every context still loads volume history without path evidence")
+    func loadsVolumeHistoryWithoutBaselineContexts() async throws {
         let context = try historyContext()
-        let overview = makeOverview(
+        let overview = makeStorageOverview(
             window: .last24Hours,
             end: Date(timeIntervalSince1970: 1_800_000_000),
             context: context
         )
+        let volumeOnly = makeStorageOverview(
+            window: .last24Hours,
+            end: Date(timeIntervalSince1970: 1_800_000_000),
+            context: nil
+        )
         let model = DirectoryHistoryViewModel(
-            loader: HistoryOverviewLoaderFake(responses: [.success(overview)])
+            loader: HistoryOverviewLoaderFake(
+                responses: [.success(overview), .success(volumeOnly)]
+            )
         )
         await model.load(contexts: [context])
         #expect(model.overview != nil)
 
         await model.load(contexts: [])
 
-        #expect(model.state == .waitingForBaseline)
-        #expect(model.overview == nil)
+        #expect(model.state == .loaded)
+        #expect(model.overview == volumeOnly)
+        #expect(model.overview?.directories.series.isEmpty == true)
     }
 
     @Test("A query failure exposes a retryable generic state without persistence details")
@@ -131,11 +139,56 @@ struct DirectoryHistoryViewModelTests {
         #expect(points.map(\.logicalBytes) == [1_000, 2_000, 3_000])
         #expect(points.map(\.coverage) == [.complete, .partial, .complete])
     }
+
+    @Test("A gap or volume identity replacement breaks the capacity line")
+    func capacityChartBreaksAtGapsAndIdentityChanges() throws {
+        let firstDate = Date(timeIntervalSince1970: 1_800_000_000)
+        let firstUUID = try #require(
+            UUID(uuidString: "11111111-1111-1111-1111-111111111111")
+        )
+        let secondUUID = try #require(
+            UUID(uuidString: "22222222-2222-2222-2222-222222222222")
+        )
+        let series = StartupVolumeHistorySeries(
+            points: [
+                volumePoint(at: firstDate, uuid: firstUUID, bytes: 3_000),
+                volumePoint(
+                    at: firstDate.addingTimeInterval(3_600),
+                    uuid: firstUUID,
+                    bytes: 2_900
+                ),
+                volumePoint(
+                    at: firstDate.addingTimeInterval(7_200),
+                    uuid: nil,
+                    bytes: nil
+                ),
+                volumePoint(
+                    at: firstDate.addingTimeInterval(10_800),
+                    uuid: firstUUID,
+                    bytes: 2_800
+                ),
+                volumePoint(
+                    at: firstDate.addingTimeInterval(14_400),
+                    uuid: secondUUID,
+                    bytes: 2_700
+                ),
+            ],
+            coverage: .partial,
+            identityDiscontinuity: true
+        )
+
+        let points = StartupVolumeChartProjection.makePoints(from: series)
+
+        #expect(points.count == 4)
+        #expect(points[0].segmentID == points[1].segmentID)
+        #expect(points[1].segmentID != points[2].segmentID)
+        #expect(points[2].segmentID != points[3].segmentID)
+    }
 }
 
-private actor HistoryOverviewLoaderFake: DirectoryHistoryOverviewLoading {
+private actor HistoryOverviewLoaderFake: StorageHistoryOverviewLoading {
     enum Response: Sendable {
-        case success(DirectoryHistoryOverview)
+        case success(StorageHistoryOverview)
         case failure
         case cancelled
     }
@@ -153,7 +206,7 @@ private actor HistoryOverviewLoaderFake: DirectoryHistoryOverviewLoading {
         window: DirectoryHistoryWindow,
         through end: Date,
         growthLimit: Int
-    ) throws -> DirectoryHistoryOverview {
+    ) throws -> StorageHistoryOverview {
         _ = contexts
         _ = growthLimit
         requestedWindows.append(window)
@@ -185,27 +238,48 @@ private func historyContext() throws -> AuthorizedBaselineScanContext {
     )
 }
 
-private func makeOverview(
+private func makeStorageOverview(
     window: DirectoryHistoryWindow,
     end: Date,
-    context: AuthorizedBaselineScanContext
-) -> DirectoryHistoryOverview {
-    DirectoryHistoryOverview(
+    context: AuthorizedBaselineScanContext?
+) -> StorageHistoryOverview {
+    let directories = DirectoryHistoryOverview(
         window: window,
         start: end.addingTimeInterval(-window.duration),
         end: end,
         bucket: window.bucket,
-        series: [
+        series: context.map {
             DirectoryHistorySeries(
-                scopeID: context.scopeID,
-                root: context.root,
+                scopeID: $0.scopeID,
+                root: $0.root,
                 points: [],
                 coverage: .unavailable
-            ),
-        ],
+            )
+        }.map { [$0] } ?? [],
         growthSources: [],
         coverage: .unavailable
     )
+    return StorageHistoryOverview(
+        window: window,
+        start: directories.start,
+        end: end,
+        bucket: window.bucket,
+        volume: StartupVolumeHistorySeries(
+            points: [],
+            coverage: .unavailable,
+            identityDiscontinuity: false
+        ),
+        directories: directories,
+        reconciliation: nil
+    )
+}
+
+private func makeOverview(
+    window: DirectoryHistoryWindow,
+    end: Date,
+    context: AuthorizedBaselineScanContext
+) -> StorageHistoryOverview {
+    makeStorageOverview(window: window, end: end, context: context)
 }
 
 private func historyPoint(
@@ -218,5 +292,22 @@ private func historyPoint(
         logicalBytes: logicalBytes,
         allocatedBytes: logicalBytes,
         coverage: coverage
+    )
+}
+
+private func volumePoint(
+    at date: Date,
+    uuid: UUID?,
+    bytes: Int64?
+) -> StartupVolumeHistoryPoint {
+    StartupVolumeHistoryPoint(
+        bucketStart: date,
+        sampledAt: date,
+        sequence: bytes,
+        volumeUUID: uuid,
+        totalBytes: try? ByteCount(10_000),
+        availableBytes: bytes.flatMap { try? ByteCount($0) },
+        availableForImportantUsageBytes: nil,
+        coverage: bytes == nil ? .unavailable : .complete
     )
 }

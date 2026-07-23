@@ -158,6 +158,10 @@ private struct RecoveryDatabaseFixture {
         try execute(
             at: databaseURL,
             sql: """
+                DROP INDEX startup_volume_capacity_window;
+                DROP TABLE startup_volume_capacity_sample;
+                ALTER TABLE authorized_baseline_root DROP COLUMN volume_uuid;
+                DELETE FROM schema_migration WHERE version = 9;
                 DROP TABLE directory_history_sample;
                 DROP TABLE path_free_calibration_requirement;
                 ALTER TABLE dirty_region DROP COLUMN updated_at_ms;

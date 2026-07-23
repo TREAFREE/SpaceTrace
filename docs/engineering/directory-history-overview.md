@@ -76,9 +76,9 @@ formerly selected root merely because it shared a volume stream.
 
 The MainActor view model exposes only four durable presentation phases:
 
-1. waiting for a published baseline;
+1. waiting for operational composition/first query;
 2. loading a local query;
-3. loaded, including an honest no-history/no-growth result;
+3. loaded, including volume-only and honest no-directory-history/no-growth results;
 4. failed with a generic retry action and no database/path diagnostics.
 
 Window changes are generation-checked so a slower older query cannot replace a
@@ -109,8 +109,8 @@ partial observations without relying on color alone.
 
 ## Remaining work
 
-1. Persist and present startup-volume available-space history alongside
-   visible directory summaries.
+1. Keep the completed startup-volume comparison aligned with this directory
+   query contract; see [Startup Volume History and Storage Reconciliation](startup-volume-history-and-reconciliation.md).
 2. Add deterministic classification/evidence so growth rows can move beyond
    the current explicit “Unclassified” state.
 3. Model determinable moves/deletions and a non-overlapping finding policy;

@@ -7,9 +7,9 @@
 | Module | Responsibility | Platform coupling |
 | --- | --- | --- |
 | `SpaceTraceDomain` | Validated storage quantities, observation identities, coverage, and deltas | None |
-| `SpaceTraceApplication` | Dirty-region planning, cancellable and schedulable authorized-baseline state, coverage-aware directory-history query models, calibration orchestration, mount/event lifecycle state machines, opaque watched-scope bookmark contracts, ports, and crash-consistency contracts | Foundation |
+| `SpaceTraceApplication` | Dirty-region planning, cancellable and schedulable authorized-baseline state, coverage-aware directory/volume history and reconciliation use cases, calibration orchestration, mount/event lifecycle state machines, opaque watched-scope bookmark contracts, ports, and crash-consistency contracts | Foundation |
 | `SpaceTraceFileSystem` | Per-device FSEvents identity/target resolution, callback bridge, conservative flag interpretation, semantic mapping, and a bounded metadata-only calibration scanner | CoreServices, Foundation, Darwin |
-| `SpaceTracePersistence` | Actor-isolated raw SQLite prototype for cursor, dirty work, scope mount generations, security-scoped bookmark records, staged/current directory aggregates, bounded hourly/daily history, root-scoped growth queries, revision-safe atomic publication, typed storage failures, and retention | SQLite3 |
+| `SpaceTracePersistence` | Actor-isolated raw SQLite prototype for cursor, dirty work, scope mount generations, security-scoped bookmark records, staged/current directory aggregates, bounded directory and startup-volume history, root-scoped growth queries, revision-safe atomic publication, typed storage failures, and retention | SQLite3 |
 | `SpaceTracePlatform` | Read-only Disk Arbitration callback bridge, exact security-scoped bookmark acquisition/restoration and balanced access leases, plus public power/thermal/sleep signal adaptation | AppKit, Foundation, DiskArbitration, IOKit |
 | `SpaceTraceMonitoring` | Non-UI composition of volume signals, exact mount-scope resolution, generation activation/closure, FSEvents supervision, and process-lifetime task ownership | Application, filesystem, and platform adapters |
 
@@ -26,6 +26,11 @@ The bookmark/catalog/application ownership contract is documented in [Security-S
 The authorized directory baseline, typed progress, cancellation, atomic-publication, and overview truth contract are documented in [Authorized Directory Baseline and Overview](../../docs/engineering/authorized-baseline-overview.md) and its [Chinese translation](../../docs/engineering/authorized-baseline-overview.zh-CN.md).
 
 The scope-bounded history read port, explicit-gap timeline, growth ranking, and Overview presentation contract are documented in [Directory History Application Layer and Overview](../../docs/engineering/directory-history-overview.md) and its [Chinese translation](../../docs/engineering/directory-history-overview.zh-CN.md).
+
+The monotonic startup-volume sampling, schema-v9 migration, conservative
+allocated-size reconciliation, and Overview truth contract are documented in
+[Startup Volume History and Storage Reconciliation](../../docs/engineering/startup-volume-history-and-reconciliation.md)
+and its [Chinese translation](../../docs/engineering/startup-volume-history-and-reconciliation.zh-CN.md).
 
 The power, thermal, and sleep-aware baseline policy is documented in [Scan Scheduling Lifecycle](../../docs/engineering/scan-scheduling-lifecycle.md) and its [Chinese translation](../../docs/engineering/scan-scheduling-lifecycle.zh-CN.md).
 

@@ -476,7 +476,9 @@ The UI must let users switch metric or clearly label it; metrics are never added
 | `NodeAggregate` | Current directory or retained file metadata and size metrics |
 | `CoverageReport` | Complete, partial, stale, or unknown plus typed gaps and counts |
 | `Observation` | Metric values for a node/scope at a time bucket under a rule/schema version |
+| `StartupVolumeCapacitySample` | Path-free startup-volume capacity, volume identity, UTC wall time, and monotonic commit sequence |
 | `StorageChange` | Difference between compatible observations, never process attribution |
+| `StorageReconciliation` | Startup-volume loss, non-overlapping authorized-root allocated growth, credited explanation, and optional unattributed remainder |
 | `Attribution` | Category, confidence, explanation code, rule version, and evidence references |
 | `Finding` | User-facing, immutable explanation derived from one or more changes |
 
@@ -487,6 +489,11 @@ The UI must let users switch metric or clearly label it; metrics are never added
 - Observations are comparable only when scope identity, metric, path semantics, classifier schema, and required coverage match.
 - Missing nodes become deleted only under complete parent coverage for the same mount generation.
 - `allocatedDelta`, `logicalDelta`, and `volumeAvailableDelta` are different value types and cannot be added accidentally.
+- Startup-volume samples are ordered by a database-generated monotonic
+  sequence; wall-clock rollback cannot reverse commit order.
+- Startup-volume loss is reconciled only against allocated-size net growth
+  from topmost authorized roots on the same known volume. Missing directory
+  evidence remains unknown rather than becoming zero.
 - A finding references source observation IDs and classifier version; recomputation cannot silently rewrite historical wording.
 - Confidence can decrease as new gaps are discovered; it cannot increase without new evidence.
 
@@ -664,6 +671,9 @@ Default rolling policy:
 - `node_current`: the minimum active baseline needed to compare currently watched directories, plus explicitly required selected files. It is current state rather than an historical event log and is deleted when the scope/history is removed.
 - Hourly path-level samples: 7 days.
 - Daily path-level samples, path-bearing findings, and deleted-node history: through day 30, then transactionally deleted.
+- Path-free startup-volume capacity samples: through day 30. Missing API values
+  remain nullable attempted observations, and the monotonic sequence is not
+  reused.
 - Detailed scan-run paths/errors: at most 30 days. After expiry, only the minimum **path-free** gap/health marker needed to explain discontinuity may remain.
 - Staging for completed/abandoned runs: removed within 24 hours.
 - Dirty regions: removed after safe finalization. If unresolved path-bearing work reaches the 30-day boundary, replace it with a path-free scope-level `requiresCalibration` marker and delete the path; the next observation performs a safe calibration.

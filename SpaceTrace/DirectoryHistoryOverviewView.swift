@@ -61,9 +61,9 @@ struct DirectoryHistoryOverviewView: View {
         switch model.state {
         case .waitingForBaseline:
             ContentUnavailableView {
-                Label("完成基线后查看历史", systemImage: "clock.badge.questionmark")
+                Label("正在等待首次空间观测", systemImage: "clock.badge.questionmark")
             } description: {
-                Text("历史只使用已经原子发布的目录摘要；没有可比较基线时不会生成变化值。")
+                Text("SpaceTrace 启动后会记录数据卷可用空间；目录变化仍只使用原子发布的扫描摘要。")
             }
             .accessibilityIdentifier("overview-history-waiting")
         case .loading:
@@ -102,20 +102,28 @@ struct DirectoryHistoryOverviewView: View {
     }
 
     @ViewBuilder
-    private func loadedContent(_ overview: DirectoryHistoryOverview) -> some View {
+    private func loadedContent(_ overview: StorageHistoryOverview) -> some View {
         VStack(alignment: .leading, spacing: 20) {
+            volumeSection(overview)
+
+            Divider()
+
+            reconciliationSection(overview)
+
+            Divider()
+
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("可见目录逻辑大小")
                     .font(.headline)
-                coverageBadge(overview.coverage)
+                coverageBadge(overview.directories.coverage)
                 Spacer(minLength: 0)
                 Text(windowInterval(overview))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            if overview.hasMeasurements {
-                DirectoryHistoryChart(overview: overview)
+            if overview.directories.hasMeasurements {
+                DirectoryHistoryChart(overview: overview.directories)
             } else {
                 ContentUnavailableView {
                     Label("还没有历史观测", systemImage: "chart.xyaxis.line")
@@ -133,9 +141,135 @@ struct DirectoryHistoryOverviewView: View {
 
             Divider()
 
-            growthSection(overview)
+            growthSection(overview.directories)
         }
         .accessibilityIdentifier("overview-history-loaded")
+    }
+
+    @ViewBuilder
+    private func volumeSection(_ overview: StorageHistoryOverview) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text("启动数据卷可用空间")
+                    .font(.headline)
+                coverageBadge(overview.volume.coverage)
+                Spacer(minLength: 0)
+                Text(windowInterval(overview))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if overview.volume.hasMeasurements {
+                StartupVolumeHistoryChart(
+                    series: overview.volume,
+                    bucket: overview.bucket
+                )
+            } else {
+                ContentUnavailableView {
+                    Label("还没有卷空间历史", systemImage: "internaldrive")
+                } description: {
+                    Text("应用保持运行后会按小时记录一次；缺失值不会被补成零。")
+                }
+                .frame(minHeight: 160)
+                .accessibilityIdentifier("overview-volume-history-empty")
+            }
+
+            if overview.volume.identityDiscontinuity {
+                Label(
+                    "检测到启动卷身份变化，SpaceTrace 已断开跨卷比较。",
+                    systemImage: "externaldrive.badge.exclamationmark"
+                )
+                .font(.caption)
+                .foregroundStyle(.orange)
+            }
+
+            if overview.volume.clockDiscontinuity {
+                Label(
+                    "检测到系统时间回拨；提交顺序仍由单调序号保存，但本窗口不进行端点归因。",
+                    systemImage: "clock.badge.exclamationmark"
+                )
+                .font(.caption)
+                .foregroundStyle(.orange)
+            }
+
+            Text("这里展示文件系统 API 返回的当前可用空间。它与“重要用途可用空间”、APFS 唯一物理占用和可回收空间不是同一个指标。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("启动数据卷可用空间历史")
+        .accessibilityIdentifier("overview-volume-history")
+    }
+
+    @ViewBuilder
+    private func reconciliationSection(_ overview: StorageHistoryOverview) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("空间变化解释")
+                    .font(.headline)
+                if let reconciliation = overview.reconciliation {
+                    coverageBadge(reconciliation.coverage)
+                }
+            }
+
+            if let reconciliation = overview.reconciliation {
+                HStack(alignment: .center, spacing: 10) {
+                    ReconciliationMetric(
+                        title: "磁盘少了多少",
+                        value: byteText(reconciliation.diskSpaceLoss),
+                        detail: "启动卷可用空间减少",
+                        symbol: "internaldrive"
+                    )
+                    Image(systemName: "arrow.right")
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    ReconciliationMetric(
+                        title: "授权目录能解释",
+                        value: optionalByteText(
+                            reconciliation.explainedDiskSpaceLoss
+                        ),
+                        detail: reconciliation.observedDirectoryAllocatedGrowth == nil
+                            ? "缺少可比较目录证据"
+                            : "\(reconciliation.comparableScopeCount) 个互不重叠目录",
+                        symbol: "folder.badge.gearshape"
+                    )
+                    Image(systemName: "arrow.right")
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    ReconciliationMetric(
+                        title: "仍无法归因",
+                        value: optionalByteText(
+                            reconciliation.unattributedDiskSpaceLoss
+                        ),
+                        detail: reconciliation.unattributedDiskSpaceLoss == nil
+                            ? "保持未知，不按零处理"
+                            : "卷变化减去可证明部分",
+                        symbol: "questionmark.circle"
+                    )
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("overview-storage-reconciliation")
+
+                if reconciliation.excludedNestedScopeCount > 0
+                    || reconciliation.excludedExternalScopeCount > 0
+                    || reconciliation.unknownVolumeScopeCount > 0 {
+                    Text(exclusionSummary(reconciliation))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text("至少需要同一启动卷上的两个可用空间观测，才能计算这个时间窗口的变化。")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("overview-reconciliation-empty")
+            }
+
+            Text("“能解释”只使用启动卷上互不重叠授权根的 allocated-size 净增长，并且最多抵扣磁盘减少量。无法归因部分可能来自未授权目录、APFS 快照或克隆、系统与应用缓存、可清理空间，以及扫描缺口；它不是异常文件的直接证据。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     @ViewBuilder
@@ -199,8 +333,155 @@ struct DirectoryHistoryOverviewView: View {
             .accessibilityLabel("时间窗口覆盖：\(coverage.accessibilityName)")
     }
 
-    private func windowInterval(_ overview: DirectoryHistoryOverview) -> String {
+    private func windowInterval(_ overview: StorageHistoryOverview) -> String {
         "\(overview.start.formatted(date: .abbreviated, time: .shortened)) – \(overview.end.formatted(date: .abbreviated, time: .shortened))"
+    }
+
+    private func byteText(_ value: ByteCount) -> String {
+        ByteCountFormatter.string(fromByteCount: value.value, countStyle: .binary)
+    }
+
+    private func optionalByteText(_ value: ByteCount?) -> String {
+        value.map(byteText) ?? "证据不足"
+    }
+
+    private func exclusionSummary(_ summary: StorageReconciliationSummary) -> String {
+        var parts: [String] = []
+        if summary.excludedNestedScopeCount > 0 {
+            parts.append("排除 \(summary.excludedNestedScopeCount) 个嵌套根，避免重复计算")
+        }
+        if summary.excludedExternalScopeCount > 0 {
+            parts.append("排除 \(summary.excludedExternalScopeCount) 个外置卷目录")
+        }
+        if summary.unknownVolumeScopeCount > 0 {
+            parts.append("\(summary.unknownVolumeScopeCount) 个目录的卷身份未知")
+        }
+        return parts.joined(separator: "；") + "。"
+    }
+}
+
+private struct ReconciliationMetric: View {
+    let title: String
+    let value: String
+    let detail: String
+    let symbol: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: symbol)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title3.monospacedDigit().weight(.semibold))
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+        .background(.background.secondary)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(.separator, lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title)：\(value)")
+        .accessibilityValue(detail)
+    }
+}
+
+private struct StartupVolumeHistoryChart: View {
+    let series: StartupVolumeHistorySeries
+    let bucket: DirectoryHistoryBucket
+
+    private var data: [StartupVolumeChartPoint] {
+        StartupVolumeChartProjection.makePoints(from: series)
+    }
+
+    var body: some View {
+        Chart(data) { point in
+            LineMark(
+                x: .value("时间", point.observedAt),
+                y: .value("可用空间", Double(point.availableBytes)),
+                series: .value("连续区间", point.segmentID)
+            )
+            .foregroundStyle(.blue)
+            .interpolationMethod(.linear)
+
+            PointMark(
+                x: .value("时间", point.observedAt),
+                y: .value("可用空间", Double(point.availableBytes))
+            )
+            .foregroundStyle(.blue)
+            .symbolSize(point.coverage == .complete ? 20 : 56)
+            .accessibilityLabel("启动数据卷可用空间")
+            .accessibilityValue(
+                "\(ByteCountFormatter.string(fromByteCount: point.availableBytes, countStyle: .binary))，\(point.observedAt.formatted(date: .abbreviated, time: .shortened))，\(point.coverage.accessibilityName)"
+            )
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading) { value in
+                AxisGridLine()
+                AxisTick()
+                AxisValueLabel {
+                    if let bytes = value.as(Double.self) {
+                        Text(
+                            ByteCountFormatter.string(
+                                fromByteCount: Int64(max(0, bytes)),
+                                countStyle: .binary
+                            )
+                        )
+                    }
+                }
+            }
+        }
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: bucket == .hourly ? 6 : 7))
+        }
+        .frame(minHeight: 220)
+        .accessibilityLabel("启动数据卷可用空间历史图")
+        .accessibilityHint("空白或卷身份变化会断开曲线，较大的点表示部分覆盖。")
+    }
+}
+
+struct StartupVolumeChartPoint: Identifiable, Equatable {
+    let segmentID: String
+    let observedAt: Date
+    let availableBytes: Int64
+    let coverage: DirectoryHistoryEvidenceCoverage
+
+    var id: String {
+        "\(segmentID)\u{0}\(observedAt.timeIntervalSince1970)"
+    }
+}
+
+enum StartupVolumeChartProjection {
+    static func makePoints(
+        from series: StartupVolumeHistorySeries
+    ) -> [StartupVolumeChartPoint] {
+        var segment = 0
+        var previousUUID: UUID?
+        var previousWasAvailable = false
+        return series.points.compactMap { point in
+            guard let bytes = point.availableBytes else {
+                previousWasAvailable = false
+                previousUUID = nil
+                return nil
+            }
+            if previousWasAvailable == false || previousUUID != point.volumeUUID {
+                segment += 1
+            }
+            previousWasAvailable = true
+            previousUUID = point.volumeUUID
+            return StartupVolumeChartPoint(
+                segmentID: "volume-\(segment)",
+                observedAt: point.bucketStart,
+                availableBytes: bytes.value,
+                coverage: point.coverage
+            )
+        }
     }
 }
 

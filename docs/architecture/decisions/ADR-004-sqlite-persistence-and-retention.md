@@ -29,6 +29,18 @@ The application has no backend, multi-user database, or cross-device synchroniza
 11. Protect the database directory/file with user-only modes, exclude it from SpaceTrace scans, and never include it in diagnostic export.
 12. Any option beyond 30 days requires a future RFC/PRD update. It must be user-visible, clearable, explicitly opt-in, default-off, and disclose estimated privacy/storage cost.
 13. Schema v5 stores user-selected watched-scope bookmarks as bounded opaque BLOBs together with the exact authorized root and volume UUID. Platform resolution, not persistence, derives the current mount path and activates access.
+14. Schema v9 stores startup-data-volume capacity observations with a
+    database-generated monotonic sequence, UTC wall time, optional volume
+    identity/metrics, and typed source. Baseline capacity is committed in the
+    same transaction as its roots; lifecycle capacity is sampled immediately
+    after launch and hourly while the app runs. Capacity history is path-free
+    and retained for at most 30 days.
+15. Storage reconciliation may compare startup-volume loss only with
+    allocated-size net growth from non-overlapping authorized roots whose
+    persisted volume UUID matches the startup volume. External, unknown, and
+    nested roots cannot be silently credited. Missing comparable directory
+    evidence remains unknown rather than becoming zero or a fabricated
+    unattributed value.
 
 ## Options considered
 
@@ -106,6 +118,13 @@ coverage-aware Overview. The production root filter was included in a fresh
 500,000/1,000,000-row benchmark run; the current-host size, memory, write, and
 query gates still pass. Application and UI evidence is recorded in
 [Directory History Application Layer and Overview](../../engineering/directory-history-overview.md).
+
+The 2026-07-24 schema-v9 and Overview slice added monotonic startup-volume
+capacity history, atomic baseline/capacity publication, v8 golden migration,
+root-volume identity persistence, hourly lifecycle sampling, and conservative
+non-overlapping allocated-size reconciliation. Evidence and explicit non-claims
+are recorded in
+[Startup Volume History and Storage Reconciliation](../../engineering/startup-volume-history-and-reconciliation.md).
 
 ADR acceptance still requires minimum-reference macOS 15.6 performance and
 distribution-signing evidence.

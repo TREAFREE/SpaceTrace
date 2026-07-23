@@ -8,7 +8,8 @@ import SpaceTracePlatform
 struct SpaceTraceCompositionRoot {
     let authorizationCoordinator: WatchedScopeAuthorizationCoordinator
     let baselineScanCoordinator: AuthorizedBaselineScanCoordinator
-    let directoryHistoryQuery: DirectoryHistoryOverviewQuery
+    let storageHistoryQuery: StorageHistoryOverviewQuery
+    let volumeCapacityRecorder: StartupVolumeCapacityRecorder
     let scanSchedulingMonitor: NativeScanSchedulingMonitor
 
     enum Startup {
@@ -65,6 +66,9 @@ struct SpaceTraceCompositionRoot {
         let schedulingGate = AuthorizedBaselineScanSchedulingGate(
             initialSnapshot: schedulingSnapshotProvider.snapshot(systemActivity: .awake)
         )
+        let volumeCapacityProvider = FoundationStartupVolumeCapacityProvider(
+            dataDirectoryURL: applicationSupportRoot
+        )
         let baselineScanCoordinator = AuthorizedBaselineScanCoordinator(
             contextProvider: baselineContextProvider,
             calibrationRunner: EventJournalAuthorizedBaselineCalibrationRunner(
@@ -72,9 +76,7 @@ struct SpaceTraceCompositionRoot {
                 scanner: scanner
             ),
             snapshotRepository: repository,
-            volumeCapacityProvider: FoundationStartupVolumeCapacityProvider(
-                dataDirectoryURL: applicationSupportRoot
-            ),
+            volumeCapacityProvider: volumeCapacityProvider,
             scheduler: schedulingGate,
             buildMetadata: try AuthorizedBaselineBuildMetadata(
                 appVersion: appVersion(),
@@ -95,7 +97,12 @@ struct SpaceTraceCompositionRoot {
                 }
             ),
             baselineScanCoordinator: baselineScanCoordinator,
-            directoryHistoryQuery: DirectoryHistoryOverviewQuery(
+            storageHistoryQuery: StorageHistoryOverviewQuery(
+                directoryRepository: repository,
+                volumeRepository: repository
+            ),
+            volumeCapacityRecorder: StartupVolumeCapacityRecorder(
+                provider: volumeCapacityProvider,
                 repository: repository
             ),
             scanSchedulingMonitor: schedulingMonitor

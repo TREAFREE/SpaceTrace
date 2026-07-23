@@ -5,15 +5,23 @@ public struct AuthorizedBaselineScanContext: Sendable, Equatable {
     public let scopeID: WatchedScopeID
     public let root: DirtyRegionPath
     public let streamID: EventStreamID
+    /// The persistent identity of the volume containing `root`.
+    ///
+    /// `nil` means the monitoring runtime could not establish the identity.
+    /// Callers must keep that state unknown rather than inferring a volume
+    /// from the path text.
+    public let volumeUUID: UUID?
 
     public init(
         scopeID: WatchedScopeID,
         root: DirtyRegionPath,
-        streamID: EventStreamID
+        streamID: EventStreamID,
+        volumeUUID: UUID? = nil
     ) {
         self.scopeID = scopeID
         self.root = root
         self.streamID = streamID
+        self.volumeUUID = volumeUUID
     }
 }
 

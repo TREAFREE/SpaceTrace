@@ -26,7 +26,8 @@ public actor NativeAuthorizedBaselineScanContextProvider: AuthorizedBaselineScan
         return AuthorizedBaselineScanContext(
             scopeID: scopeID,
             root: scope.root,
-            streamID: active.streamID
+            streamID: active.streamID,
+            volumeUUID: active.persistentIdentity?.volumeUUID
         )
     }
 }

@@ -35,6 +35,7 @@ public struct SQLiteRetentionReport: Sendable, Equatable {
     public let hourlyHistoryCount: Int
     public let pathHistoryCount: Int
     public let agedDirtyPathCount: Int
+    public let volumeHistoryCount: Int
 
     public init(
         deletedNodeCount: Int,
@@ -42,7 +43,8 @@ public struct SQLiteRetentionReport: Sendable, Equatable {
         scanRunCount: Int,
         hourlyHistoryCount: Int = 0,
         pathHistoryCount: Int = 0,
-        agedDirtyPathCount: Int = 0
+        agedDirtyPathCount: Int = 0,
+        volumeHistoryCount: Int = 0
     ) {
         self.deletedNodeCount = deletedNodeCount
         self.baselineCount = baselineCount
@@ -50,5 +52,6 @@ public struct SQLiteRetentionReport: Sendable, Equatable {
         self.hourlyHistoryCount = hourlyHistoryCount
         self.pathHistoryCount = pathHistoryCount
         self.agedDirtyPathCount = agedDirtyPathCount
+        self.volumeHistoryCount = volumeHistoryCount
     }
 }

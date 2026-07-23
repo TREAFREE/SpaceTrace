@@ -69,22 +69,27 @@ final class DirectoryAuthorizationUITests: XCTestCase {
     }
 
     @MainActor
-    func testOverviewDoesNotInventHistoryFromAuthorizationAlone() {
+    func testOverviewShowsVolumeHistoryWithoutInventingDirectoryEvidence() {
         let app = launch(scenario: "authorized")
 
         XCTAssertTrue(
-            app.staticTexts["overview-history-waiting"].firstMatch
-                .waitForExistence(timeout: 3)
-        )
-        XCTAssertFalse(
             app.descendants(matching: .any)
                 .matching(identifier: "overview-history-loaded")
-                .firstMatch.exists
+                .firstMatch
+                .waitForExistence(timeout: 3)
         )
-        XCTAssertFalse(
-            app.descendants(matching: .any)
-                .matching(identifier: "overview-growth-empty")
-                .firstMatch.exists
+        XCTAssertTrue(
+            app.staticTexts["启动数据卷可用空间"].firstMatch.exists
+        )
+        XCTAssertTrue(
+            app.staticTexts["可见目录逻辑大小"].firstMatch.exists
+        )
+        XCTAssertTrue(metric(containing: "磁盘少了多少", in: app).exists)
+        XCTAssertTrue(
+            metric(containing: "授权目录能解释：证据不足", in: app).exists
+        )
+        XCTAssertTrue(
+            metric(containing: "仍无法归因：证据不足", in: app).exists
         )
     }
 
@@ -99,6 +104,16 @@ final class DirectoryAuthorizationUITests: XCTestCase {
         XCTAssertTrue(element.waitForExistence(timeout: 3), file: file, line: line)
         let renderedValue = String(describing: element.value)
         XCTAssertTrue(renderedValue.contains(title), file: file, line: line)
+    }
+
+    @MainActor
+    private func metric(
+        containing text: String,
+        in app: XCUIApplication
+    ) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", text))
+            .firstMatch
     }
 
     @MainActor

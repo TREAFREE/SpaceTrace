@@ -31,6 +31,10 @@ final class DirectoryAuthorizationViewModel {
         items.filter(\.isAuthorized).map(\.id)
     }
 
+    var configuredScopeIDs: [WatchedScopeID] {
+        items.map(\.id)
+    }
+
     var hasUnavailableScope: Bool {
         items.contains { item in
             if case .unavailable = item.status { return true }

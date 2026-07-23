@@ -1,10 +1,61 @@
 import Foundation
 import SpaceTraceApplication
+import SpaceTraceDomain
 import Testing
 @testable import SpaceTrace
 
 @MainActor
 struct BaselineScanViewModelTests {
+    @Test("A restored published baseline exposes stable history contexts")
+    func exposesPublishedHistoryContexts() throws {
+        let scopeID = try WatchedScopeID("scope-history")
+        let context = AuthorizedBaselineScanContext(
+            scopeID: scopeID,
+            root: try DirtyRegionPath("/History"),
+            streamID: try EventStreamID("history-stream")
+        )
+        let root = try AuthorizedBaselineRootSnapshot(
+            context: context,
+            logicalBytes: ByteCount(100),
+            allocatedBytes: ByteCount(120),
+            descendantCount: 1,
+            entriesVisited: 2,
+            directoriesObserved: 1
+        )
+        let snapshot = try AuthorizedBaselineSnapshot(
+            id: AuthorizedBaselineID("history-baseline"),
+            startedAt: Date(timeIntervalSince1970: 100),
+            committedAt: Date(timeIntervalSince1970: 101),
+            build: AuthorizedBaselineBuildMetadata(
+                appVersion: "test",
+                schemaVersion: 8
+            ),
+            startupVolume: StartupVolumeCapacitySnapshot(
+                observedAt: Date(timeIntervalSince1970: 100),
+                volumeUUID: nil,
+                totalBytes: nil,
+                availableBytes: nil,
+                availableForImportantUsageBytes: nil
+            ),
+            roots: [root]
+        )
+        let result = try AuthorizedBaselineScanResult(
+            snapshot: snapshot,
+            scopeID: scopeID,
+            origin: .restoredAfterRestart
+        )
+
+        let model = BaselineScanViewModel(initialState: .completed(result))
+
+        #expect(model.publishedContexts == [context])
+        #expect(
+            model.historyContexts(configuredScopeIDs: [scopeID]) == [context]
+        )
+        #expect(model.historyContexts(configuredScopeIDs: []).isEmpty)
+        model.handleCompositionFailure(scopeID: scopeID)
+        #expect(model.publishedContexts == [context])
+    }
+
     @Test("The view model forwards commands and renders typed coordinator updates")
     func forwardsCommandsAndUpdatesState() async throws {
         let scopeID = try WatchedScopeID("scope-primary")

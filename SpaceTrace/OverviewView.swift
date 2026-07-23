@@ -7,6 +7,7 @@ struct OverviewView: View {
     let authorizationSummary: DirectoryAuthorizationSummary
     let scopeIDs: [WatchedScopeID]
     @Bindable var baselineScanModel: BaselineScanViewModel
+    @Bindable var directoryHistoryModel: DirectoryHistoryViewModel
     let showPermissions: () -> Void
 
     private var readiness: OverviewReadiness {
@@ -19,6 +20,7 @@ struct OverviewView: View {
                 header
                 readinessCard
                 baselineCard
+                DirectoryHistoryOverviewView(model: directoryHistoryModel)
                 workflow
             }
             .padding(32)
@@ -451,8 +453,8 @@ struct OverviewView: View {
                 WorkflowStep(
                     number: 3,
                     title: "解释变化",
-                    detail: "把时间窗口、大小口径和证据放在一起。",
-                    state: .planned
+                    detail: "按 24 小时、7 天或 30 天查看覆盖范围明确的趋势和增长来源。",
+                    state: historyWorkflowState
                 )
             }
         }
@@ -471,6 +473,17 @@ struct OverviewView: View {
             return .ready
         case .idle, .incomplete, .cancelled, .failed:
             return .waiting
+        }
+    }
+
+    private var historyWorkflowState: WorkflowStepState {
+        switch directoryHistoryModel.state {
+        case .waitingForBaseline, .failed:
+            .waiting
+        case .loading:
+            .active
+        case .loaded:
+            .ready
         }
     }
 

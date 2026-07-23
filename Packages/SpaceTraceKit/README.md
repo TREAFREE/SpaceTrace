@@ -7,13 +7,13 @@
 | Module | Responsibility | Platform coupling |
 | --- | --- | --- |
 | `SpaceTraceDomain` | Validated storage quantities, observation identities, coverage, and deltas | None |
-| `SpaceTraceApplication` | Dirty-region planning, cancellable and schedulable authorized-baseline state, calibration orchestration, mount/event lifecycle state machines, opaque watched-scope bookmark contracts, ports, and crash-consistency contracts | Foundation |
+| `SpaceTraceApplication` | Dirty-region planning, cancellable and schedulable authorized-baseline state, coverage-aware directory-history query models, calibration orchestration, mount/event lifecycle state machines, opaque watched-scope bookmark contracts, ports, and crash-consistency contracts | Foundation |
 | `SpaceTraceFileSystem` | Per-device FSEvents identity/target resolution, callback bridge, conservative flag interpretation, semantic mapping, and a bounded metadata-only calibration scanner | CoreServices, Foundation, Darwin |
-| `SpaceTracePersistence` | Actor-isolated raw SQLite prototype for cursor, dirty work, scope mount generations, security-scoped bookmark records, staged directory aggregates, revision-safe atomic publication, typed storage failures, and bounded current-table retention | SQLite3 |
+| `SpaceTracePersistence` | Actor-isolated raw SQLite prototype for cursor, dirty work, scope mount generations, security-scoped bookmark records, staged/current directory aggregates, bounded hourly/daily history, root-scoped growth queries, revision-safe atomic publication, typed storage failures, and retention | SQLite3 |
 | `SpaceTracePlatform` | Read-only Disk Arbitration callback bridge, exact security-scoped bookmark acquisition/restoration and balanced access leases, plus public power/thermal/sleep signal adaptation | AppKit, Foundation, DiskArbitration, IOKit |
 | `SpaceTraceMonitoring` | Non-UI composition of volume signals, exact mount-scope resolution, generation activation/closure, FSEvents supervision, and process-lifetime task ownership | Application, filesystem, and platform adapters |
 
-The filesystem, platform, monitoring, application pipeline, and persistence modules are architecture-spike implementations for proposed ADR-003 and ADR-004. Their non-UI composition is implemented and tested, and the process lifecycle now restores persisted user grants before starting monitoring. No directory-selection or permission UI reaches this path while those decisions remain proposed.
+The filesystem, platform, monitoring, application pipeline, and persistence modules are architecture-spike implementations for proposed ADR-003 and ADR-004. Their non-UI composition is implemented and tested, the process lifecycle restores persisted user grants before starting monitoring, and the checked-in app now exercises bounded permission, baseline, and directory-history slices. These user-facing slices do not accept either ADR or make the product Beta/release-qualified; the remaining evidence is tracked in the implementation-status document.
 
 The package test suite includes serialized per-device FSEvents tests. They create and remove only a UUID-named directory below the system temporary directory, fail closed unless that directory is on APFS and outside the user's home directory, and use a native flush boundary instead of timing sleeps. Durable replay requires both a persistent volume UUID and the current FSEvents journal UUID; otherwise the resolver permits only `sinceNow` monitoring.
 
@@ -24,6 +24,8 @@ The exact claim boundary for daemon-generated `UserDropped`, `KernelDropped`, an
 The bookmark/catalog/application ownership contract is documented in [Security-Scoped Bookmark and Application Lifecycle](../../docs/engineering/security-scoped-bookmark-lifecycle.md) and its [Chinese translation](../../docs/engineering/security-scoped-bookmark-lifecycle.zh-CN.md).
 
 The authorized directory baseline, typed progress, cancellation, atomic-publication, and overview truth contract are documented in [Authorized Directory Baseline and Overview](../../docs/engineering/authorized-baseline-overview.md) and its [Chinese translation](../../docs/engineering/authorized-baseline-overview.zh-CN.md).
+
+The scope-bounded history read port, explicit-gap timeline, growth ranking, and Overview presentation contract are documented in [Directory History Application Layer and Overview](../../docs/engineering/directory-history-overview.md) and its [Chinese translation](../../docs/engineering/directory-history-overview.zh-CN.md).
 
 The power, thermal, and sleep-aware baseline policy is documented in [Scan Scheduling Lifecycle](../../docs/engineering/scan-scheduling-lifecycle.md) and its [Chinese translation](../../docs/engineering/scan-scheduling-lifecycle.zh-CN.md).
 

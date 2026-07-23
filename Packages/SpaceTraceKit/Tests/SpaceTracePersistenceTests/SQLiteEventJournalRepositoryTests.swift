@@ -1125,10 +1125,13 @@ struct SQLiteEventJournalRepositoryTests {
         )
         let streamID = try EventStreamID("history-stream")
         let root = try DirtyRegionPath("/History")
+        let outsideRoot = try DirtyRegionPath("/Revoked/Private")
 
         try await publishCalibration(repository: repository, streamID: streamID, root: root, cursor: 1, logicalBytes: 100)
+        try await publishCalibration(repository: repository, streamID: streamID, root: outsideRoot, cursor: 2, logicalBytes: 100)
         clock.withLock { $0 = firstObservation.addingTimeInterval(3_700) }
-        try await publishCalibration(repository: repository, streamID: streamID, root: root, cursor: 2, logicalBytes: 150)
+        try await publishCalibration(repository: repository, streamID: streamID, root: root, cursor: 3, logicalBytes: 150)
+        try await publishCalibration(repository: repository, streamID: streamID, root: outsideRoot, cursor: 4, logicalBytes: 10_000)
 
         let hourly = try await repository.directoryHistory(
             for: streamID, path: root, bucket: .hourly,
@@ -1146,15 +1149,23 @@ struct SQLiteEventJournalRepositoryTests {
         #expect(daily.first?.logicalBytes == expectedLatestBytes)
         let growth = try await repository.topDirectoryGrowth(
             for: streamID,
+            under: root,
             bucket: .hourly,
             from: firstObservation.addingTimeInterval(-3_600),
             through: firstObservation.addingTimeInterval(7_200)
         )
-        #expect(growth == [DirectoryGrowth(path: root, logicalByteDelta: 50)])
+        let growthSample = try #require(growth.first)
+        #expect(growth.count == 1)
+        #expect(growthSample.streamID == streamID)
+        #expect(growthSample.path == root)
+        #expect(growthSample.logicalByteDelta == 50)
+        #expect(growthSample.coverage == .complete)
+        #expect(growthSample.firstObservedAt < growthSample.lastObservedAt)
+        #expect(growth.contains { $0.path == outsideRoot } == false)
 
         let dayEight = firstObservation.addingTimeInterval(8 * 86_400)
         let report = try await repository.applyRetention(referenceDate: dayEight)
-        #expect(report.hourlyHistoryCount == 2)
+        #expect(report.hourlyHistoryCount == 4)
         #expect(try await repository.directoryHistory(
             for: streamID, path: root, bucket: .daily,
             from: firstObservation.addingTimeInterval(-86_400), through: dayEight
@@ -1163,7 +1174,7 @@ struct SQLiteEventJournalRepositoryTests {
         let finalReport = try await repository.applyRetention(
             referenceDate: firstObservation.addingTimeInterval(31 * 86_400)
         )
-        #expect(finalReport.pathHistoryCount == 1)
+        #expect(finalReport.pathHistoryCount == 2)
         try await repository.close()
         fixture.remove()
     }

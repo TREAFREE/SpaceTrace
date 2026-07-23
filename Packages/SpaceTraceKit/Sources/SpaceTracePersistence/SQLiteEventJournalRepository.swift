@@ -6,7 +6,7 @@ import Synchronization
 
 /// A dependency-free SQLite prototype for ADR-004. The actor is the sole
 /// owner of the connection and serializes every transaction and query.
-public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGenerationRepository, WatchedScopeBookmarkRepository, AuthorizedBaselineSnapshotRepository {
+public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGenerationRepository, WatchedScopeBookmarkRepository, AuthorizedBaselineSnapshotRepository, DirectoryHistoryRepository {
     public static let currentSchemaVersion = 8
     private static let schemaVersion = Int32(currentSchemaVersion)
 
@@ -672,7 +672,10 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                         let allocated = try readOptionalByteCount(from: statement, column: 2, field: "node_current.allocated_bytes")
                         let descendantCount = sqlite3_column_int64(statement, 3)
                         let coverageText = try readText(from: statement, column: 4, field: "node_current.coverage")
-                        let coverage: CalibrationCoverage = coverageText == "complete" ? .complete : .partial
+                        let coverage = try calibrationCoverage(
+                            coverageText,
+                            field: "node_current.coverage"
+                        )
                         do {
                             aggregates.append(
                                 try DirectoryMetadataAggregate(
@@ -702,7 +705,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         bucket: DirectoryHistoryBucket,
         from start: Date,
         through end: Date
-    ) throws -> [DirectoryHistorySample] {
+    ) async throws -> [DirectoryHistorySample] {
         guard start <= end else { return [] }
         let sql = """
             SELECT bucket_start_ms, logical_bytes, allocated_bytes,
@@ -735,7 +738,10 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                                         logicalBytes: try readOptionalByteCount(from: statement, column: 1, field: "directory_history_sample.logical_bytes"),
                                         allocatedBytes: try readOptionalByteCount(from: statement, column: 2, field: "directory_history_sample.allocated_bytes"),
                                         descendantCount: try readNonnegativeInt64(from: statement, column: 3, field: "directory_history_sample.descendant_count"),
-                                        coverage: coverageText == "complete" ? .complete : .partial
+                                        coverage: try calibrationCoverage(
+                                            coverageText,
+                                            field: "directory_history_sample.coverage"
+                                        )
                                     )
                                 )
                             case SQLITE_DONE:
@@ -755,45 +761,91 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
 
     public func topDirectoryGrowth(
         for streamID: EventStreamID,
+        under root: DirtyRegionPath,
         bucket: DirectoryHistoryBucket = .daily,
         from start: Date,
         through end: Date,
         limit: Int = 100
-    ) throws -> [DirectoryGrowth] {
+    ) async throws -> [DirectoryGrowthSample] {
         guard start <= end, limit > 0 else { return [] }
         let sql = """
-            SELECT path, SUM(logical_delta) AS delta
+            SELECT path, SUM(logical_delta) AS delta,
+                MIN(bucket_start_ms), MAX(bucket_start_ms),
+                CASE
+                    WHEN SUM(CASE WHEN coverage = 'complete' THEN 0 ELSE 1 END) = 0
+                    THEN 'complete'
+                    ELSE 'partial'
+                END AS interval_coverage
             FROM directory_history_sample
             WHERE stream_id = ?1 AND bucket_kind = ?2
-                AND bucket_start_ms > ?3 AND bucket_start_ms <= ?4
+                AND (
+                    ?3 = '/'
+                    OR path = ?3
+                    OR substr(path, 1, length(?3) + 1) = ?3 || '/'
+                )
+                AND bucket_start_ms > ?4 AND bucket_start_ms <= ?5
                 AND logical_delta IS NOT NULL
             GROUP BY path
+            HAVING SUM(logical_delta) > 0
             ORDER BY delta DESC, path ASC
-            LIMIT ?5
+            LIMIT ?6
             """
         return try withStatement(sql, operation: "read top directory growth") { statement in
             try streamID.rawValue.withCString { streamCString in
                 try bucket.rawValue.withCString { bucketCString in
-                    try check(sqlite3_bind_text(statement, 1, streamCString, -1, nil), operation: "bind growth stream")
-                    try check(sqlite3_bind_text(statement, 2, bucketCString, -1, nil), operation: "bind growth bucket")
-                    try check(sqlite3_bind_int64(statement, 3, Self.milliseconds(start)), operation: "bind growth start")
-                    try check(sqlite3_bind_int64(statement, 4, Self.milliseconds(end)), operation: "bind growth end")
-                    try check(sqlite3_bind_int64(statement, 5, Int64(limit)), operation: "bind growth limit")
-                    var results: [DirectoryGrowth] = []
-                    while true {
-                        switch sqlite3_step(statement) {
-                        case SQLITE_ROW:
-                            let path = try readText(from: statement, column: 0, field: "growth.path")
-                            results.append(
-                                DirectoryGrowth(
-                                    path: try DirtyRegionPath(path),
-                                    logicalByteDelta: sqlite3_column_int64(statement, 1)
+                    try root.rawValue.withCString { rootCString in
+                        try check(sqlite3_bind_text(statement, 1, streamCString, -1, nil), operation: "bind growth stream")
+                        try check(sqlite3_bind_text(statement, 2, bucketCString, -1, nil), operation: "bind growth bucket")
+                        try check(sqlite3_bind_text(statement, 3, rootCString, -1, nil), operation: "bind growth root")
+                        try check(sqlite3_bind_int64(statement, 4, Self.milliseconds(start)), operation: "bind growth start")
+                        try check(sqlite3_bind_int64(statement, 5, Self.milliseconds(end)), operation: "bind growth end")
+                        try check(sqlite3_bind_int64(statement, 6, Int64(limit)), operation: "bind growth limit")
+                        var results: [DirectoryGrowthSample] = []
+                        while true {
+                            switch sqlite3_step(statement) {
+                            case SQLITE_ROW:
+                                let path = try readText(
+                                    from: statement,
+                                    column: 0,
+                                    field: "growth.path"
                                 )
-                            )
-                        case SQLITE_DONE:
-                            return results
-                        default:
-                            throw sqliteFailure(operation: "step top-growth query", code: sqlite3_errcode(try databaseHandle()))
+                                let coverageText = try readText(
+                                    from: statement,
+                                    column: 4,
+                                    field: "growth.interval_coverage"
+                                )
+                                results.append(
+                                    DirectoryGrowthSample(
+                                        streamID: streamID,
+                                        path: try DirtyRegionPath(path),
+                                        logicalByteDelta: sqlite3_column_int64(
+                                            statement,
+                                            1
+                                        ),
+                                        firstObservedAt: Date(
+                                            timeIntervalSince1970: TimeInterval(
+                                                sqlite3_column_int64(statement, 2)
+                                            ) / 1_000
+                                        ),
+                                        lastObservedAt: Date(
+                                            timeIntervalSince1970: TimeInterval(
+                                                sqlite3_column_int64(statement, 3)
+                                            ) / 1_000
+                                        ),
+                                        coverage: try calibrationCoverage(
+                                            coverageText,
+                                            field: "growth.interval_coverage"
+                                        )
+                                    )
+                                )
+                            case SQLITE_DONE:
+                                return results
+                            default:
+                                throw sqliteFailure(
+                                    operation: "step top-growth query",
+                                    code: sqlite3_errcode(try databaseHandle())
+                                )
+                            }
                         }
                     }
                 }
@@ -2980,6 +3032,20 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
 
         let count = Int(sqlite3_column_bytes(statement, column))
         return String(decoding: UnsafeBufferPointer(start: bytes, count: count), as: UTF8.self)
+    }
+
+    private func calibrationCoverage(
+        _ value: String,
+        field: String
+    ) throws -> CalibrationCoverage {
+        switch value {
+        case "complete":
+            return .complete
+        case "partial":
+            return .partial
+        default:
+            throw SQLiteEventJournalError.corruptStoredValue(field: field)
+        }
     }
 
     private func readOptionalText(

@@ -99,5 +99,13 @@ read-only recovery composition, v6/v7 golden fixtures, hourly/daily history,
 day-30 path-free dirty-work conversion, and the reproducible current-host
 500,000/1,000,000-row benchmark. Results are recorded in
 [SQLite History Benchmark](../../engineering/sqlite-history-benchmark.md).
+
+The 2026-07-24 application slice added an application-owned history read port,
+root-bounded growth queries, explicit missing-bucket coverage, and a
+coverage-aware Overview. The production root filter was included in a fresh
+500,000/1,000,000-row benchmark run; the current-host size, memory, write, and
+query gates still pass. Application and UI evidence is recorded in
+[Directory History Application Layer and Overview](../../engineering/directory-history-overview.md).
+
 ADR acceptance still requires minimum-reference macOS 15.6 performance and
 distribution-signing evidence.

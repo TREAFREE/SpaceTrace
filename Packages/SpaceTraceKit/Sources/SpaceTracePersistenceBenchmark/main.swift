@@ -32,6 +32,7 @@ enum SpaceTracePersistenceBenchmark {
             let start = ContinuousClock.now
             let result = try await repository.topDirectoryGrowth(
                 for: streamID,
+                under: try DirtyRegionPath("/Benchmark"),
                 from: referenceDate.addingTimeInterval(-7 * 86_400),
                 through: referenceDate,
                 limit: 100

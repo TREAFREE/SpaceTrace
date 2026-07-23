@@ -17,6 +17,7 @@ struct SpaceTraceApp: App {
             ContentView(
                 authorizationModel: appDelegate.authorizationModel,
                 baselineScanModel: appDelegate.baselineScanModel,
+                directoryHistoryModel: appDelegate.directoryHistoryModel,
                 databaseRecoveryModel: appDelegate.databaseRecoveryModel
             )
         }

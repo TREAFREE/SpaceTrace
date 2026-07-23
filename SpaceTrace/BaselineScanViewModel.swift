@@ -17,6 +17,7 @@ extension AuthorizedBaselineScanCoordinator: AuthorizedBaselineScanCoordinating 
 final class BaselineScanViewModel {
     private var coordinator: (any AuthorizedBaselineScanCoordinating)?
     private(set) var state: AuthorizedBaselineScanState
+    private(set) var publishedContexts: [AuthorizedBaselineScanContext]
 
     init(
         coordinator: (any AuthorizedBaselineScanCoordinating)? = nil,
@@ -24,6 +25,7 @@ final class BaselineScanViewModel {
     ) {
         self.coordinator = coordinator
         state = initialState
+        publishedContexts = Self.contexts(from: initialState)
     }
 
     func connect(_ coordinator: any AuthorizedBaselineScanCoordinating) {
@@ -36,6 +38,9 @@ final class BaselineScanViewModel {
         for await state in updates {
             guard Task.isCancelled == false else { return }
             self.state = state
+            if case .completed = state {
+                publishedContexts = Self.contexts(from: state)
+            }
         }
     }
 
@@ -77,6 +82,13 @@ final class BaselineScanViewModel {
         await coordinator?.cancel()
     }
 
+    func historyContexts(
+        configuredScopeIDs: [WatchedScopeID]
+    ) -> [AuthorizedBaselineScanContext] {
+        let configured = Set(configuredScopeIDs)
+        return publishedContexts.filter { configured.contains($0.scopeID) }
+    }
+
     func handleCompositionFailure(scopeID: WatchedScopeID? = nil) {
         guard let scopeID else {
             state = .idle
@@ -89,5 +101,14 @@ final class BaselineScanViewModel {
                 failedAt: Date()
             )
         )
+    }
+
+    private static func contexts(
+        from state: AuthorizedBaselineScanState
+    ) -> [AuthorizedBaselineScanContext] {
+        guard case let .completed(result) = state else { return [] }
+        return result.snapshot.roots
+            .map(\.context)
+            .sorted { $0.scopeID.rawValue < $1.scopeID.rawValue }
     }
 }

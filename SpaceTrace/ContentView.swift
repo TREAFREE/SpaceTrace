@@ -1,9 +1,11 @@
 import SwiftUI
+import SpaceTraceApplication
 import SpaceTracePersistence
 
 struct ContentView: View {
     @Bindable var authorizationModel: DirectoryAuthorizationViewModel
     @Bindable var baselineScanModel: BaselineScanViewModel
+    @Bindable var directoryHistoryModel: DirectoryHistoryViewModel
     @Bindable var databaseRecoveryModel: DatabaseRecoveryViewModel
     @State private var selection: SpaceTraceSection? = .overview
 
@@ -37,6 +39,17 @@ struct ContentView: View {
                 scopeID: authorizationModel.authorizedScopeIDs.first
             )
         }
+        .task(id: historyContexts) {
+            await directoryHistoryModel.load(
+                contexts: historyContexts
+            )
+        }
+    }
+
+    private var historyContexts: [AuthorizedBaselineScanContext] {
+        baselineScanModel.historyContexts(
+            configuredScopeIDs: authorizationModel.configuredScopeIDs
+        )
     }
 
     @ViewBuilder
@@ -46,7 +59,8 @@ struct ContentView: View {
             OverviewView(
                 authorizationSummary: authorizationModel.summary,
                 scopeIDs: authorizationModel.authorizedScopeIDs,
-                baselineScanModel: baselineScanModel
+                baselineScanModel: baselineScanModel,
+                directoryHistoryModel: directoryHistoryModel
             ) {
                 selection = .permissions
             }
@@ -62,6 +76,7 @@ struct ContentView: View {
             initialSummary: .unconfigured
         ),
         baselineScanModel: BaselineScanViewModel(),
+        directoryHistoryModel: DirectoryHistoryViewModel(),
         databaseRecoveryModel: DatabaseRecoveryViewModel()
     )
 }

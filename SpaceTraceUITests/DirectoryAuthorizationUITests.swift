@@ -69,6 +69,26 @@ final class DirectoryAuthorizationUITests: XCTestCase {
     }
 
     @MainActor
+    func testOverviewDoesNotInventHistoryFromAuthorizationAlone() {
+        let app = launch(scenario: "authorized")
+
+        XCTAssertTrue(
+            app.staticTexts["overview-history-waiting"].firstMatch
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)
+                .matching(identifier: "overview-history-loaded")
+                .firstMatch.exists
+        )
+        XCTAssertFalse(
+            app.descendants(matching: .any)
+                .matching(identifier: "overview-growth-empty")
+                .firstMatch.exists
+        )
+    }
+
+    @MainActor
     private func assertStatus(
         _ title: String,
         in app: XCUIApplication,

@@ -41,7 +41,7 @@ The MVP does **not** promise exact process attribution, reproduce Apple's System
 
 ## Project status
 
-- Stage: architecture spike with user-facing directory authorization and coverage-aware baseline overview flows; not yet beta- or release-qualified
+- Stage: architecture spike with user-facing directory authorization, coverage-aware baseline, and directory-history overview flows; not yet beta- or release-qualified
 - Target: public beta in approximately eight weeks (**assumption; pending confirmation**)
 - Supported baseline: macOS 15.6+, Apple Silicon first
 - Minimum-version qualification: build/test configuration is aligned; a macOS 15.6 runtime matrix remains required before Public Beta

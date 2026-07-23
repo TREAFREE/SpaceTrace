@@ -1,8 +1,8 @@
 # 第一阶段实现状态
 
-状态：**架构验证阶段；已具备目录权限与基线概览流程**
+状态：**架构验证阶段；已具备目录权限、基线与历史概览流程**
 
-最近验证日期：2026-07-20
+最近验证日期：2026-07-24
 
 英文事实源：[implementation-status.md](implementation-status.md)。本文是便于中文阅读的对应译文；如两者存在差异，以英文文档为架构事实源，并应在同一次变更中修正译文。
 
@@ -23,16 +23,17 @@
 | 元数据校准扫描器 | 基于 Foundation/Darwin 的纯元数据遍历；显式限制条目数、深度、时长与批次；协作式取消；强制同卷；不跟随符号链接；硬链接分配量去重；强类型覆盖缺口 | 永不打开文件内容；叶子路径不会越过目录聚合边界；预算耗尽、权限丢失、挂载边界和取消都不能伪装成完整证据 |
 | 校准流水线 | actor 隔离的摄取与有界协调；通过应用层 scanner 端口执行扫描；使用结构化异步 staging | 部分完成或被取消的扫描会丢弃 staging 并保留 dirty work；扫描期间数据若变旧，完成的旧扫描不能发布数据或清除已经更新的工作 |
 | 已授权目录基线应用流程 | 精确解析已授权 scope/活跃 stream 上下文；actor 持有可取消批次任务；类型化的准备/暂停/恢复/扫描/发布/完成状态；权限切换时取消；聚合进度与逐根覆盖结果投影 | UI 字节结果只能来自按 revision 校验并原子发布后重新读回的完整根目录聚合；部分覆盖、取消、被取代及被调度器中断的尝试绝不能成为完整事实；路径可能重叠时不伪造聚合字节总量 |
+| 目录历史应用层与 UI | 应用层拥有的历史端口和读取模型；根目录受限的 SQLite 适配器；24 小时/7 天/30 天查询用例；明确缺失时间桶；逐根 Swift Charts 曲线；正增长 Top 10；MainActor 加载/空/失败状态；文字与程序化覆盖标记 | UI 不导入 SQLite 模型、不查询未授权根、不把缺口补成零或插值，也不会把重叠根目录或父子目录聚合相加成虚假总量 |
 | 扫描调度 | 应用层拥有的电源/温度/活动快照；固定的休眠 → 温度 → 低电量优先级；可回放决策门；结构化取消并重试当前根；提交前准入门；基于公开原生 API 的信号 monitor | 用户主动扫描在普通电池供电时仍可运行；休眠、严重/危急温度和低电量模式会安全暂停；条件恢复后重扫当前根目录，不声称从内存中点续扫 |
 | 事件日志端口 | 应用层拥有的持久事件流标识、连续性分类、游标、dirty region、行 revision、原因、批次及条件清理契约 | checkpoint 只有在同一批次中已有持久 dirty work 时才能写入；卷 UUID 或日志 UUID 任一变化都会选择不同的持久事件流 generation |
-| SQLite 原型 | actor 持有的 SQLite3 连接；WAL；schema v7；有界 opaque security-scoped bookmark；大端 `UInt64` 游标和 revision；持久 scope 挂载 generation；扫描运行与目录 staging 表；当前/已删除目录聚合；已提交多根基线快照；原子发布；无游标校准标记；checkpoint generation 作废；类型化磁盘写满/损坏/迁移错误；有界 retention | 游标推进与 dirty region 持久化保持原子性且不能倒退；写满失败保留已提交状态；损坏输入不被静默替换；迁移失败会回滚 schema 与版本账本；retention 只删除过期且可替代的行，并保留当前事实、未解决工作和每个 scope 的最新基线 |
+| SQLite 原型 | actor 持有的 SQLite3 连接；WAL；schema v8；有界 opaque security-scoped bookmark；大端 `UInt64` 游标和 revision；持久 scope 挂载 generation；扫描运行与目录 staging 表；当前/已删除目录聚合；已提交多根基线快照；小时/日历史；根目录受限的增长查询；原子发布；无游标/无路径校准标记；checkpoint generation 作废；类型化磁盘写满/损坏/迁移错误；有界 retention | 游标推进与 dirty region 持久化保持原子性且不能倒退；写满失败保留已提交状态；损坏输入不被静默替换；迁移失败会回滚 schema 与版本账本；retention 会移除老化的带路径历史，同时保留当前事实、未解决的无路径工作和每个 scope 的最新基线 |
 | 构建集成 | 本地 `SpaceTraceKit` 已链接到 macOS 应用 target；显式声明只读 app-scoped bookmark entitlement；应用保持薄组合根 | 应用 target 能够恢复授权并持有模块化非 UI runtime 生命周期，无需复制源码或让 UI 拥有任务 |
 
 ## 验证证据
 
 以下门禁截至 2026-07-20 已使用 Swift 6.2.1 与 Xcode 26.1.1 通过：
 
-- `swift test --package-path Packages/SpaceTraceKit`：185 个测试、28 个 suite（会改变测试环境的资格测试保持 opt-in，常规运行中显示为 skipped）；
+- `swift test --package-path Packages/SpaceTraceKit`：199 个测试、31 个 suite（会改变测试环境的资格测试保持 opt-in，常规运行中显示为 skipped）；
 - 同一套 package 测试在完整严格并发诊断以及“编译器警告视为错误”条件下通过；
 - 一条从适配器到应用层再到真实 SQLite 的集成测试，校准 scanner 使用注入实现；
 - 四条串行的按设备 FSEvents 集成测试，在受保护的一次性 APFS 目录上覆盖持久标识解析、实时事件、单订阅失败、取消清理、显式停止、重启、经 `HistoryDone` 完成的历史回放以及真实回调缓冲区溢出标记；
@@ -47,9 +48,9 @@
 - 确定性的真实 `SQLITE_FULL`、损坏主文件保留、提交前迁移回滚、retention 边界和固定时钟 retention 测试，覆盖过期 deleted node、可替代基线与无引用 scan run；
 - 确定性的授权移除失败顺序、授权协调器重启/回退，以及覆盖选择、取消、stale 重新授权、撤权和外置卷返回的 MainActor ViewModel 测试；
 - 确定性的应用外壳测试证明只暴露已实现的概览/权限目的地，并且 unavailable、stale 或 failed 授权绝不会在概览中显示为已就绪；
-- 确定性的已授权目录基线测试证明类型化阶段顺序、取消完成、部分覆盖/被取代结果不发布、权限切换前取消，以及从真实 SQLite 读回完整根目录聚合；同时 12 个应用单元测试通过，覆盖 MainActor 多 scope 投影和批量命令转发；
+- 确定性的已授权目录基线与历史测试证明类型化阶段顺序、取消完成、部分覆盖/被取代结果不发布、权限切换前取消、从真实 SQLite 读回完整根目录聚合、独立历史曲线、明确缺口、根目录受限增长以及跨 scope 拒绝；同时 18 个应用单元测试通过，覆盖 MainActor 多 scope 投影、批量命令转发、恢复后的历史上下文、窗口切换、失败/取消状态，以及不可用时间桶处的图表断线；
 - 确定性的扫描调度测试证明策略优先级、普通电池供电可运行、当前决策回放/去重、初始暂停时 scanner 调用次数为零、扫描途中取消、恢复后重试同一根目录，以及 Foundation/IOKit 原生值映射；
-- 多 scope 权限 UI 测试 target 已完成无签名 `build-for-testing` 编译；当前主机执行 `security find-identity -v -p codesigning` 未找到有效 Apple 签名身份，因此不声明交互式 UI 测试已经通过；
+- 多 scope 权限 UI 测试 target 已完成无签名 `build-for-testing` 编译，权限与“不伪造历史”共 7 个受控 DEBUG UI 场景通过；这些确定性 fixture 不覆盖真实 Powerbox、bookmark 与重启行为，且当前主机执行 `security find-identity -v -p codesigning` 仍未找到用于签名沙盒资格矩阵的稳定 Apple 签名身份；
 - 对当前主机 ad-hoc 签名 smoke App 完成严格签名校验，确认含 App Sandbox、用户选择只读、app-scoped bookmark 以及 `LSMinimumSystemVersion = 15.6`；该结果不是分发签名或 macOS 15.6 运行证据；
 - 当前主机签名沙盒 smoke 已证明精确 Powerbox 选择、正常退出后同一 bundle 无选择器恢复、App 内 bookmark 移除不删除夹具、一次性 APFS 镜像缺席时显示不可用，以及同一 Volume UUID 返回后自动恢复授权；
 - 已在当前主机检查普通单窗口外壳、概览准备状态、侧栏导航和嵌入式权限旅程的视觉布局与可访问性树；公开 SwiftUI `MenuBarExtra` 已编译进同一进程，其最终状态项点击矩阵仍属于签名 UI 资格验证；
@@ -62,7 +63,7 @@
 
 ## 明确不作出的声明
 
-- 面向用户的多目录权限列表、批量基线、启动数据卷容量采样、版本/Schema 元数据、重启恢复以及感知电源/温度/睡眠的暂停与重试均已实现。schema v8 小时/日历史及增长查询持久化已经实现；对应产品 UI、真正从枚举器内存中点续扫、菜单栏 24 小时指标和导出尚未实现。
+- 面向用户的多目录权限列表、批量基线、启动数据卷容量采样、版本/Schema 元数据、重启恢复、感知电源/温度/睡眠的暂停与重试，以及 schema v8 目录历史概览均已实现。当前历史 UI 会逐根展示逻辑大小曲线和带明确覆盖范围的正增长；启动数据卷可用空间历史、确定性分类、移动/删除 finding、真正从枚举器内存中点续扫、菜单栏 24 小时指标和导出尚未实现。
 - 用户主动基线调度会响应休眠、低电量模式、严重/危急温度，并观察当前供电来源。后台速率预算、系统负载调度以及架构中的 token bucket 尚未实现。硬链接去重受条目预算限制，但每次扫描运行期间仍保存在内存中。
 - 真实 sandbox Powerbox 展示以及 stale/身份失败的重新授权 UI 已实现；当前主机上的持久选择、同一 bundle 重启、明确 App 内移除和同镜像外置卷返回已经通过。真实 stale 证据、UI 流程中的不同 UUID 换卷子项、Apple 身份签名以及 macOS 15.6 运行矩阵仍未完成，或受到当前环境阻塞。
 - 不会依据 FSEvents 推断精确字节差值或进程归因。

@@ -28,8 +28,9 @@ This directory is the durable source of truth for product, architecture, enginee
 13. [SQLite Adapter Evidence Review](engineering/sqlite-adapter-evidence-review.md) · [中文](engineering/sqlite-adapter-evidence-review.zh-CN.md)
 14. [SQLite Recovery Lifecycle](engineering/sqlite-recovery-lifecycle.md) · [中文](engineering/sqlite-recovery-lifecycle.zh-CN.md)
 15. [SQLite History and Benchmark](engineering/sqlite-history-benchmark.md) · [中文](engineering/sqlite-history-benchmark.zh-CN.md)
-16. [Direct DMG Distribution and Code Signing](engineering/direct-distribution-signing.md) · [中文](engineering/direct-distribution-signing.zh-CN.md)
-17. [Contributing](../CONTRIBUTING.md)
+16. [Directory History Application Layer and Overview](engineering/directory-history-overview.md) · [中文](engineering/directory-history-overview.zh-CN.md)
+17. [Direct DMG Distribution and Code Signing](engineering/direct-distribution-signing.md) · [中文](engineering/direct-distribution-signing.zh-CN.md)
+18. [Contributing](../CONTRIBUTING.md)
 
 ### Product evidence
 

@@ -8,6 +8,7 @@ import SpaceTracePlatform
 struct SpaceTraceCompositionRoot {
     let authorizationCoordinator: WatchedScopeAuthorizationCoordinator
     let baselineScanCoordinator: AuthorizedBaselineScanCoordinator
+    let directoryHistoryQuery: DirectoryHistoryOverviewQuery
     let scanSchedulingMonitor: NativeScanSchedulingMonitor
 
     enum Startup {
@@ -94,6 +95,9 @@ struct SpaceTraceCompositionRoot {
                 }
             ),
             baselineScanCoordinator: baselineScanCoordinator,
+            directoryHistoryQuery: DirectoryHistoryOverviewQuery(
+                repository: repository
+            ),
             scanSchedulingMonitor: schedulingMonitor
         )
     }

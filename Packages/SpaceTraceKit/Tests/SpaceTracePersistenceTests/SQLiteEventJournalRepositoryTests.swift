@@ -3,6 +3,7 @@ import Testing
 import SpaceTraceApplication
 import SpaceTraceDomain
 import SQLite3
+import Synchronization
 @testable import SpaceTracePersistence
 
 struct SQLiteEventJournalRepositoryTests {
@@ -892,6 +893,40 @@ struct SQLiteEventJournalRepositoryTests {
         fixture.remove()
     }
 
+    @Test("A failed schema-v8 history migration rolls back every privacy table")
+    func historyMigrationFailurePreservesVersionSeven() async throws {
+        let fixture = try TemporaryDatabase()
+        try await createVersionSevenFixture(at: fixture.databaseURL)
+
+        #expect(
+            throws: SQLiteEventJournalError.migrationFailed(
+                fromVersion: 7,
+                targetVersion: 8
+            )
+        ) {
+            _ = try SQLiteEventJournalRepository(
+                databaseURL: fixture.databaseURL,
+                failurePoint: .beforeMigrationCommit(version: 8)
+            )
+        }
+
+        #expect(try readSQLiteSchemaVersion(from: fixture.databaseURL) == 7)
+        #expect(try sqliteTableExists(
+            "directory_history_sample",
+            in: fixture.databaseURL
+        ) == false)
+        #expect(try sqliteTableExists(
+            "path_free_calibration_requirement",
+            in: fixture.databaseURL
+        ) == false)
+        #expect(try sqliteColumnExists(
+            "updated_at_ms",
+            table: "dirty_region",
+            in: fixture.databaseURL
+        ) == false)
+        fixture.remove()
+    }
+
     @Test("Retention removes expired replaceable rows but preserves active truth")
     func retentionPreservesCurrentTruth() async throws {
         let fixture = try TemporaryDatabase()
@@ -1077,6 +1112,131 @@ struct SQLiteEventJournalRepositoryTests {
 
         fixture.remove()
     }
+
+    @Test("Complete calibration writes hourly and daily history with bounded retention")
+    func recordsAndRetainsDirectoryHistory() async throws {
+        let fixture = try TemporaryDatabase()
+        let firstObservation = Date(timeIntervalSince1970: 1_700_000_000)
+        let clock = Mutex(firstObservation)
+        let repository = try SQLiteEventJournalRepository(
+            databaseURL: fixture.databaseURL,
+            failurePoint: nil,
+            now: { clock.withLock { $0 } }
+        )
+        let streamID = try EventStreamID("history-stream")
+        let root = try DirtyRegionPath("/History")
+
+        try await publishCalibration(repository: repository, streamID: streamID, root: root, cursor: 1, logicalBytes: 100)
+        clock.withLock { $0 = firstObservation.addingTimeInterval(3_700) }
+        try await publishCalibration(repository: repository, streamID: streamID, root: root, cursor: 2, logicalBytes: 150)
+
+        let hourly = try await repository.directoryHistory(
+            for: streamID, path: root, bucket: .hourly,
+            from: firstObservation.addingTimeInterval(-3_600),
+            through: firstObservation.addingTimeInterval(7_200)
+        )
+        let daily = try await repository.directoryHistory(
+            for: streamID, path: root, bucket: .daily,
+            from: firstObservation.addingTimeInterval(-86_400),
+            through: firstObservation.addingTimeInterval(86_400)
+        )
+        #expect(hourly.count == 2)
+        #expect(daily.count == 1)
+        let expectedLatestBytes = try ByteCount(150)
+        #expect(daily.first?.logicalBytes == expectedLatestBytes)
+        let growth = try await repository.topDirectoryGrowth(
+            for: streamID,
+            bucket: .hourly,
+            from: firstObservation.addingTimeInterval(-3_600),
+            through: firstObservation.addingTimeInterval(7_200)
+        )
+        #expect(growth == [DirectoryGrowth(path: root, logicalByteDelta: 50)])
+
+        let dayEight = firstObservation.addingTimeInterval(8 * 86_400)
+        let report = try await repository.applyRetention(referenceDate: dayEight)
+        #expect(report.hourlyHistoryCount == 2)
+        #expect(try await repository.directoryHistory(
+            for: streamID, path: root, bucket: .daily,
+            from: firstObservation.addingTimeInterval(-86_400), through: dayEight
+        ).count == 1)
+
+        let finalReport = try await repository.applyRetention(
+            referenceDate: firstObservation.addingTimeInterval(31 * 86_400)
+        )
+        #expect(finalReport.pathHistoryCount == 1)
+        try await repository.close()
+        fixture.remove()
+    }
+
+    @Test("Thirty-day dirty paths become path-free and restore only at the authorized root")
+    func agesDirtyPathsWithoutRetainingPaths() async throws {
+        let fixture = try TemporaryDatabase()
+        let originalTime = Date(timeIntervalSince1970: 1_700_000_000)
+        let clock = Mutex(originalTime)
+        let repository = try SQLiteEventJournalRepository(
+            databaseURL: fixture.databaseURL,
+            failurePoint: nil,
+            now: { clock.withLock { $0 } }
+        )
+        let streamID = try EventStreamID("aged-dirty-stream")
+        let scopeID = try WatchedScopeID("aged-dirty-scope")
+        try await repository.upsertWatchedScopeBookmark(
+            makeWatchedScopeBookmark(
+                scopeID: scopeID.rawValue,
+                root: "/Private",
+                byte: 0xA8
+            )
+        )
+        try await repository.markDirty(
+            streamID: streamID,
+            regions: [
+                try DirtyRegion(
+                    path: DirtyRegionPath("/Private/Expired/Path"),
+                    reasons: [.droppedEvents],
+                    maximumCursor: nil
+                ),
+            ]
+        )
+        let referenceDate = originalTime.addingTimeInterval(31 * 86_400)
+        clock.withLock { $0 = referenceDate }
+
+        let report = try await repository.applyRetention(referenceDate: referenceDate)
+        #expect(report.agedDirtyPathCount == 1)
+        #expect(try await repository.dirtyRegions(for: streamID).isEmpty)
+        let marker = try #require(
+            try await repository.pathFreeCalibrationRequirement(
+                for: streamID,
+                scopeID: scopeID
+            )
+        )
+        #expect(marker.reasons == .requiresCalibration)
+        let unrelatedScope = try WatchedScopeID("unrelated-scope")
+        #expect(try await repository.pathFreeCalibrationRequirement(
+            for: streamID,
+            scopeID: unrelatedScope
+        ) == nil)
+        #expect(try await repository.restorePathFreeCalibrationRequirement(
+            for: streamID,
+            scopeID: unrelatedScope,
+            at: DirtyRegionPath("/Unrelated")
+        ) == false)
+
+        let authorizedRoot = try DirtyRegionPath("/Authorized")
+        #expect(try await repository.restorePathFreeCalibrationRequirement(
+            for: streamID,
+            scopeID: scopeID,
+            at: authorizedRoot
+        ))
+        let restored = try #require(try await repository.dirtyRegions(for: streamID).first)
+        #expect(restored.path == authorizedRoot)
+        #expect(restored.reasons.contains(.requiresCalibration))
+        #expect(try await repository.pathFreeCalibrationRequirement(
+            for: streamID,
+            scopeID: scopeID
+        ) == nil)
+        try await repository.close()
+        fixture.remove()
+    }
 }
 
 private struct TemporaryDatabase {
@@ -1158,6 +1318,46 @@ private func completeReport(
         directoriesStaged: directories,
         gaps: []
     )
+}
+
+private func publishCalibration(
+    repository: SQLiteEventJournalRepository,
+    streamID: EventStreamID,
+    root: DirtyRegionPath,
+    cursor: UInt64,
+    logicalBytes: Int64
+) async throws {
+    try await repository.commit(
+        makeBatch(
+            streamID: streamID,
+            path: root.rawValue,
+            reasons: [.contentModified],
+            cursor: cursor
+        )
+    )
+    let work = try #require(
+        try await repository.pendingDirtyWork(for: streamID, limit: 1).first
+    )
+    let runID = try await repository.beginCalibration(
+        CalibrationRequest(streamID: streamID, workItem: work)
+    )
+    try await repository.stageCalibration(
+        [
+            makeAggregate(
+                path: root.rawValue,
+                logical: logicalBytes,
+                allocated: logicalBytes,
+                descendants: 1
+            ),
+        ],
+        in: runID
+    )
+    #expect(try await repository.finalizeCalibration(
+        runID,
+        report: completeReport(entries: 1, directories: 1),
+        workItem: work,
+        streamID: streamID
+    ))
 }
 
 private func makeBatch(
@@ -1295,6 +1495,10 @@ private func createVersionSixFixture(at databaseURL: URL) async throws {
     try executeFixtureSQL(
         at: databaseURL,
         sql: """
+            DROP TABLE directory_history_sample;
+            DROP TABLE path_free_calibration_requirement;
+            ALTER TABLE dirty_region DROP COLUMN updated_at_ms;
+            DELETE FROM schema_migration WHERE version = 8;
             DROP INDEX node_current_expired_deleted;
             ALTER TABLE node_current DROP COLUMN deleted_at_ms;
             DELETE FROM schema_migration WHERE version = 7;
@@ -1303,7 +1507,34 @@ private func createVersionSixFixture(at databaseURL: URL) async throws {
     )
 }
 
+private func createVersionSevenFixture(at databaseURL: URL) async throws {
+    let repository = try SQLiteEventJournalRepository(databaseURL: databaseURL)
+    try await repository.close()
+    try executeFixtureSQL(
+        at: databaseURL,
+        sql: """
+            DROP TABLE directory_history_sample;
+            DROP TABLE path_free_calibration_requirement;
+            ALTER TABLE dirty_region DROP COLUMN updated_at_ms;
+            DELETE FROM schema_migration WHERE version = 8;
+            PRAGMA user_version = 7;
+            """
+    )
+}
+
 private let minimalCalibrationTablesSQL = """
+    CREATE TABLE event_checkpoint (
+        stream_id TEXT PRIMARY KEY NOT NULL,
+        cursor_be BLOB NOT NULL CHECK(length(cursor_be) = 8)
+    ) WITHOUT ROWID;
+    CREATE TABLE dirty_region (
+        stream_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        reasons INTEGER NOT NULL CHECK(reasons != 0),
+        maximum_cursor_be BLOB,
+        revision_be BLOB NOT NULL CHECK(length(revision_be) = 8),
+        PRIMARY KEY(stream_id, path)
+    ) WITHOUT ROWID;
     CREATE TABLE scan_run (
         id TEXT PRIMARY KEY NOT NULL,
         stream_id TEXT NOT NULL,

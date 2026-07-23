@@ -92,4 +92,12 @@ The application has no backend, multi-user database, or cross-device synchroniza
 
 ## Evidence review
 
-The completed comparison, primary-source links, reproducible local spike, explicit non-claims, and GRDB adoption gates are recorded in [SQLite Adapter Evidence Review](../../engineering/sqlite-adapter-evidence-review.md). This review narrows the phase-one implementation choice but does not accept this ADR; the remaining validation plan still includes recovery UI, migration backups, full history retention, benchmarks, distribution signing, and oldest-supported-OS qualification.
+The completed comparison, primary-source links, reproducible local spike, explicit non-claims, and GRDB adoption gates are recorded in [SQLite Adapter Evidence Review](../../engineering/sqlite-adapter-evidence-review.md). This review narrows the phase-one implementation choice but does not by itself accept this ADR.
+
+The 2026-07-23 schema-v8 implementation completed atomic migration backup,
+read-only recovery composition, v6/v7 golden fixtures, hourly/daily history,
+day-30 path-free dirty-work conversion, and the reproducible current-host
+500,000/1,000,000-row benchmark. Results are recorded in
+[SQLite History Benchmark](../../engineering/sqlite-history-benchmark.md).
+ADR acceptance still requires minimum-reference macOS 15.6 performance and
+distribution-signing evidence.

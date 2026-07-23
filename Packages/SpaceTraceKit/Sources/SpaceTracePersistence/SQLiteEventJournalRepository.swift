@@ -7,7 +7,7 @@ import Synchronization
 /// A dependency-free SQLite prototype for ADR-004. The actor is the sole
 /// owner of the connection and serializes every transaction and query.
 public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGenerationRepository, WatchedScopeBookmarkRepository, AuthorizedBaselineSnapshotRepository {
-    public static let currentSchemaVersion = 7
+    public static let currentSchemaVersion = 8
     private static let schemaVersion = Int32(currentSchemaVersion)
 
     /// `Mutex` makes the non-Sendable C handle safe to release from the
@@ -15,6 +15,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
     /// serialized by the actor itself.
     private let connection: Mutex<OpaquePointer?>
     private var injectedFailurePoint: SQLiteEventJournalTestFailurePoint?
+    private let now: @Sendable () -> Date
 
     public init(databaseURL: URL) throws {
         try self.init(databaseURL: databaseURL, failurePoint: nil)
@@ -22,7 +23,8 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
 
     init(
         databaseURL: URL,
-        failurePoint: SQLiteEventJournalTestFailurePoint?
+        failurePoint: SQLiteEventJournalTestFailurePoint?,
+        now: @escaping @Sendable () -> Date = { Date() }
     ) throws {
         guard databaseURL.isFileURL, databaseURL.path.isEmpty == false else {
             throw SQLiteEventJournalError.invalidDatabaseLocation
@@ -56,6 +58,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
 
         connection = Mutex(openedDatabase)
         injectedFailurePoint = failurePoint
+        self.now = now
         if let migrationBackupURL {
             try? FileManager.default.removeItem(at: migrationBackupURL)
         }
@@ -507,7 +510,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
     public func beginCalibration(_ request: CalibrationRequest) throws -> CalibrationRunID {
         let runID = try CalibrationRunID(UUID().uuidString.lowercased())
         let revisionBytes = Self.encode(request.workItem.revision.rawValue)
-        let startedAt = Int64(Date().timeIntervalSince1970 * 1_000)
+        let startedAt = Self.milliseconds(now())
         let sql = """
             INSERT INTO scan_run(
                 id, stream_id, region_path, dirty_revision_be, state, started_at_ms
@@ -606,6 +609,11 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 runID: runID
             )
             try publishStagedDirectories(streamID: streamID, runID: runID)
+            try recordDirectoryHistory(
+                streamID: streamID,
+                runID: runID,
+                observedAt: now()
+            )
             guard try resolve(workItem, for: streamID) else {
                 throw SQLiteEventJournalError.dirtyRevisionChangedDuringFinalization
             }
@@ -688,6 +696,177 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         }
     }
 
+    public func directoryHistory(
+        for streamID: EventStreamID,
+        path: DirtyRegionPath,
+        bucket: DirectoryHistoryBucket,
+        from start: Date,
+        through end: Date
+    ) throws -> [DirectoryHistorySample] {
+        guard start <= end else { return [] }
+        let sql = """
+            SELECT bucket_start_ms, logical_bytes, allocated_bytes,
+                descendant_count, coverage
+            FROM directory_history_sample
+            WHERE stream_id = ?1 AND path = ?2 AND bucket_kind = ?3
+                AND bucket_start_ms BETWEEN ?4 AND ?5
+            ORDER BY bucket_start_ms ASC
+            """
+        return try withStatement(sql, operation: "read directory history") { statement in
+            try streamID.rawValue.withCString { streamCString in
+                try path.rawValue.withCString { pathCString in
+                    try bucket.rawValue.withCString { bucketCString in
+                        try check(sqlite3_bind_text(statement, 1, streamCString, -1, nil), operation: "bind history stream")
+                        try check(sqlite3_bind_text(statement, 2, pathCString, -1, nil), operation: "bind history path")
+                        try check(sqlite3_bind_text(statement, 3, bucketCString, -1, nil), operation: "bind history bucket")
+                        try check(sqlite3_bind_int64(statement, 4, Self.milliseconds(start)), operation: "bind history start")
+                        try check(sqlite3_bind_int64(statement, 5, Self.milliseconds(end)), operation: "bind history end")
+                        var samples: [DirectoryHistorySample] = []
+                        while true {
+                            switch sqlite3_step(statement) {
+                            case SQLITE_ROW:
+                                let coverageText = try readText(from: statement, column: 4, field: "directory_history_sample.coverage")
+                                samples.append(
+                                    DirectoryHistorySample(
+                                        streamID: streamID,
+                                        path: path,
+                                        bucket: bucket,
+                                        bucketStart: Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(statement, 0)) / 1_000),
+                                        logicalBytes: try readOptionalByteCount(from: statement, column: 1, field: "directory_history_sample.logical_bytes"),
+                                        allocatedBytes: try readOptionalByteCount(from: statement, column: 2, field: "directory_history_sample.allocated_bytes"),
+                                        descendantCount: try readNonnegativeInt64(from: statement, column: 3, field: "directory_history_sample.descendant_count"),
+                                        coverage: coverageText == "complete" ? .complete : .partial
+                                    )
+                                )
+                            case SQLITE_DONE:
+                                return samples
+                            default:
+                                throw sqliteFailure(
+                                    operation: "step directory-history query",
+                                    code: sqlite3_errcode(try databaseHandle())
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    public func topDirectoryGrowth(
+        for streamID: EventStreamID,
+        bucket: DirectoryHistoryBucket = .daily,
+        from start: Date,
+        through end: Date,
+        limit: Int = 100
+    ) throws -> [DirectoryGrowth] {
+        guard start <= end, limit > 0 else { return [] }
+        let sql = """
+            SELECT path, SUM(logical_delta) AS delta
+            FROM directory_history_sample
+            WHERE stream_id = ?1 AND bucket_kind = ?2
+                AND bucket_start_ms > ?3 AND bucket_start_ms <= ?4
+                AND logical_delta IS NOT NULL
+            GROUP BY path
+            ORDER BY delta DESC, path ASC
+            LIMIT ?5
+            """
+        return try withStatement(sql, operation: "read top directory growth") { statement in
+            try streamID.rawValue.withCString { streamCString in
+                try bucket.rawValue.withCString { bucketCString in
+                    try check(sqlite3_bind_text(statement, 1, streamCString, -1, nil), operation: "bind growth stream")
+                    try check(sqlite3_bind_text(statement, 2, bucketCString, -1, nil), operation: "bind growth bucket")
+                    try check(sqlite3_bind_int64(statement, 3, Self.milliseconds(start)), operation: "bind growth start")
+                    try check(sqlite3_bind_int64(statement, 4, Self.milliseconds(end)), operation: "bind growth end")
+                    try check(sqlite3_bind_int64(statement, 5, Int64(limit)), operation: "bind growth limit")
+                    var results: [DirectoryGrowth] = []
+                    while true {
+                        switch sqlite3_step(statement) {
+                        case SQLITE_ROW:
+                            let path = try readText(from: statement, column: 0, field: "growth.path")
+                            results.append(
+                                DirectoryGrowth(
+                                    path: try DirtyRegionPath(path),
+                                    logicalByteDelta: sqlite3_column_int64(statement, 1)
+                                )
+                            )
+                        case SQLITE_DONE:
+                            return results
+                        default:
+                            throw sqliteFailure(operation: "step top-growth query", code: sqlite3_errcode(try databaseHandle()))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    public func pathFreeCalibrationRequirement(
+        for streamID: EventStreamID,
+        scopeID: WatchedScopeID
+    ) throws -> PathFreeCalibrationRequirement? {
+        let sql = """
+            SELECT reasons, created_at_ms
+            FROM path_free_calibration_requirement
+            WHERE stream_id = ?1 AND scope_id = ?2
+            """
+        return try withStatement(sql, operation: "read path-free calibration requirement") { statement in
+            try streamID.rawValue.withCString { streamCString in
+                try check(sqlite3_bind_text(statement, 1, streamCString, -1, nil), operation: "bind path-free stream")
+                return try scopeID.rawValue.withCString { scopeCString in
+                    try check(sqlite3_bind_text(statement, 2, scopeCString, -1, nil), operation: "bind path-free scope")
+                    switch sqlite3_step(statement) {
+                    case SQLITE_ROW:
+                        return PathFreeCalibrationRequirement(
+                            streamID: streamID,
+                            scopeID: scopeID,
+                            reasons: DirtyRegionReason(rawValue: UInt64(bitPattern: sqlite3_column_int64(statement, 0))),
+                            createdAt: Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(statement, 1)) / 1_000)
+                        )
+                    case SQLITE_DONE:
+                        return nil
+                    default:
+                        throw sqliteFailure(
+                            operation: "step path-free requirement query",
+                            code: sqlite3_errcode(try databaseHandle())
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    public func restorePathFreeCalibrationRequirement(
+        for streamID: EventStreamID,
+        scopeID: WatchedScopeID,
+        at authorizedRoot: DirtyRegionPath
+    ) async throws -> Bool {
+        try execute("BEGIN IMMEDIATE TRANSACTION", operation: "begin path-free restoration")
+        do {
+            guard let requirement = try pathFreeCalibrationRequirement(
+                for: streamID,
+                scopeID: scopeID
+            ) else {
+                try execute("COMMIT TRANSACTION", operation: "commit empty path-free restoration")
+                return false
+            }
+            let region = try DirtyRegion(
+                path: authorizedRoot,
+                reasons: requirement.reasons.union([
+                    .requiresCalibration,
+                    .mustScanSubdirectories,
+                ]),
+                maximumCursor: nil
+            )
+            try merge(regions: [region], streamID: streamID)
+            try deletePathFreeRequirement(for: streamID, scopeID: scopeID)
+            try execute("COMMIT TRANSACTION", operation: "commit path-free restoration")
+            return true
+        } catch {
+            try rollback(after: error)
+        }
+    }
+
     public func saveAuthorizedBaseline(
         _ snapshot: AuthorizedBaselineSnapshot
     ) throws {
@@ -730,9 +909,18 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         referenceDate: Date = Date()
     ) throws -> SQLiteRetentionReport {
         let cutoff = Self.milliseconds(policy.cutoff(referenceDate: referenceDate))
+        let hourlyCutoff = Self.milliseconds(
+            referenceDate.addingTimeInterval(-7 * 86_400)
+        )
+        let dirtyCutoff = Self.milliseconds(
+            referenceDate.addingTimeInterval(-30 * 86_400)
+        )
         try execute("BEGIN IMMEDIATE TRANSACTION", operation: "begin retention")
 
         do {
+            let hourlyHistory = try deleteExpiredHourlyHistory(cutoff: hourlyCutoff)
+            let pathHistory = try deleteExpiredPathHistory(cutoff: cutoff)
+            let agedDirtyPaths = try ageDirtyPaths(cutoff: dirtyCutoff)
             let deletedNodes = try deleteExpiredDeletedNodes(cutoff: cutoff)
             try failIfRequested(at: .afterExpiredDeletedNodesBeforeBaselines)
             let baselines = try deleteExpiredReplaceableBaselines(cutoff: cutoff)
@@ -741,7 +929,10 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             return SQLiteRetentionReport(
                 deletedNodeCount: deletedNodes,
                 baselineCount: baselines,
-                scanRunCount: scanRuns
+                scanRunCount: scanRuns,
+                hourlyHistoryCount: hourlyHistory,
+                pathHistoryCount: pathHistory,
+                agedDirtyPathCount: agedDirtyPaths
             )
         } catch {
             try rollback(after: error)
@@ -831,6 +1022,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 try migrateToVersionFive(database)
                 try migrateToVersionSix(database, failurePoint: failurePoint)
                 try migrateToVersionSeven(database, failurePoint: failurePoint)
+                try migrateToVersionEight(database, failurePoint: failurePoint)
             case 1:
                 try migrateToVersionTwo(database)
                 try migrateToVersionThree(database)
@@ -838,26 +1030,34 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 try migrateToVersionFive(database)
                 try migrateToVersionSix(database, failurePoint: failurePoint)
                 try migrateToVersionSeven(database, failurePoint: failurePoint)
+                try migrateToVersionEight(database, failurePoint: failurePoint)
             case 2:
                 try migrateToVersionThree(database)
                 try migrateToVersionFour(database)
                 try migrateToVersionFive(database)
                 try migrateToVersionSix(database, failurePoint: failurePoint)
                 try migrateToVersionSeven(database, failurePoint: failurePoint)
+                try migrateToVersionEight(database, failurePoint: failurePoint)
             case 3:
                 try migrateToVersionFour(database)
                 try migrateToVersionFive(database)
                 try migrateToVersionSix(database, failurePoint: failurePoint)
                 try migrateToVersionSeven(database, failurePoint: failurePoint)
+                try migrateToVersionEight(database, failurePoint: failurePoint)
             case 4:
                 try migrateToVersionFive(database)
                 try migrateToVersionSix(database, failurePoint: failurePoint)
                 try migrateToVersionSeven(database, failurePoint: failurePoint)
+                try migrateToVersionEight(database, failurePoint: failurePoint)
             case 5:
                 try migrateToVersionSix(database, failurePoint: failurePoint)
                 try migrateToVersionSeven(database, failurePoint: failurePoint)
+                try migrateToVersionEight(database, failurePoint: failurePoint)
             case 6:
                 try migrateToVersionSeven(database, failurePoint: failurePoint)
+                try migrateToVersionEight(database, failurePoint: failurePoint)
+            case 7:
+                try migrateToVersionEight(database, failurePoint: failurePoint)
             default:
                 throw SQLiteEventJournalError.unsupportedSchemaVersion(currentVersion)
             }
@@ -887,6 +1087,89 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         )
         try recoverInterruptedCalibrationRuns(database)
         return migrationBackupURL
+    }
+
+    private static func migrateToVersionEight(
+        _ database: OpaquePointer,
+        failurePoint: SQLiteEventJournalTestFailurePoint?
+    ) throws {
+        try execute(
+            on: database,
+            "BEGIN IMMEDIATE TRANSACTION",
+            operation: "begin schema migration v8"
+        )
+        do {
+            try execute(
+                on: database,
+                """
+                ALTER TABLE dirty_region ADD COLUMN updated_at_ms INTEGER;
+                UPDATE dirty_region
+                SET updated_at_ms = CAST(strftime('%s', 'now') AS INTEGER) * 1000;
+
+                CREATE TABLE directory_history_sample (
+                    stream_id TEXT NOT NULL,
+                    path TEXT NOT NULL
+                        CHECK(length(path) > 0 AND substr(path, 1, 1) = '/'
+                            AND instr(path, char(0)) = 0),
+                    bucket_kind TEXT NOT NULL
+                        CHECK(bucket_kind IN ('hourly', 'daily')),
+                    bucket_start_ms INTEGER NOT NULL,
+                    logical_bytes INTEGER,
+                    logical_delta INTEGER,
+                    allocated_bytes INTEGER,
+                    descendant_count INTEGER NOT NULL CHECK(descendant_count >= 0),
+                    coverage TEXT NOT NULL CHECK(coverage IN ('complete', 'partial')),
+                    scan_run_id TEXT NOT NULL,
+                    PRIMARY KEY(stream_id, path, bucket_kind, bucket_start_ms)
+                ) WITHOUT ROWID;
+
+                CREATE INDEX directory_history_window
+                    ON directory_history_sample(
+                        stream_id, bucket_kind, bucket_start_ms, path
+                    );
+                CREATE INDEX directory_history_growth
+                    ON directory_history_sample(
+                        stream_id, bucket_kind, path, bucket_start_ms,
+                        logical_delta
+                    );
+
+                CREATE TABLE path_free_calibration_requirement (
+                    stream_id TEXT NOT NULL,
+                    scope_id TEXT NOT NULL,
+                    reasons INTEGER NOT NULL CHECK(reasons != 0),
+                    created_at_ms INTEGER NOT NULL,
+                    updated_at_ms INTEGER NOT NULL,
+                    PRIMARY KEY(stream_id, scope_id)
+                ) WITHOUT ROWID;
+
+                INSERT INTO schema_migration(version, applied_at_ms, checksum)
+                VALUES(8, CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+                    'hourly-daily-delta-history-scope-path-free-dirty-v8');
+                PRAGMA user_version = 8;
+                """,
+                operation: "apply schema migration version 8"
+            )
+            try failMigrationIfRequested(version: 8, failurePoint: failurePoint)
+            try execute(
+                on: database,
+                "COMMIT TRANSACTION",
+                operation: "commit schema migration v8"
+            )
+        } catch let migrationError {
+            do {
+                try execute(
+                    on: database,
+                    "ROLLBACK TRANSACTION",
+                    operation: "roll back schema migration v8"
+                )
+            } catch let rollbackError {
+                throw SQLiteEventJournalError.rollbackFailed(
+                    original: String(describing: migrationError),
+                    rollback: String(describing: rollbackError)
+                )
+            }
+            throw migrationError
+        }
     }
 
     private static func migrateToVersionSeven(
@@ -1913,9 +2196,10 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
     ) throws {
         let sql = """
             INSERT INTO dirty_region(
-                stream_id, path, reasons, maximum_cursor_be, revision_be
+                stream_id, path, reasons, maximum_cursor_be, revision_be,
+                updated_at_ms
             )
-            VALUES(?1, ?2, ?3, ?4, ?5)
+            VALUES(?1, ?2, ?3, ?4, ?5, ?6)
             """
         let cursorBytes = region.maximumCursor.map(Self.encode)
         let revisionBytes = Self.encode(revision.rawValue)
@@ -1968,6 +2252,10 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                                 nil
                             ),
                             operation: "bind dirty-region revision"
+                        )
+                        try check(
+                            sqlite3_bind_int64(statement, 6, Self.milliseconds(now())),
+                            operation: "bind dirty-region update time"
                         )
                         try stepExpectingDone(statement, operation: "write dirty region")
                     }
@@ -2231,6 +2519,155 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             try runID.rawValue.withCString { runCString in
                 try check(sqlite3_bind_text(statement, 1, runCString, -1, nil), operation: "bind staged deletion run")
                 try stepExpectingDone(statement, operation: "delete staged calibration rows")
+            }
+        }
+    }
+
+    private func recordDirectoryHistory(
+        streamID: EventStreamID,
+        runID: CalibrationRunID,
+        observedAt: Date
+    ) throws {
+        for bucket in [DirectoryHistoryBucket.hourly, .daily] {
+            let observedMilliseconds = Self.milliseconds(observedAt)
+            let bucketStart = observedMilliseconds
+                - observedMilliseconds % bucket.durationMilliseconds
+            let sql = """
+                INSERT INTO directory_history_sample(
+                    stream_id, path, bucket_kind, bucket_start_ms,
+                    logical_bytes, logical_delta, allocated_bytes, descendant_count,
+                    coverage, scan_run_id
+                )
+                SELECT ?1, staged.path, ?2, ?3, staged.logical_bytes,
+                    CASE
+                        WHEN staged.logical_bytes IS NULL THEN NULL
+                        ELSE staged.logical_bytes - COALESCE((
+                            SELECT prior.logical_bytes
+                            FROM directory_history_sample AS prior
+                            WHERE prior.stream_id = ?1
+                                AND prior.path = staged.path
+                                AND prior.bucket_kind = ?2
+                                AND prior.bucket_start_ms < ?3
+                                AND prior.logical_bytes IS NOT NULL
+                            ORDER BY prior.bucket_start_ms DESC
+                            LIMIT 1
+                        ), staged.logical_bytes)
+                    END,
+                    staged.allocated_bytes, staged.descendant_count,
+                    staged.coverage, ?4
+                FROM scan_node_stage AS staged
+                WHERE staged.scan_run_id = ?4
+                ON CONFLICT(stream_id, path, bucket_kind, bucket_start_ms)
+                DO UPDATE SET
+                    logical_bytes = excluded.logical_bytes,
+                    logical_delta = excluded.logical_delta,
+                    allocated_bytes = excluded.allocated_bytes,
+                    descendant_count = excluded.descendant_count,
+                    coverage = excluded.coverage,
+                    scan_run_id = excluded.scan_run_id
+                """
+            try withStatement(sql, operation: "record directory history") { statement in
+                try streamID.rawValue.withCString { streamCString in
+                    try bucket.rawValue.withCString { bucketCString in
+                        try runID.rawValue.withCString { runCString in
+                            try check(sqlite3_bind_text(statement, 1, streamCString, -1, nil), operation: "bind history stream")
+                            try check(sqlite3_bind_text(statement, 2, bucketCString, -1, nil), operation: "bind history bucket")
+                            try check(sqlite3_bind_int64(statement, 3, bucketStart), operation: "bind history time")
+                            try check(sqlite3_bind_text(statement, 4, runCString, -1, nil), operation: "bind history run")
+                            try stepExpectingDone(statement, operation: "write directory history")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func deleteExpiredHourlyHistory(cutoff: Int64) throws -> Int {
+        try deleteRows(
+            """
+            DELETE FROM directory_history_sample
+            WHERE bucket_kind = 'hourly' AND bucket_start_ms < ?1
+            """,
+            cutoff: cutoff,
+            operation: "delete expired hourly history"
+        )
+    }
+
+    private func deleteExpiredPathHistory(cutoff: Int64) throws -> Int {
+        try deleteRows(
+            """
+            DELETE FROM directory_history_sample
+            WHERE bucket_start_ms < ?1
+            """,
+            cutoff: cutoff,
+            operation: "delete expired path history"
+        )
+    }
+
+    private func ageDirtyPaths(cutoff: Int64) throws -> Int {
+        let markerSQL = """
+            INSERT INTO path_free_calibration_requirement(
+                stream_id, scope_id, reasons, created_at_ms, updated_at_ms
+            )
+            SELECT DISTINCT dirty.stream_id,
+                COALESCE((
+                    SELECT bookmark.scope_id
+                    FROM watched_scope_bookmark AS bookmark
+                    WHERE bookmark.expected_root = '/'
+                        OR dirty.path = bookmark.expected_root
+                        OR substr(
+                            dirty.path,
+                            1,
+                            length(bookmark.expected_root) + 1
+                        ) = bookmark.expected_root || '/'
+                    ORDER BY length(bookmark.expected_root) DESC,
+                        bookmark.scope_id ASC
+                    LIMIT 1
+                ), ''),
+                ?1, ?2, ?2
+            FROM dirty_region AS dirty
+            WHERE dirty.updated_at_ms < ?3
+            ON CONFLICT(stream_id, scope_id) DO UPDATE SET
+                reasons = path_free_calibration_requirement.reasons | excluded.reasons,
+                updated_at_ms = excluded.updated_at_ms
+            """
+        try withStatement(markerSQL, operation: "preserve aged dirty requirement") { statement in
+            try check(
+                sqlite3_bind_int64(
+                    statement,
+                    1,
+                    Int64(bitPattern: DirtyRegionReason.requiresCalibration.rawValue)
+                ),
+                operation: "bind calibration reason"
+            )
+            try check(sqlite3_bind_int64(statement, 2, Self.milliseconds(now())), operation: "bind marker time")
+            try check(sqlite3_bind_int64(statement, 3, cutoff), operation: "bind dirty cutoff")
+            try stepExpectingDone(statement, operation: "write path-free requirement")
+        }
+        return try deleteRows(
+            "DELETE FROM dirty_region WHERE updated_at_ms < ?1",
+            cutoff: cutoff,
+            operation: "delete aged dirty paths"
+        )
+    }
+
+    private func deletePathFreeRequirement(
+        for streamID: EventStreamID,
+        scopeID: WatchedScopeID
+    ) throws {
+        try withStatement(
+            """
+            DELETE FROM path_free_calibration_requirement
+            WHERE stream_id = ?1 AND scope_id = ?2
+            """,
+            operation: "delete path-free requirement"
+        ) { statement in
+            try streamID.rawValue.withCString { streamCString in
+                try check(sqlite3_bind_text(statement, 1, streamCString, -1, nil), operation: "bind consumed path-free stream")
+                try scopeID.rawValue.withCString { scopeCString in
+                    try check(sqlite3_bind_text(statement, 2, scopeCString, -1, nil), operation: "bind consumed path-free scope")
+                    try stepExpectingDone(statement, operation: "consume path-free requirement")
+                }
             }
         }
     }

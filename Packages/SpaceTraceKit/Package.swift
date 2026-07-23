@@ -19,6 +19,10 @@ let package = Package(
                 "SpaceTraceMonitoring",
             ]
         ),
+        .executable(
+            name: "SpaceTracePersistenceBenchmark",
+            targets: ["SpaceTracePersistenceBenchmark"]
+        ),
     ],
     targets: [
         .target(name: "SpaceTraceDomain"),
@@ -42,6 +46,14 @@ let package = Package(
             linkerSettings: [
                 .linkedLibrary("sqlite3"),
             ]
+        ),
+        .executableTarget(
+            name: "SpaceTracePersistenceBenchmark",
+            dependencies: [
+                "SpaceTraceApplication",
+                "SpaceTracePersistence",
+            ],
+            linkerSettings: [.linkedLibrary("sqlite3")]
         ),
         .target(
             name: "SpaceTracePlatform",

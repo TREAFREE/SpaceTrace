@@ -305,6 +305,13 @@ public protocol EventJournalRepository: Sendable {
         for streamID: EventStreamID,
         limit: Int
     ) async throws -> [DirtyRegionWorkItem]
+    /// Restores an aged, path-free continuity marker at the currently
+    /// authorized root. Returns true only when a marker was consumed.
+    func restorePathFreeCalibrationRequirement(
+        for streamID: EventStreamID,
+        scopeID: WatchedScopeID,
+        at authorizedRoot: DirtyRegionPath
+    ) async throws -> Bool
     func beginCalibration(_ request: CalibrationRequest) async throws -> CalibrationRunID
     func stageCalibration(
         _ aggregates: [DirectoryMetadataAggregate],
@@ -324,4 +331,17 @@ public protocol EventJournalRepository: Sendable {
     func currentDirectoryAggregates(
         for streamID: EventStreamID
     ) async throws -> [DirectoryMetadataAggregate]
+}
+
+public extension EventJournalRepository {
+    func restorePathFreeCalibrationRequirement(
+        for streamID: EventStreamID,
+        scopeID: WatchedScopeID,
+        at authorizedRoot: DirtyRegionPath
+    ) async throws -> Bool {
+        _ = streamID
+        _ = scopeID
+        _ = authorizedRoot
+        return false
+    }
 }

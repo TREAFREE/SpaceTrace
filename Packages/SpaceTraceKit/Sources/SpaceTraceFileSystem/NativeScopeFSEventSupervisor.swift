@@ -211,7 +211,13 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
         )
 
         do {
-            if activation.requiresCalibration {
+            let restoredAgedRequirement =
+                try await repository.restorePathFreeCalibrationRequirement(
+                    for: streamID,
+                    scopeID: scope.id,
+                    at: scope.root
+                )
+            if activation.requiresCalibration || restoredAgedRequirement {
                 let invalidation = try FileSystemInvalidation(
                     path: scope.root.rawValue,
                     cursor: nil,

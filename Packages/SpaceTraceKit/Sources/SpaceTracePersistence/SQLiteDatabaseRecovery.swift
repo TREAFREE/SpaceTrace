@@ -131,12 +131,13 @@ public final class SQLiteReadOnlyRecoverySession: @unchecked Sendable {
             break
         }
 
+        let isReadable = selectedDatabase != nil
         connection = Mutex(selectedDatabase)
         overview = SQLiteReadOnlyRecoveryOverview(
             reason: reason,
             source: selectedSource,
             schemaVersion: selectedVersion,
-            isReadable: selectedDatabase != nil,
+            isReadable: isReadable,
             incidentDirectoryName: isolated?.directoryURL.lastPathComponent
         )
     }

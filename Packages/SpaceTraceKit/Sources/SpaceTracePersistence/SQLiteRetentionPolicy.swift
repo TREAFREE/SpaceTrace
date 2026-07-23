@@ -32,14 +32,23 @@ public struct SQLiteRetentionReport: Sendable, Equatable {
     public let deletedNodeCount: Int
     public let baselineCount: Int
     public let scanRunCount: Int
+    public let hourlyHistoryCount: Int
+    public let pathHistoryCount: Int
+    public let agedDirtyPathCount: Int
 
     public init(
         deletedNodeCount: Int,
         baselineCount: Int,
-        scanRunCount: Int
+        scanRunCount: Int,
+        hourlyHistoryCount: Int = 0,
+        pathHistoryCount: Int = 0,
+        agedDirtyPathCount: Int = 0
     ) {
         self.deletedNodeCount = deletedNodeCount
         self.baselineCount = baselineCount
         self.scanRunCount = scanRunCount
+        self.hourlyHistoryCount = hourlyHistoryCount
+        self.pathHistoryCount = pathHistoryCount
+        self.agedDirtyPathCount = agedDirtyPathCount
     }
 }

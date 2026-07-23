@@ -62,13 +62,13 @@ The strict-concurrency run is an audit for newly introduced package code. The ap
 
 ## Deliberately not claimed
 
-- The user-facing multi-directory permission list, batch baseline, startup data-volume capacity sample, version/schema metadata, restart restoration, and power/thermal/sleep-aware pause/retry are implemented. True in-enumerator mid-scan continuation, history, growth explanation, 24-hour menu-bar metrics, and export are not implemented.
+- The user-facing multi-directory permission list, batch baseline, startup data-volume capacity sample, version/schema metadata, restart restoration, and power/thermal/sleep-aware pause/retry are implemented. Schema-v8 hourly/daily history and top-growth persistence queries are implemented; their product UI, true in-enumerator mid-scan continuation, 24-hour menu-bar metrics, and export are not implemented.
 - User-started baseline scheduling reacts to sleep, Low Power Mode, serious/critical thermal state, and observes the active power source. Background rate budgets, system-load scheduling, and the architecture's token bucket are not implemented. Hard-link deduplication is bounded by the entry budget but remains in memory for each scan run.
 - Real sandbox Powerbox presentation and stale/identity-failure reauthorization UI are implemented. Current-host persistent selection, same-bundle relaunch, explicit app-level removal, and same-image external-volume return have passed. Genuine stale evidence, the different-UUID replacement subcase in the UI flow, Apple-identity signing, and the macOS 15.6 runtime matrix remain incomplete or blocked by the available host.
 - No exact byte delta or process attribution is inferred from FSEvents.
 - Native qualification now includes controlled detach/remount and same-name replacement images on the development host. Oldest-supported-OS runtime behavior, genuine daemon `UserDropped`, `KernelDropped`, event-ID wrap, sleep/wake, and permission-revocation behavior remain unqualified; the permitted evidence boundary is recorded in the [continuity-loss qualification protocol](fsevents-continuity-qualification.md).
 - Automatic post-start recovery is bounded and tested, but genuine daemon-generated drop/wrap conditions and recovery on the oldest supported macOS runtime remain unqualified.
-- The GRDB-versus-raw-SQLite evidence review is complete and raw SQLite remains the phase-one adapter. Current-table disk-full, obvious main-file corruption, the v6-to-v7 migration rollback seam, and a bounded retention slice are tested. Subtle/main-WAL corruption matrices, migration backups and all released fixtures, full hourly/daily history and aged-dirty-path privacy behavior, read-only recovery UI, benchmarks, GRDB parity, notarization, and oldest-OS runtime evidence remain open.
+- The raw-SQLite adapter now has atomic pre-migration backup, read-only startup recovery, main/WAL isolation, v6/v7 golden fixtures, hourly/daily history, aged-dirty-path path removal, and reproducible 500,000/1,000,000-row current-host benchmarks. GRDB parity, deeper page-level corruption cases, notarization, and oldest-OS runtime/performance evidence remain open.
 - macOS 15.6 runtime qualification is not complete; compiling for the deployment target on a newer host is not runtime evidence.
 - Full Disk Access, App Sandbox removal, Developer ID signing, notarization, distribution, and update behavior are unchanged and remain governed by their proposed decisions.
 
@@ -76,8 +76,8 @@ The strict-concurrency run is an audit for newly introduced package code. The ap
 
 1. Qualify the production scheduling signals with a signed sandbox App on macOS 15.6 and current stable macOS across real sleep/wake, AC/battery, Low Power Mode, and safely controlled thermal transitions; add the background token-bucket/rate policy only with benchmark evidence.
 2. Capture genuine daemon drop/wrap evidence only when it is safely reproducible under the continuity-loss qualification protocol, and qualify recovery on the oldest supported macOS runtime.
-3. Add atomic migration backup and read-only recovery composition; expand the golden fixture matrix and main/WAL corruption cases without silently rebuilding.
-4. Implement the remaining ADR-004 history tables and day-30 aged-dirty-path conversion, then run the 500,000/1,000,000-row size/latency/checkpoint/retention benchmark and oldest-supported-OS qualification.
+3. Expand page-level main/WAL corruption cases and released fixtures without silently rebuilding.
+4. Repeat the 500,000/1,000,000-row benchmark on the minimum-reference macOS 15.6 machine before accepting ADR-004.
 5. Rerun the signed sandbox protocol with a stable Apple identity on Apple Silicon macOS 15.6, including genuine stale evidence, the different-UUID UI replacement subcase, and the system menu-bar interaction matrix; do not substitute the completed current-host ad-hoc smoke for this gate.
 6. Qualify permission revocation during active scanning and multi-directory list mutations in the signed sandbox matrix.
 7. Complete maintainer review of ADR-003 and ADR-004 before treating the now-user-visible baseline slice as beta-ready or release-qualified.

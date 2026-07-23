@@ -37,7 +37,10 @@ struct SQLiteDatabaseRecoveryTests {
         let repository = try SQLiteEventJournalRepository(databaseURL: fixture.databaseURL)
         try await repository.close()
 
-        #expect(try schemaVersion(at: fixture.databaseURL) == 7)
+        #expect(
+            try schemaVersion(at: fixture.databaseURL)
+                == Int32(SQLiteEventJournalRepository.currentSchemaVersion)
+        )
         #expect(FileManager.default.fileExists(atPath: backupURL.path) == false)
     }
 
@@ -94,7 +97,10 @@ struct SQLiteDatabaseRecoveryTests {
 
         #expect(session.overview.reason == .databaseCorrupt)
         #expect(session.overview.source == .isolatedMainDatabase)
-        #expect(session.overview.schemaVersion == 7)
+        #expect(
+            session.overview.schemaVersion
+                == Int32(SQLiteEventJournalRepository.currentSchemaVersion)
+        )
         #expect(session.verifyWriteRejectedForTesting())
         let incident = try #require(session.overview.incidentDirectoryName)
         let isolatedWAL = fixture.directoryURL
@@ -152,6 +158,10 @@ private struct RecoveryDatabaseFixture {
         try execute(
             at: databaseURL,
             sql: """
+                DROP TABLE directory_history_sample;
+                DROP TABLE path_free_calibration_requirement;
+                ALTER TABLE dirty_region DROP COLUMN updated_at_ms;
+                DELETE FROM schema_migration WHERE version = 8;
                 DROP INDEX node_current_expired_deleted;
                 ALTER TABLE node_current DROP COLUMN deleted_at_ms;
                 DELETE FROM schema_migration WHERE version = 7;

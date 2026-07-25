@@ -229,7 +229,7 @@ SpaceTrace/
 
 MVP uses one menu-bar-capable application process. Closing the main window does not stop monitoring; quitting the app does. Optional launch at login uses the public Service Management API and is user-controlled. There is no LaunchDaemon, XPC helper, login-item helper executable, or root process.
 
-The supported application shell is a conventional Dock application with one main window plus a public SwiftUI `MenuBarExtra` for lightweight status and window access. The main window owns data-rich investigation, history, evidence, and permission education. The menu-bar surface remains small and does not become the only route to an essential action. SpaceTrace does not position a custom window around the camera housing or depend on display-notch geometry: `NSScreen` safe-area APIs are treated only as layout-avoidance evidence, not as a product surface or persistent attachment point.
+The supported application shell is a conventional Dock application with one main window plus a public SwiftUI `MenuBarExtra` for lightweight status and window access. The main window owns data-rich investigation, history, evidence, and permission education. The menu-bar surface remains small and does not become the only route to an essential action. Its 24-hour delta is read from persisted monotonic-sequence history and is shown only for a fresh, gap-bounded, same-volume, monotonic-time window; incomplete evidence is never replaced by zero or an earlier cached delta. SpaceTrace does not position a custom window around the camera housing or depend on display-notch geometry: `NSScreen` safe-area APIs are treated only as layout-avoidance evidence, not as a product surface or persistent attachment point.
 
 This choice keeps FDA scope, code signing, crash recovery, and updates understandable. A helper may only be reconsidered if measured app-lifecycle constraints prevent the agreed freshness SLO.
 
@@ -239,6 +239,7 @@ This choice keeps FDA scope, code signing, crash recovery, and updates understan
 | --- | --- | --- |
 | UI state | `@MainActor` | Render cached state, send intents, consume progress snapshots |
 | `ScanCoordinator` | Swift actor | State machine, queues, leases, policy, cancellation, backpressure |
+| `StorageHistoryBackgroundCoordinator` | Swift actor with one bounded worker | Serialize startup/wake/time-change/hourly capacity samples with deferrable daily retention and publish bounded health state |
 | FSEvents callback | Dedicated serial `DispatchQueue` | Copy callback data into owned values and enqueue it; never scan or query UI |
 | Database | `DatabaseActor` wrapping a repository-isolated SQLite adapter | One logical writer, migrations, durable work; GRDB remains a gated candidate for future pooled reads |
 | File metadata | Dedicated utility QoS worker pool | Blocking enumeration/stat calls with at most two workers |

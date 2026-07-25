@@ -89,6 +89,18 @@ final class BaselineScanViewModel {
         return publishedContexts.filter { configured.contains($0.scopeID) }
     }
 
+    var lastReconciliationAt: Date? {
+        switch state {
+        case let .completed(result):
+            result.completedAt
+        case let .incomplete(result):
+            result.completedAt
+        case .idle, .preparing, .deferred, .resuming, .scanning, .publishing,
+             .cancelled, .failed:
+            nil
+        }
+    }
+
     func handleCompositionFailure(scopeID: WatchedScopeID? = nil) {
         guard let scopeID else {
             state = .idle

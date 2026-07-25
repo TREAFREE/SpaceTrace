@@ -24,8 +24,24 @@ struct SpaceTraceApp: App {
         .defaultSize(width: 920, height: 620)
         .windowToolbarStyle(.unified)
 
-        MenuBarExtra("SpaceTrace", systemImage: "externaldrive") {
-            MenuBarStatusView(model: appDelegate.authorizationModel)
+        MenuBarExtra {
+            MenuBarStatusView(
+                authorizationModel: appDelegate.authorizationModel,
+                baselineModel: appDelegate.baselineScanModel,
+                statusModel: appDelegate.menuBarStatusModel,
+                recoveryModel: appDelegate.databaseRecoveryModel
+            )
+        } label: {
+            Label(
+                "SpaceTrace",
+                systemImage: MenuBarOperationalState.resolve(
+                    storage: appDelegate.menuBarStatusModel.storageState,
+                    authorization: appDelegate.authorizationModel.summary,
+                    baseline: appDelegate.baselineScanModel.state,
+                    recoveryIsActive:
+                        appDelegate.databaseRecoveryModel.overview != nil
+                ).symbolName
+            )
         }
         .menuBarExtraStyle(.window)
     }

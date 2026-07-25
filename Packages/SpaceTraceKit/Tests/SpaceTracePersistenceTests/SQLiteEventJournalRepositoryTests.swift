@@ -135,6 +135,51 @@ struct SQLiteEventJournalRepositoryTests {
             #expect(samples.map(\.sequence) == [1, 2, 3])
             #expect(samples.map(\.snapshot.availableBytes?.value) == [9_000, 8_000, 7_000])
             #expect(samples.allSatisfy { $0.source == .lifecycle })
+            let recent = try await repository
+                .recentStartupVolumeCapacityHistory(limit: 2)
+            #expect(recent.map(\.sequence) == [2, 3])
+            #expect(
+                recent.map(\.snapshot.observedAt)
+                    == [
+                        Date(timeIntervalSince1970: 100),
+                        Date(timeIntervalSince1970: 50),
+                    ]
+            )
+        }
+    }
+
+    @Test("Real SQLite history qualifies a continuous 24-hour menu-bar result")
+    func capacityHistoryQualifiesMenuBarResult() async throws {
+        try await withRepository { repository in
+            let volumeUUID = try #require(
+                UUID(uuidString: "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")
+            )
+            let start = Date(timeIntervalSince1970: 1_900_000_000)
+            for hour in 0...24 {
+                try await repository.recordStartupVolumeCapacity(
+                    StartupVolumeCapacitySnapshot(
+                        observedAt: start.addingTimeInterval(
+                            TimeInterval(hour) * 3_600
+                        ),
+                        volumeUUID: volumeUUID,
+                        totalBytes: try ByteCount(20_000),
+                        availableBytes: try ByteCount(
+                            15_000 - Int64(hour * 100)
+                        ),
+                        availableForImportantUsageBytes: nil
+                    ),
+                    source: .lifecycle
+                )
+            }
+
+            let status = try await StartupVolume24HourStatusQuery(
+                repository: repository
+            ).load(through: start.addingTimeInterval(24 * 3_600))
+
+            #expect(status.qualification == .qualified)
+            #expect(status.currentAvailableBytes?.value == 12_600)
+            #expect(status.change == .volumeAvailable(bytes: -2_400))
+            #expect(status.baselineObservedAt == start)
         }
     }
 

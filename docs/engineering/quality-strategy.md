@@ -67,6 +67,8 @@ Coverage 不能替代场景测试。为达到数字而断言实现细节或大�
 - 生命周期观测必须发布有界的 `inactive`、`active`、`recovering`、`failed` 应用状态；消费者压力可以合并中间快照，但不得丢失当前最终状态；
 - 真实守护进程 drop/wrap 只能按 [FSEvents 连续性丢失资格验证](./fsevents-continuity-qualification.zh-CN.md) 记录；注入标志与应用缓冲区溢出不得冒充系统守护进程证据；
 - 用户取消、系统睡眠/唤醒、应用终止后恢复 checkpoint；
+- 后台容量采样在睡眠期间不得写入，唤醒、系统时间或时区变化后必须立即请求采样；retention 必须 single-flight、可延后，并且失败后能够在后续机会恢复；
+- 菜单栏 24 小时结果必须由单调提交序号、同卷身份、新鲜端点和不超过 90 分钟的连续采样共同证明；缺口、回拨、换卷和不可用值必须降级为“证据不足”；
 - SQLite busy、磁盘空间不足、数据库损坏副本和只读文件系统；
 - 诊断包默认不包含原始路径、文件名或文件内容。
 
@@ -92,6 +94,8 @@ Performance suite **MUST** 对 100k、1M 节点 fixture 记录 wall time、CPU t
 - 单次噪声不得直接更新基线，基线更新需要至少 5 次稳定样本和独立 PR。
 
 Nightly **MUST** 运行 24 小时事件风暴/空闲交替测试；内存线性增长、未关闭文件描述符或数据库持续膨胀均阻塞发布。
+
+提交前可以用 `make package-background-lifecycle-qualification` 执行 30 个虚拟日的确定性生命周期测试。它证明状态有界、操作串行以及睡眠/唤醒/时间变化/retention 分支，但不得替代 Nightly 的真实 24 小时进程、能耗、内存和系统调度证据。
 
 ### 2.5 Upgrade and migration tests
 

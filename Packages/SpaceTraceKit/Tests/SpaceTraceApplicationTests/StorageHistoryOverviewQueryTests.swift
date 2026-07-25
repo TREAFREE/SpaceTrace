@@ -356,6 +356,13 @@ private actor RecordingVolumeRepositoryFake:
         _ = end
         return []
     }
+
+    func recentStartupVolumeCapacityHistory(
+        limit: Int
+    ) -> [StartupVolumeCapacityHistorySample] {
+        _ = limit
+        return []
+    }
 }
 
 private actor StorageDirectoryRepositoryFake: DirectoryHistoryRepository {
@@ -419,6 +426,12 @@ private actor StorageVolumeRepositoryFake: StartupVolumeCapacityHistoryRepositor
         _ = start
         _ = end
         return samples
+    }
+
+    func recentStartupVolumeCapacityHistory(
+        limit: Int
+    ) -> [StartupVolumeCapacityHistorySample] {
+        Array(samples.suffix(limit))
     }
 }
 

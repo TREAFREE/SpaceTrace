@@ -12,6 +12,7 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
     let baselineScanModel = BaselineScanViewModel()
     let directoryHistoryModel = DirectoryHistoryViewModel()
     let databaseRecoveryModel = DatabaseRecoveryViewModel()
+    let menuBarStatusModel = MenuBarStatusViewModel()
 
     private let logger = Logger(
         subsystem: "com.TREAFREE.SpaceTrace",
@@ -20,7 +21,8 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
     private var compositionRoot: SpaceTraceCompositionRoot?
     private var recoverySession: SQLiteReadOnlyRecoverySession?
     private var startupTask: Task<Void, Never>?
-    private var capacityHistoryTask: Task<Void, Never>?
+    private var storageHistoryStartupTask: Task<Void, Never>?
+    private var storageHistoryObservationTask: Task<Void, Never>?
     private var shutdownTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -28,6 +30,7 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
 #if DEBUG
         if authorizationModel.loadUITestScenarioIfConfigured() {
             directoryHistoryModel.connect(UITestStorageHistoryLoader())
+            menuBarStatusModel.loadUITestFixture()
             return
         }
 #endif
@@ -38,13 +41,23 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
                 authorizationModel.connect(compositionRoot.authorizationCoordinator)
                 baselineScanModel.connect(compositionRoot.baselineScanCoordinator)
                 directoryHistoryModel.connect(compositionRoot.storageHistoryQuery)
+                menuBarStatusModel.connect(
+                    compositionRoot.startupVolume24HourStatusQuery
+                )
                 startupTask = Task { [weak self] in
                     await self?.authorizationModel.start()
                 }
-                capacityHistoryTask = Task { [weak self] in
-                    await self?.recordCapacityHistory(
-                        with: compositionRoot.volumeCapacityRecorder
+                storageHistoryObservationTask = Task { [weak self] in
+                    await self?.menuBarStatusModel.monitor(
+                        background:
+                            compositionRoot.storageHistoryBackgroundCoordinator
                     )
+                }
+                storageHistoryStartupTask = Task {
+                    await compositionRoot.storageHistoryBackgroundCoordinator
+                        .start()
+                    guard Task.isCancelled == false else { return }
+                    compositionRoot.storageHistoryLifecycleMonitor.start()
                 }
             case let .recovery(session):
                 recoverySession = session
@@ -52,11 +65,13 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
                 authorizationModel.handleCompositionFailure()
                 baselineScanModel.handleCompositionFailure()
                 directoryHistoryModel.handleCompositionFailure()
+                menuBarStatusModel.handleCompositionFailure()
             }
         } catch {
             authorizationModel.handleCompositionFailure()
             baselineScanModel.handleCompositionFailure()
             directoryHistoryModel.handleCompositionFailure()
+            menuBarStatusModel.handleCompositionFailure()
             logger.error("Application composition failed with private diagnostic context.")
         }
     }
@@ -65,6 +80,7 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
         _ = notification
         Task { [weak self] in
             await self?.authorizationModel.refreshIfNeeded()
+            await self?.menuBarStatusModel.refresh()
         }
     }
 
@@ -79,38 +95,23 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
         }
 
         startupTask?.cancel()
-        capacityHistoryTask?.cancel()
+        storageHistoryStartupTask?.cancel()
+        storageHistoryObservationTask?.cancel()
+        compositionRoot.storageHistoryLifecycleMonitor.stop()
         compositionRoot.scanSchedulingMonitor.stop()
         let authorizationCoordinator = compositionRoot.authorizationCoordinator
         let baselineScanCoordinator = compositionRoot.baselineScanCoordinator
+        let storageHistoryBackgroundCoordinator =
+            compositionRoot.storageHistoryBackgroundCoordinator
         shutdownTask = Task { @concurrent in
             await baselineScanCoordinator.cancel()
+            await storageHistoryBackgroundCoordinator.stop()
             await authorizationCoordinator.stop()
             await MainActor.run {
                 NSApplication.shared.reply(toApplicationShouldTerminate: true)
             }
         }
         return .terminateLater
-    }
-
-    private func recordCapacityHistory(
-        with recorder: StartupVolumeCapacityRecorder
-    ) async {
-        while Task.isCancelled == false {
-            do {
-                try await recorder.record()
-            } catch is CancellationError {
-                return
-            } catch {
-                logger.error("Startup-volume capacity observation failed.")
-            }
-
-            do {
-                try await Task.sleep(for: .seconds(3_600))
-            } catch {
-                return
-            }
-        }
     }
 }
 

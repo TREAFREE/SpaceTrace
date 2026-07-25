@@ -6,7 +6,7 @@ DESTINATION := platform=macOS,arch=arm64
 PACKAGE_PATH := Packages/SpaceTraceKit
 DERIVED_DATA_ROOT := build/DerivedData
 
-.PHONY: verify hygiene architecture-check package-test package-concurrency-audit package-apfs-image-qualification persistence-benchmark xcode-list app-build-debug app-test-unit app-test-ui app-build-release
+.PHONY: verify hygiene architecture-check package-test package-concurrency-audit package-background-lifecycle-qualification package-apfs-image-qualification persistence-benchmark xcode-list app-build-debug app-test-unit app-test-ui app-build-release
 
 verify: hygiene architecture-check package-test package-concurrency-audit xcode-list app-build-debug app-test-unit app-build-release
 
@@ -23,6 +23,10 @@ package-test:
 
 package-concurrency-audit:
 	swift test --package-path "$(PACKAGE_PATH)" -Xswiftc -strict-concurrency=complete -Xswiftc -warn-concurrency -Xswiftc -warnings-as-errors
+
+package-background-lifecycle-qualification:
+	swift test --package-path "$(PACKAGE_PATH)" --filter StorageHistoryBackgroundCoordinatorTests
+	swift test --package-path "$(PACKAGE_PATH)" --filter StartupVolume24HourStatusQueryTests
 
 package-apfs-image-qualification:
 	SPACETRACE_RUN_APFS_IMAGE_TESTS=1 swift test --package-path "$(PACKAGE_PATH)" --filter APFSDiskImageLifecycleIntegrationTests

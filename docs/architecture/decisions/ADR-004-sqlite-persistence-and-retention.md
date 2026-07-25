@@ -41,6 +41,15 @@ The application has no backend, multi-user database, or cross-device synchroniza
     nested roots cannot be silently credited. Missing comparable directory
     evidence remains unknown rather than becoming zero or a fabricated
     unattributed value.
+16. Lifecycle capacity sampling and retention are serialized by one
+    application-owned coordinator. Launch, wake, and significant system-time
+    changes request immediate sampling; ordinary sampling remains hourly while
+    the process is awake. Sleep defers periodic and maintenance writes.
+17. Daily retention uses a deferrable `NSBackgroundActivityScheduler`
+    opportunity with single-flight execution. Menu-bar 24-hour changes require
+    a fresh, gap-bounded, same-volume, monotonic-time evidence window; any
+    discontinuity is displayed as incomplete evidence rather than zero or a
+    cached prior delta.
 
 ## Options considered
 
@@ -125,6 +134,13 @@ root-volume identity persistence, hourly lifecycle sampling, and conservative
 non-overlapping allocated-size reconciliation. Evidence and explicit non-claims
 are recorded in
 [Startup Volume History and Storage Reconciliation](../../engineering/startup-volume-history-and-reconciliation.md).
+
+The 2026-07-25 lifecycle slice added immediate wake/time-change sampling,
+single-flight automatic retention scheduling, bounded application health
+observation, a sequence-ordered 24-hour qualification query, and fail-closed
+menu-bar presentation. Deterministic 30-virtual-day evidence and the remaining
+real 24-hour/minimum-OS matrix are recorded in
+[Background Storage Sampling Lifecycle and Menu Bar](../../engineering/background-storage-sampling-lifecycle.md).
 
 ADR acceptance still requires minimum-reference macOS 15.6 performance and
 distribution-signing evidence.

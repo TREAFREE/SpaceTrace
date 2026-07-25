@@ -6,7 +6,7 @@ import Synchronization
 
 /// A dependency-free SQLite prototype for ADR-004. The actor is the sole
 /// owner of the connection and serializes every transaction and query.
-public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGenerationRepository, WatchedScopeBookmarkRepository, AuthorizedBaselineSnapshotRepository, DirectoryHistoryRepository, StartupVolumeCapacityHistoryRepository {
+public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGenerationRepository, WatchedScopeBookmarkRepository, AuthorizedBaselineSnapshotRepository, DirectoryHistoryRepository, StartupVolumeCapacityHistoryRepository, StorageHistoryRetentionApplying {
     public static let currentSchemaVersion = 9
     private static let schemaVersion = Int32(currentSchemaVersion)
 
@@ -1009,78 +1009,50 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 sqlite3_bind_int64(statement, 2, Self.milliseconds(end)),
                 operation: "bind capacity history end"
             )
-            var samples: [StartupVolumeCapacityHistorySample] = []
-            while true {
-                let result = sqlite3_step(statement)
-                switch result {
-                case SQLITE_ROW:
-                    let sequence = try readNonnegativeInt64(
-                        from: statement,
-                        column: 0,
-                        field: "startup_volume_capacity_sample.sequence"
-                    )
-                    guard sequence > 0 else {
-                        throw SQLiteEventJournalError.corruptStoredValue(
-                            field: "startup_volume_capacity_sample.sequence"
-                        )
-                    }
-                    let sourceText = try readText(
-                        from: statement,
-                        column: 6,
-                        field: "startup_volume_capacity_sample.source"
-                    )
-                    guard let source = StartupVolumeCapacitySampleSource(
-                        rawValue: sourceText
-                    ) else {
-                        throw SQLiteEventJournalError.corruptStoredValue(
-                            field: "startup_volume_capacity_sample.source"
-                        )
-                    }
-                    samples.append(
-                        StartupVolumeCapacityHistorySample(
-                            sequence: sequence,
-                            snapshot: StartupVolumeCapacitySnapshot(
-                                observedAt: try readDate(
-                                    from: statement,
-                                    column: 1,
-                                    field: "startup_volume_capacity_sample.observed_at_ms"
-                                ),
-                                volumeUUID: try readOptionalUUID(
-                                    from: statement,
-                                    column: 2,
-                                    field: "startup_volume_capacity_sample.volume_uuid"
-                                ),
-                                totalBytes: try readOptionalByteCount(
-                                    from: statement,
-                                    column: 3,
-                                    field: "startup_volume_capacity_sample.total_bytes"
-                                ),
-                                availableBytes: try readOptionalByteCount(
-                                    from: statement,
-                                    column: 4,
-                                    field: "startup_volume_capacity_sample.available_bytes"
-                                ),
-                                availableForImportantUsageBytes:
-                                    try readOptionalByteCount(
-                                        from: statement,
-                                        column: 5,
-                                        field:
-                                            "startup_volume_capacity_sample.important_available_bytes"
-                                    )
-                            ),
-                            source: source
-                        )
-                    )
-                case SQLITE_DONE:
-                    return samples
-                default:
-                    throw sqliteFailure(
-                        operation: "step startup volume capacity history",
-                        code: result
-                    )
-                }
-            }
+            return try readStartupVolumeCapacitySamples(
+                from: statement,
+                operation: "step startup volume capacity history"
+            )
         }
+    }
+
+    public func recentStartupVolumeCapacityHistory(
+        limit: Int
+    ) throws -> [StartupVolumeCapacityHistorySample] {
+        guard (1...4_096).contains(limit) else {
+            throw SQLiteEventJournalError.corruptStoredValue(
+                field: "startup_volume_capacity_sample.recent_limit"
+            )
+        }
+        let sql = """
+            SELECT sequence, observed_at_ms, volume_uuid, total_bytes,
+                available_bytes, important_available_bytes, source
+            FROM (
+                SELECT sequence, observed_at_ms, volume_uuid, total_bytes,
+                    available_bytes, important_available_bytes, source
+                FROM startup_volume_capacity_sample
+                ORDER BY sequence DESC
+                LIMIT ?1
+            )
+            ORDER BY sequence ASC
+            """
+        return try withStatement(
+            sql,
+            operation: "read recent startup volume capacity history"
+        ) { statement in
+            try check(
+                sqlite3_bind_int64(statement, 1, Int64(limit)),
+                operation: "bind recent capacity history limit"
+            )
+            return try readStartupVolumeCapacitySamples(
+                from: statement,
+                operation: "step recent startup volume capacity history"
+            )
+        }
+    }
+
+    public func applyStorageHistoryRetention(referenceDate: Date) throws {
+        _ = try applyRetention(referenceDate: referenceDate)
     }
 
     /// Deletes only expired, replaceable history. Current directory truth,
@@ -2112,6 +2084,82 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 statement,
                 operation: "write startup volume capacity"
             )
+        }
+    }
+
+    private func readStartupVolumeCapacitySamples(
+        from statement: OpaquePointer,
+        operation: String
+    ) throws -> [StartupVolumeCapacityHistorySample] {
+        var samples: [StartupVolumeCapacityHistorySample] = []
+        while true {
+            let result = sqlite3_step(statement)
+            switch result {
+            case SQLITE_ROW:
+                let sequence = try readNonnegativeInt64(
+                    from: statement,
+                    column: 0,
+                    field: "startup_volume_capacity_sample.sequence"
+                )
+                guard sequence > 0 else {
+                    throw SQLiteEventJournalError.corruptStoredValue(
+                        field: "startup_volume_capacity_sample.sequence"
+                    )
+                }
+                let sourceText = try readText(
+                    from: statement,
+                    column: 6,
+                    field: "startup_volume_capacity_sample.source"
+                )
+                guard let source = StartupVolumeCapacitySampleSource(
+                    rawValue: sourceText
+                ) else {
+                    throw SQLiteEventJournalError.corruptStoredValue(
+                        field: "startup_volume_capacity_sample.source"
+                    )
+                }
+                samples.append(
+                    StartupVolumeCapacityHistorySample(
+                        sequence: sequence,
+                        snapshot: StartupVolumeCapacitySnapshot(
+                            observedAt: try readDate(
+                                from: statement,
+                                column: 1,
+                                field:
+                                    "startup_volume_capacity_sample.observed_at_ms"
+                            ),
+                            volumeUUID: try readOptionalUUID(
+                                from: statement,
+                                column: 2,
+                                field: "startup_volume_capacity_sample.volume_uuid"
+                            ),
+                            totalBytes: try readOptionalByteCount(
+                                from: statement,
+                                column: 3,
+                                field: "startup_volume_capacity_sample.total_bytes"
+                            ),
+                            availableBytes: try readOptionalByteCount(
+                                from: statement,
+                                column: 4,
+                                field:
+                                    "startup_volume_capacity_sample.available_bytes"
+                            ),
+                            availableForImportantUsageBytes:
+                                try readOptionalByteCount(
+                                    from: statement,
+                                    column: 5,
+                                    field:
+                                        "startup_volume_capacity_sample.important_available_bytes"
+                                )
+                        ),
+                        source: source
+                    )
+                )
+            case SQLITE_DONE:
+                return samples
+            default:
+                throw sqliteFailure(operation: operation, code: result)
+            }
         }
     }
 

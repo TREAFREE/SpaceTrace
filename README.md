@@ -33,6 +33,7 @@ The MVP does **not** promise exact process attribution, reproduce Apple's System
 | Verification gates | [Quality Strategy](docs/engineering/quality-strategy.md) |
 | Current implementation evidence | [First Implementation Slice Status](docs/engineering/implementation-status.md) |
 | Startup-volume history and reconciliation | [Engineering contract](docs/engineering/startup-volume-history-and-reconciliation.md) · [中文](docs/engineering/startup-volume-history-and-reconciliation.zh-CN.md) |
+| Background sampling lifecycle and menu bar | [Engineering contract](docs/engineering/background-storage-sampling-lifecycle.md) · [中文](docs/engineering/background-storage-sampling-lifecycle.zh-CN.md) |
 | FSEvents continuity qualification | [Protocol](docs/engineering/fsevents-continuity-qualification.md) · [中文](docs/engineering/fsevents-continuity-qualification.zh-CN.md) |
 | Scan scheduling lifecycle | [Engineering contract](docs/engineering/scan-scheduling-lifecycle.md) · [中文](docs/engineering/scan-scheduling-lifecycle.zh-CN.md) |
 | Privacy and threat model | [Privacy and Security](docs/security/privacy-and-security.md) |
@@ -47,7 +48,7 @@ The MVP does **not** promise exact process attribution, reproduce Apple's System
 - Supported baseline: macOS 15.6+, Apple Silicon first
 - Minimum-version qualification: build/test configuration is aligned; a macOS 15.6 runtime matrix remains required before Public Beta
 - Proposed implementation: Swift, SwiftUI with targeted AppKit integration
-- Implemented foundation: local `SpaceTraceKit` modules for domain observations, bounded FSEvents and mount lifecycles, security-scoped directory authorization, a metadata-only bounded calibration scanner, revision-safe SQLite publication, multi-root baseline UI, monotonic startup-volume capacity history, conservative storage reconciliation, and typed power/thermal/sleep pause-and-retry scheduling
+- Implemented foundation: local `SpaceTraceKit` modules for domain observations, bounded FSEvents and mount lifecycles, security-scoped directory authorization, a metadata-only bounded calibration scanner, revision-safe SQLite publication, multi-root baseline UI, monotonic startup-volume capacity history, conservative storage reconciliation, typed power/thermal/sleep pause-and-retry scheduling, and qualified 24-hour menu-bar evidence
 - Proposed license: MIT (**TBD until explicitly approved**)
 - Distribution and signing: Developer ID, notarization, and update strategy remain release-blocking decisions
 

@@ -9,7 +9,9 @@ struct SpaceTraceCompositionRoot {
     let authorizationCoordinator: WatchedScopeAuthorizationCoordinator
     let baselineScanCoordinator: AuthorizedBaselineScanCoordinator
     let storageHistoryQuery: StorageHistoryOverviewQuery
-    let volumeCapacityRecorder: StartupVolumeCapacityRecorder
+    let startupVolume24HourStatusQuery: StartupVolume24HourStatusQuery
+    let storageHistoryBackgroundCoordinator: StorageHistoryBackgroundCoordinator
+    let storageHistoryLifecycleMonitor: NativeStorageHistoryLifecycleMonitor
     let scanSchedulingMonitor: NativeScanSchedulingMonitor
 
     enum Startup {
@@ -87,6 +89,19 @@ struct SpaceTraceCompositionRoot {
             receiver: schedulingGate,
             snapshotProvider: schedulingSnapshotProvider
         )
+        let capacityRecorder = StartupVolumeCapacityRecorder(
+            provider: volumeCapacityProvider,
+            repository: repository
+        )
+        let storageHistoryBackgroundCoordinator =
+            StorageHistoryBackgroundCoordinator(
+                recorder: capacityRecorder,
+                retention: repository
+            )
+        let storageHistoryLifecycleMonitor =
+            try NativeStorageHistoryLifecycleMonitor(
+                receiver: storageHistoryBackgroundCoordinator
+            )
         schedulingMonitor.start()
         return Self(
             authorizationCoordinator: WatchedScopeAuthorizationCoordinator(
@@ -101,10 +116,12 @@ struct SpaceTraceCompositionRoot {
                 directoryRepository: repository,
                 volumeRepository: repository
             ),
-            volumeCapacityRecorder: StartupVolumeCapacityRecorder(
-                provider: volumeCapacityProvider,
+            startupVolume24HourStatusQuery: StartupVolume24HourStatusQuery(
                 repository: repository
             ),
+            storageHistoryBackgroundCoordinator:
+                storageHistoryBackgroundCoordinator,
+            storageHistoryLifecycleMonitor: storageHistoryLifecycleMonitor,
             scanSchedulingMonitor: schedulingMonitor
         )
     }

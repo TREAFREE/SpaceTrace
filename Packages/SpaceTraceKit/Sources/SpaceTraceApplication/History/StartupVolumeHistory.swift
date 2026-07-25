@@ -33,11 +33,32 @@ public protocol StartupVolumeCapacityHistoryRepository: Sendable {
         from start: Date,
         through end: Date
     ) async throws -> [StartupVolumeCapacityHistorySample]
+
+    /// Returns the newest committed samples in ascending commit-sequence
+    /// order. This bounded sequence view is deliberately independent of wall
+    /// time so a clock rollback cannot hide the evidence that it occurred.
+    func recentStartupVolumeCapacityHistory(
+        limit: Int
+    ) async throws -> [StartupVolumeCapacityHistorySample]
+}
+
+public enum StorageHistorySampleTrigger: Sendable, Equatable {
+    case startup
+    case periodic
+    case wake
+    case significantTimeChange
+}
+
+public protocol StartupVolumeCapacityRecording: Sendable {
+    func record(trigger: StorageHistorySampleTrigger) async throws
 }
 
 /// Application use case for one capacity observation. Scheduling is owned by
 /// the app lifecycle; the provider and persistence adapter stay replaceable.
-public struct StartupVolumeCapacityRecorder: Sendable {
+public struct StartupVolumeCapacityRecorder:
+    StartupVolumeCapacityRecording,
+    Sendable
+{
     private let provider: any StartupVolumeCapacitySnapshotProviding
     private let repository: any StartupVolumeCapacityHistoryRepository
 
@@ -50,6 +71,11 @@ public struct StartupVolumeCapacityRecorder: Sendable {
     }
 
     public func record() async throws {
+        try await record(trigger: .periodic)
+    }
+
+    public func record(trigger: StorageHistorySampleTrigger) async throws {
+        _ = trigger
         try Task.checkCancellation()
         let snapshot = await provider.snapshot()
         try Task.checkCancellation()

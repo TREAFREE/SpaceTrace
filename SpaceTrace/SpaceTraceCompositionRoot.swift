@@ -12,6 +12,7 @@ struct SpaceTraceCompositionRoot {
     let startupVolume24HourStatusQuery: StartupVolume24HourStatusQuery
     let storageHistoryBackgroundCoordinator: StorageHistoryBackgroundCoordinator
     let storageHistoryLifecycleMonitor: NativeStorageHistoryLifecycleMonitor
+    let storageHistorySoakRecorder: StorageHistorySoakDiagnosticRecorder?
     let scanSchedulingMonitor: NativeScanSchedulingMonitor
 
     enum Startup {
@@ -19,7 +20,10 @@ struct SpaceTraceCompositionRoot {
         case recovery(SQLiteReadOnlyRecoverySession)
     }
 
-    static func bootstrap(fileManager: FileManager = .default) throws -> Startup {
+    static func bootstrap(
+        fileManager: FileManager = .default,
+        enableSoakDiagnostics: Bool = false
+    ) throws -> Startup {
         let applicationSupportRoot = try applicationSupportDirectory(using: fileManager)
         let databaseURL = applicationSupportRoot
             .appendingPathComponent("SpaceTrace.sqlite", isDirectory: false)
@@ -29,7 +33,8 @@ struct SpaceTraceCompositionRoot {
                 repository: repository,
                 applicationSupportRoot: applicationSupportRoot,
                 databaseURL: databaseURL,
-                fileManager: fileManager
+                fileManager: fileManager,
+                enableSoakDiagnostics: enableSoakDiagnostics
             ))
         case let .recovery(session):
             return .recovery(session)
@@ -40,7 +45,8 @@ struct SpaceTraceCompositionRoot {
         repository: SQLiteEventJournalRepository,
         applicationSupportRoot: URL,
         databaseURL: URL,
-        fileManager: FileManager
+        fileManager: FileManager,
+        enableSoakDiagnostics: Bool
     ) throws -> Self {
         try protectDatabaseFiles(at: databaseURL, using: fileManager)
 
@@ -102,6 +108,35 @@ struct SpaceTraceCompositionRoot {
             try NativeStorageHistoryLifecycleMonitor(
                 receiver: storageHistoryBackgroundCoordinator
             )
+        let statusQuery = StartupVolume24HourStatusQuery(
+            repository: repository
+        )
+        let soakRecorder: StorageHistorySoakDiagnosticRecorder?
+        if enableSoakDiagnostics {
+            let diagnosticsDirectory = applicationSupportRoot
+                .appendingPathComponent("Diagnostics", isDirectory: true)
+                .appendingPathComponent(
+                    "BackgroundQualification",
+                    isDirectory: true
+                )
+            if let writer = try? BoundedStorageHistorySoakLogWriter(
+                directoryURL: diagnosticsDirectory
+            ) {
+                soakRecorder = StorageHistorySoakDiagnosticRecorder(
+                    stateObserver: storageHistoryBackgroundCoordinator,
+                    statusLoader: statusQuery,
+                    writer: writer,
+                    resourceProvider:
+                        NativeStorageHistoryResourceSnapshotProvider(
+                            databaseURL: databaseURL
+                        )
+                )
+            } else {
+                soakRecorder = nil
+            }
+        } else {
+            soakRecorder = nil
+        }
         schedulingMonitor.start()
         return Self(
             authorizationCoordinator: WatchedScopeAuthorizationCoordinator(
@@ -116,12 +151,11 @@ struct SpaceTraceCompositionRoot {
                 directoryRepository: repository,
                 volumeRepository: repository
             ),
-            startupVolume24HourStatusQuery: StartupVolume24HourStatusQuery(
-                repository: repository
-            ),
+            startupVolume24HourStatusQuery: statusQuery,
             storageHistoryBackgroundCoordinator:
                 storageHistoryBackgroundCoordinator,
             storageHistoryLifecycleMonitor: storageHistoryLifecycleMonitor,
+            storageHistorySoakRecorder: soakRecorder,
             scanSchedulingMonitor: schedulingMonitor
         )
     }

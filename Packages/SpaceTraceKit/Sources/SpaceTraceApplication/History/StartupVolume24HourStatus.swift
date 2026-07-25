@@ -14,6 +14,7 @@ public enum StartupVolume24HourQualification: Sendable, Equatable {
 
 public struct StartupVolume24HourStatus: Sendable, Equatable {
     public let qualification: StartupVolume24HourQualification
+    public let currentSequence: Int64?
     public let currentAvailableBytes: ByteCount?
     public let currentObservedAt: Date?
     public let baselineObservedAt: Date?
@@ -21,12 +22,14 @@ public struct StartupVolume24HourStatus: Sendable, Equatable {
 
     public init(
         qualification: StartupVolume24HourQualification,
+        currentSequence: Int64? = nil,
         currentAvailableBytes: ByteCount?,
         currentObservedAt: Date?,
         baselineObservedAt: Date?,
         change: StorageDelta?
     ) {
         self.qualification = qualification
+        self.currentSequence = currentSequence
         self.currentAvailableBytes = currentAvailableBytes
         self.currentObservedAt = currentObservedAt
         self.baselineObservedAt = baselineObservedAt
@@ -35,6 +38,7 @@ public struct StartupVolume24HourStatus: Sendable, Equatable {
 
     public static let unavailable = StartupVolume24HourStatus(
         qualification: .unavailable,
+        currentSequence: nil,
         currentAvailableBytes: nil,
         currentObservedAt: nil,
         baselineObservedAt: nil,
@@ -100,6 +104,7 @@ public struct StartupVolume24HourStatusQuery:
               let currentVolumeUUID = currentSnapshot.volumeUUID else {
             return StartupVolume24HourStatus(
                 qualification: .unavailable,
+                currentSequence: current.sequence,
                 currentAvailableBytes: nil,
                 currentObservedAt: currentSnapshot.observedAt,
                 baselineObservedAt: nil,
@@ -111,11 +116,16 @@ public struct StartupVolume24HourStatusQuery:
         if currentAge < -policy.maximumFutureSkew {
             return incomplete(
                 .clockDiscontinuity,
-                current: currentSnapshot
+                current: currentSnapshot,
+                sequence: current.sequence
             )
         }
         if currentAge > policy.maximumCurrentAge {
-            return incomplete(.stale, current: currentSnapshot)
+            return incomplete(
+                .stale,
+                current: currentSnapshot,
+                sequence: current.sequence
+            )
         }
 
         let target = end.addingTimeInterval(-policy.comparisonDuration)
@@ -165,7 +175,8 @@ public struct StartupVolume24HourStatusQuery:
             return incomplete(
                 boundary
                     ?? (limitReached ? .historyLimitReached : .collecting),
-                current: currentSnapshot
+                current: currentSnapshot,
+                sequence: current.sequence
             )
         }
 
@@ -173,10 +184,18 @@ public struct StartupVolume24HourStatusQuery:
             $0.sequence >= baseline.sequence
         }
         guard hasAcceptableGaps(windowSamples) else {
-            return incomplete(.samplingGap, current: currentSnapshot)
+            return incomplete(
+                .samplingGap,
+                current: currentSnapshot,
+                sequence: current.sequence
+            )
         }
         if let boundary {
-            return incomplete(boundary, current: currentSnapshot)
+            return incomplete(
+                boundary,
+                current: currentSnapshot,
+                sequence: current.sequence
+            )
         }
 
         let (delta, overflow) = currentBytes.value.subtractingReportingOverflow(
@@ -187,6 +206,7 @@ public struct StartupVolume24HourStatusQuery:
         }
         return StartupVolume24HourStatus(
             qualification: .qualified,
+            currentSequence: current.sequence,
             currentAvailableBytes: currentBytes,
             currentObservedAt: currentSnapshot.observedAt,
             baselineObservedAt: baseline.snapshot.observedAt,
@@ -235,10 +255,12 @@ public struct StartupVolume24HourStatusQuery:
 
     private func incomplete(
         _ qualification: StartupVolume24HourQualification,
-        current: StartupVolumeCapacitySnapshot
+        current: StartupVolumeCapacitySnapshot,
+        sequence: Int64? = nil
     ) -> StartupVolume24HourStatus {
         StartupVolume24HourStatus(
             qualification: qualification,
+            currentSequence: sequence,
             currentAvailableBytes: current.availableBytes,
             currentObservedAt: current.observedAt,
             baselineObservedAt: nil,

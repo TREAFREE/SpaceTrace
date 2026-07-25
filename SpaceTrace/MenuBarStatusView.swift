@@ -25,6 +25,7 @@ struct MenuBarStatusView: View {
             Divider()
             storageEvidence
             reconciliationEvidence
+            qualificationDiagnosticsIndicator
             backgroundWarning
             Divider()
             actions
@@ -94,6 +95,22 @@ struct MenuBarStatusView: View {
                 $0.formatted(date: .abbreviated, time: .shortened)
             } ?? "尚未完成"
         )
+    }
+
+    @ViewBuilder
+    private var qualificationDiagnosticsIndicator: some View {
+        if statusModel.qualificationDiagnosticsActive {
+            Label(
+                "资格诊断正在本机记录；内容不含路径，最长保留 7 天。",
+                systemImage: "waveform.path.ecg"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier(
+                "menu-bar-qualification-diagnostics"
+            )
+        }
     }
 
     @ViewBuilder

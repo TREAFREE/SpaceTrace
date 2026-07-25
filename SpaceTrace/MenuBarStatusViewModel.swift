@@ -93,6 +93,7 @@ final class MenuBarStatusViewModel {
 
     private(set) var storageState: MenuBarStorageState = .loading
     private(set) var backgroundState: StorageHistoryBackgroundState = .stopped
+    private(set) var qualificationDiagnosticsActive = false
 
     init(
         loader: (any StartupVolume24HourStatusLoading)? = nil,
@@ -104,6 +105,10 @@ final class MenuBarStatusViewModel {
 
     func connect(_ loader: any StartupVolume24HourStatusLoading) {
         self.loader = loader
+    }
+
+    func setQualificationDiagnosticsActive(_ active: Bool) {
+        qualificationDiagnosticsActive = active
     }
 
     func refresh() async {
@@ -143,6 +148,7 @@ final class MenuBarStatusViewModel {
     func handleCompositionFailure() {
         storageState = .failed
         backgroundState = .stopped
+        qualificationDiagnosticsActive = false
     }
 
 #if DEBUG

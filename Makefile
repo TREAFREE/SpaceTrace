@@ -6,7 +6,7 @@ DESTINATION := platform=macOS,arch=arm64
 PACKAGE_PATH := Packages/SpaceTraceKit
 DERIVED_DATA_ROOT := build/DerivedData
 
-.PHONY: verify hygiene architecture-check package-test package-concurrency-audit package-background-lifecycle-qualification package-apfs-image-qualification persistence-benchmark xcode-list app-build-debug app-test-unit app-test-ui app-build-release
+.PHONY: verify hygiene architecture-check package-test package-concurrency-audit package-background-lifecycle-qualification package-background-soak-qualification package-apfs-image-qualification persistence-benchmark xcode-list app-build-debug app-test-unit app-test-ui app-build-release
 
 verify: hygiene architecture-check package-test package-concurrency-audit xcode-list app-build-debug app-test-unit app-build-release
 
@@ -27,6 +27,11 @@ package-concurrency-audit:
 package-background-lifecycle-qualification:
 	swift test --package-path "$(PACKAGE_PATH)" --filter StorageHistoryBackgroundCoordinatorTests
 	swift test --package-path "$(PACKAGE_PATH)" --filter StartupVolume24HourStatusQueryTests
+
+package-background-soak-qualification:
+	swift test --package-path "$(PACKAGE_PATH)" --filter StorageHistorySoakDiagnosticsTests
+	swift test --package-path "$(PACKAGE_PATH)" --filter BoundedStorageHistorySoakLogWriterTests
+	swift build --package-path "$(PACKAGE_PATH)" --product SpaceTraceSoakAnalyzer
 
 package-apfs-image-qualification:
 	SPACETRACE_RUN_APFS_IMAGE_TESTS=1 swift test --package-path "$(PACKAGE_PATH)" --filter APFSDiskImageLifecycleIntegrationTests

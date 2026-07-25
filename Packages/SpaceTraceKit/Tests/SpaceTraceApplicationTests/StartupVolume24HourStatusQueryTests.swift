@@ -37,6 +37,7 @@ struct StartupVolume24HourStatusQueryTests {
         ).load(through: now)
 
         #expect(status.qualification == .qualified)
+        #expect(status.currentSequence == 25)
         #expect(status.currentAvailableBytes?.value == 7_600)
         #expect(status.change == .volumeAvailable(bytes: -2_400))
         #expect(status.baselineObservedAt == hour(0))
@@ -55,6 +56,7 @@ struct StartupVolume24HourStatusQueryTests {
         ).load(through: hour(24))
 
         #expect(status.qualification == .collecting)
+        #expect(status.currentSequence == 13)
         #expect(status.currentAvailableBytes?.value == 9_976)
         #expect(status.change == nil)
     }
@@ -192,6 +194,7 @@ struct StartupVolume24HourStatusQueryTests {
         ).load(through: hour(24))
 
         #expect(status.qualification == .unavailable)
+        #expect(status.currentSequence == 25)
         #expect(status.currentAvailableBytes == nil)
         #expect(status.change == nil)
     }

@@ -6,6 +6,17 @@ import Testing
 
 @MainActor
 struct MenuBarStatusViewModelTests {
+    @Test("Local qualification diagnostics are visible only while enabled")
+    func exposesQualificationIndicator() {
+        let model = MenuBarStatusViewModel()
+
+        #expect(model.qualificationDiagnosticsActive == false)
+        model.setQualificationDiagnosticsActive(true)
+        #expect(model.qualificationDiagnosticsActive)
+        model.handleCompositionFailure()
+        #expect(model.qualificationDiagnosticsActive == false)
+    }
+
     @Test("A qualified query becomes the menu bar's current 24-hour evidence")
     func refreshesQualifiedEvidence() async throws {
         let end = Date(timeIntervalSince1970: 1_900_000_000)

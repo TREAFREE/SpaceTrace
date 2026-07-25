@@ -23,6 +23,7 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
     private var startupTask: Task<Void, Never>?
     private var storageHistoryStartupTask: Task<Void, Never>?
     private var storageHistoryObservationTask: Task<Void, Never>?
+    private var storageHistorySoakTask: Task<Void, Never>?
     private var shutdownTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -35,7 +36,12 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
         }
 #endif
         do {
-            switch try SpaceTraceCompositionRoot.bootstrap() {
+            let diagnosticsRequested = ProcessInfo.processInfo.environment[
+                "SPACETRACE_BACKGROUND_SOAK_DIAGNOSTICS"
+            ] == "1"
+            switch try SpaceTraceCompositionRoot.bootstrap(
+                enableSoakDiagnostics: diagnosticsRequested
+            ) {
             case let .operational(compositionRoot):
                 self.compositionRoot = compositionRoot
                 authorizationModel.connect(compositionRoot.authorizationCoordinator)
@@ -43,6 +49,9 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
                 directoryHistoryModel.connect(compositionRoot.storageHistoryQuery)
                 menuBarStatusModel.connect(
                     compositionRoot.startupVolume24HourStatusQuery
+                )
+                menuBarStatusModel.setQualificationDiagnosticsActive(
+                    compositionRoot.storageHistorySoakRecorder != nil
                 )
                 startupTask = Task { [weak self] in
                     await self?.authorizationModel.start()
@@ -58,6 +67,12 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
                         .start()
                     guard Task.isCancelled == false else { return }
                     compositionRoot.storageHistoryLifecycleMonitor.start()
+                }
+                if let recorder =
+                    compositionRoot.storageHistorySoakRecorder {
+                    storageHistorySoakTask = Task {
+                        await recorder.run()
+                    }
                 }
             case let .recovery(session):
                 recoverySession = session
@@ -97,15 +112,18 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
         startupTask?.cancel()
         storageHistoryStartupTask?.cancel()
         storageHistoryObservationTask?.cancel()
+        storageHistorySoakTask?.cancel()
         compositionRoot.storageHistoryLifecycleMonitor.stop()
         compositionRoot.scanSchedulingMonitor.stop()
         let authorizationCoordinator = compositionRoot.authorizationCoordinator
         let baselineScanCoordinator = compositionRoot.baselineScanCoordinator
         let storageHistoryBackgroundCoordinator =
             compositionRoot.storageHistoryBackgroundCoordinator
+        let storageHistorySoakTask = storageHistorySoakTask
         shutdownTask = Task { @concurrent in
             await baselineScanCoordinator.cancel()
             await storageHistoryBackgroundCoordinator.stop()
+            await storageHistorySoakTask?.value
             await authorizationCoordinator.stop()
             await MainActor.run {
                 NSApplication.shared.reply(toApplicationShouldTerminate: true)

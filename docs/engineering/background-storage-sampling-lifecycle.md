@@ -100,9 +100,12 @@ The deterministic suites cover:
 - native notification-to-typed-event adaptation; and
 - MainActor menu-bar projection and fail-closed refresh behavior.
 
-The virtual-time run is a deterministic long-duration logic qualification. It
-is **not** evidence of a real 24-hour process soak, energy budget, scheduler
-delivery guarantee, memory plateau, or macOS 15.6 runtime behavior.
+The virtual-time run is a deterministic long-duration logic qualification. The
+opt-in, path-free recorder and analyzer described in the
+[background soak qualification protocol](background-soak-qualification.md)
+now make the remaining real run reproducible. Neither is **evidence by itself**
+of a real 24-hour process soak, energy budget, scheduler delivery guarantee,
+memory plateau, or macOS 15.6 runtime behavior.
 
 ## Remaining release qualification
 

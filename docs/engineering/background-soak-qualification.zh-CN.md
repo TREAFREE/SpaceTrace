@@ -119,6 +119,35 @@ Scripts/qualify-background-soak.sh \
 5. 使用 Instruments/Energy Log 或其他 Apple 支持的分析工具采集能耗证据。内部累计 CPU 时间不是能耗测量。
 6. 接受结果前检查日志大小、文件权限、数据库增长，以及日志中不存在类似路径的内容。
 
+当前主机 runner 会让应用自身的诊断保持连续，同时通过 5 个有界的 Activity Monitor Instruments 切片控制磁盘占用：分别在第 0、6、12、18、24 小时记录 5 分钟。
+
+```bash
+Scripts/run-current-host-soak.sh start \
+  "/path/to/SpaceTrace.app" \
+  "$HOME/Library/Application Support/SpaceTraceQualification/<run-id>" \
+  90000
+```
+
+请先创建证据目录，并避开 Desktop、Documents 和 Downloads。脱离终端运行的 launchd worker 不会继承 Terminal/Codex 对这些隐私保护目录的访问权。runner 会在启动前把不可变的 App、分析器和 worker 复制进证据目录。
+
+可以在不中断长跑的情况下查看 detached supervisor：
+
+```bash
+Scripts/run-current-host-soak.sh status \
+  "/path/to/evidence-directory"
+```
+
+状态变为 `READY_TO_FINALIZE` 后，执行正常退出、受保护存储检查、隐私扫描和默认 24 小时分析：
+
+```bash
+Scripts/run-current-host-soak.sh finalize \
+  "/path/to/evidence-directory"
+```
+
+25 小时墙上时间窗口会在最后一个 24 小时切片之后再保留 1 小时，用于正常退出与最终分析。runner 不会阻止系统睡眠。每个 Instruments 切片都会导出目录、进程 ledger 和实时进程序列，其中包含 CPU 百分比/时间、Idle Wake Ups、物理内存、磁盘读写、App Nap、是否阻止睡眠，以及系统 Thermal State 区间。
+
+在 Xcode 26 中，虽然列表里仍有 `Power Profiler`，但它会拒绝 macOS target，并明确表示只支持 iOS/iPadOS；旧 `Energy Log` 模板也未安装。因此 Activity Monitor 数据只能称为**与能耗相关的进程证据**，不能称为直接的焦耳/瓦特测量。`powermetrics --show-process-energy` 可以补充 SoC 估算功耗与进程 Energy Impact，但需要交互式管理员授权；其帮助文档也明确警告估算功耗不能用于跨设备比较。缺少授权时必须保留为证据缺口。每次运行还会把已安装模板列表，以及最新的 Power Profiler / 非特权 `powermetrics` 支持探针写入 `energy-capability.txt`。
+
 在较新 macOS 上以 15.6 deployment target 编译，不等于完成 macOS 15.6 真实运行资格验证。
 
 ## 当前主机 smoke 证据

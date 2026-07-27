@@ -145,6 +145,56 @@ For each host:
 6. Inspect log size, file modes, database growth, and the absence of path-like
    content before accepting the result.
 
+The current-host runner keeps the application diagnostic continuous but bounds
+Instruments storage by recording five representative five-minute Activity
+Monitor slices at 0, 6, 12, 18, and 24 hours:
+
+```bash
+Scripts/run-current-host-soak.sh start \
+  "/path/to/SpaceTrace.app" \
+  "$HOME/Library/Application Support/SpaceTraceQualification/<run-id>" \
+  90000
+```
+
+Create the evidence directory first and keep it outside Desktop, Documents, and
+Downloads. The detached launchd worker does not inherit Terminal/Codex access
+to those privacy-protected folders. The runner copies an immutable app,
+analyzer, and worker into the evidence directory before launch.
+
+Query the detached supervisor without interrupting it:
+
+```bash
+Scripts/run-current-host-soak.sh status \
+  "/path/to/evidence-directory"
+```
+
+After the state becomes `READY_TO_FINALIZE`, perform normal application
+termination, protected-storage inspection, privacy scanning, and default
+24-hour analysis:
+
+```bash
+Scripts/run-current-host-soak.sh finalize \
+  "/path/to/evidence-directory"
+```
+
+The 25-hour wall-clock window leaves one hour after the final 24-hour slice
+for graceful shutdown and final analysis. It never disables system sleep.
+Each Instruments slice exports its table of contents, process ledger, and live
+process series. Those tables provide CPU percentage/time, idle wakeups,
+physical memory, disk reads/writes, App Nap, sleep-prevention state, and system
+thermal intervals.
+
+On Xcode 26, the listed `Power Profiler` instrument rejects macOS targets and
+states that it supports only iOS/iPadOS; the older `Energy Log` template is not
+installed. Therefore Activity Monitor data is accepted only as
+**energy-related process evidence**, not direct joule/watt measurement.
+`powermetrics --show-process-energy` can supplement estimated SoC power and
+Energy Impact, but requires an interactive superuser authorization. Its own
+documentation warns that estimated power is unsuitable for cross-device
+comparisons. Missing authorization must remain a declared evidence gap.
+Every run also records the installed-template list and fresh Power Profiler /
+unprivileged `powermetrics` support probes in `energy-capability.txt`.
+
 Compiling with a 15.6 deployment target on a newer macOS host does not satisfy
 the macOS 15.6 runtime row.
 

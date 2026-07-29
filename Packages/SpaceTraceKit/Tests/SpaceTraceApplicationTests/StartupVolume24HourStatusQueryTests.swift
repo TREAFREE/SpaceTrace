@@ -77,6 +77,50 @@ struct StartupVolume24HourStatusQueryTests {
         #expect(status.change == nil)
     }
 
+    @Test("A persisted sleep-to-wake boundary permits a genuine long sleep gap")
+    func acceptsSleepWakeGap() async throws {
+        var samples = try hourlyCapacitySamples(
+            hours: Array(0...8) + Array(16...24),
+            availableAtHour: { 20_000 - Int64($0) }
+        )
+        samples[8] = try capacitySample(
+            sequence: 9,
+            at: hour(8),
+            volumeUUID: stableVolumeUUID,
+            available: 19_992,
+            source: .sleepBoundary
+        )
+        samples[9] = try capacitySample(
+            sequence: 10,
+            at: hour(16),
+            volumeUUID: stableVolumeUUID,
+            available: 19_984,
+            source: .wakeBoundary
+        )
+
+        let status = try await StartupVolume24HourStatusQuery(
+            repository: RecentCapacityRepositoryFake(samples: samples)
+        ).load(through: hour(24))
+
+        #expect(status.qualification == .qualified)
+        #expect(status.change == .volumeAvailable(bytes: -24))
+    }
+
+    @Test("A long awake gap remains disqualified without matching boundaries")
+    func rejectsUnmarkedLongGap() async throws {
+        let status = try await StartupVolume24HourStatusQuery(
+            repository: RecentCapacityRepositoryFake(
+                samples: try hourlyCapacitySamples(
+                    hours: Array(0...8) + Array(16...24),
+                    availableAtHour: { 20_000 - Int64($0) }
+                )
+            )
+        ).load(through: hour(24))
+
+        #expect(status.qualification == .samplingGap)
+        #expect(status.change == nil)
+    }
+
     @Test("A volume replacement starts a new qualification epoch")
     func rejectsVolumeReplacement() async throws {
         let first = try #require(
@@ -264,7 +308,8 @@ private func capacitySample(
     sequence: Int64,
     at date: Date,
     volumeUUID: UUID,
-    available: Int64
+    available: Int64,
+    source: StartupVolumeCapacitySampleSource = .lifecycle
 ) throws -> StartupVolumeCapacityHistorySample {
     StartupVolumeCapacityHistorySample(
         sequence: sequence,
@@ -275,7 +320,7 @@ private func capacitySample(
             availableBytes: try ByteCount(available),
             availableForImportantUsageBytes: nil
         ),
-        source: .lifecycle
+        source: source
     )
 }
 

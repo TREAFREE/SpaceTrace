@@ -31,7 +31,8 @@ struct StorageHistoryBackgroundCoordinatorTests {
                 == .completed
         )
 
-        #expect(await recorder.recordCount == 2)
+        #expect(await recorder.recordCount == 3)
+        #expect(await recorder.triggers == [.startup, .sleep, .wake])
         let state = await coordinator.currentState
         #expect(state.phase == .awake)
         #expect(state.lastSuccessfulSampleAt == instant(hour: 3))
@@ -56,9 +57,10 @@ struct StorageHistoryBackgroundCoordinatorTests {
         )
         _ = await coordinator.handle(.didWake(at: instant(hour: 4)))
 
-        #expect(await recorder.recordCount == 3)
+        #expect(await recorder.recordCount == 4)
         #expect(
-            await recorder.triggers == [.startup, .significantTimeChange, .wake]
+            await recorder.triggers
+                == [.startup, .significantTimeChange, .sleep, .wake]
         )
         await coordinator.stop()
     }
@@ -145,7 +147,7 @@ struct StorageHistoryBackgroundCoordinatorTests {
         }
 
         let state = await coordinator.currentState
-        #expect(await recorder.recordCount == 722)
+        #expect(await recorder.recordCount == 723)
         #expect(await recorder.maximumConcurrentOperations == 1)
         #expect(await retention.applyCount == 30)
         #expect(await retention.maximumConcurrentOperations == 1)

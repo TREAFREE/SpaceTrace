@@ -20,7 +20,7 @@ struct ReleasedSchemaGoldenFixtureTests {
             from: Data(contentsOf: manifestURL)
         )
         #expect(manifest.formatVersion == 1)
-        #expect(manifest.fixtures.map(\.schemaVersion) == [6, 7, 8])
+        #expect(manifest.fixtures.map(\.schemaVersion) == [6, 7, 8, 9])
 
         for fixture in manifest.fixtures {
             let sourceURL = manifestURL.deletingLastPathComponent()

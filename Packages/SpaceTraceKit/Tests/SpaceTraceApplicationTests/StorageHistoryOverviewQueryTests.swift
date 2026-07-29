@@ -25,6 +25,30 @@ struct StorageHistoryOverviewQueryTests {
         #expect(recorded.first?.source == .lifecycle)
     }
 
+    @Test("Lifecycle recorder persists explicit sleep and wake boundaries")
+    func recorderPersistsSleepWakeSources() async throws {
+        let snapshot = StartupVolumeCapacitySnapshot(
+            observedAt: Date(timeIntervalSince1970: 456),
+            volumeUUID: nil,
+            totalBytes: nil,
+            availableBytes: nil,
+            availableForImportantUsageBytes: nil
+        )
+        let repository = RecordingVolumeRepositoryFake()
+        let recorder = StartupVolumeCapacityRecorder(
+            provider: FixedVolumeProvider(snapshot: snapshot),
+            repository: repository
+        )
+
+        try await recorder.record(trigger: .sleep)
+        try await recorder.record(trigger: .wake)
+
+        #expect(await repository.recorded.map(\.source) == [
+            .sleepBoundary,
+            .wakeBoundary,
+        ])
+    }
+
     @Test("Startup-volume loss is reconciled with non-overlapping allocated growth")
     func reconcilesDiskLossWithVisibleAllocatedGrowth() async throws {
         let volumeUUID = try #require(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))

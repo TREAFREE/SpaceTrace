@@ -15,6 +15,11 @@
       "schemaVersion": 8,
       "relativePath": "v8/SpaceTrace.sqlite",
       "sha256": "8d2d9468362f685e8e485ae291d007c0b70aaf06d691dd8ff2f50c2de506eeb5"
+    },
+    {
+      "schemaVersion": 9,
+      "relativePath": "v9/SpaceTrace.sqlite",
+      "sha256": "fdc8a4452202260b6bbefd47c122c60e98ad7a959f184646a06ed067817c7108"
     }
   ]
 }

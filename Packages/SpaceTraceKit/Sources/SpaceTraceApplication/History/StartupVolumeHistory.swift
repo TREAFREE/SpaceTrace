@@ -3,6 +3,8 @@ import Foundation
 public enum StartupVolumeCapacitySampleSource: String, Sendable, Equatable, Codable {
     case lifecycle
     case baseline
+    case sleepBoundary = "sleep_boundary"
+    case wakeBoundary = "wake_boundary"
 }
 
 /// One durable capacity observation. `sequence` is the database commit order;
@@ -45,6 +47,7 @@ public protocol StartupVolumeCapacityHistoryRepository: Sendable {
 public enum StorageHistorySampleTrigger: Sendable, Equatable {
     case startup
     case periodic
+    case sleep
     case wake
     case significantTimeChange
 }
@@ -75,13 +78,25 @@ public struct StartupVolumeCapacityRecorder:
     }
 
     public func record(trigger: StorageHistorySampleTrigger) async throws {
-        _ = trigger
         try Task.checkCancellation()
         let snapshot = await provider.snapshot()
         try Task.checkCancellation()
         try await repository.recordStartupVolumeCapacity(
             snapshot,
-            source: .lifecycle
+            source: source(for: trigger)
         )
+    }
+
+    private func source(
+        for trigger: StorageHistorySampleTrigger
+    ) -> StartupVolumeCapacitySampleSource {
+        switch trigger {
+        case .startup, .periodic, .significantTimeChange:
+            .lifecycle
+        case .sleep:
+            .sleepBoundary
+        case .wake:
+            .wakeBoundary
+        }
     }
 }

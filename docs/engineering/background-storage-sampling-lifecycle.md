@@ -2,7 +2,7 @@
 
 Status: **Implemented phase-one slice; host and minimum-OS qualification remains open**
 
-Last reviewed: 2026-07-25
+Last reviewed: 2026-07-29
 
 Chinese translation: [后台空间采样生命周期与菜单栏](background-storage-sampling-lifecycle.zh-CN.md)
 
@@ -35,9 +35,11 @@ cannot overlap persistence work.
 
 1. Process start records an immediate startup-volume observation.
 2. While awake and running, a periodic event is requested every hour.
-3. `willSleep` changes the coordinator to sleeping; periodic, time-change, and
+3. `willSleep` first commits a capacity observation tagged `sleep_boundary`,
+   then changes the coordinator to sleeping; periodic, time-change, and
    maintenance work is deferred without writing.
-4. `didWake` returns to awake and records immediately. This closes the common
+4. `didWake` returns to awake and immediately commits a `wake_boundary`
+   observation. This closes the common
    “wake now, wait nearly one hour for the next timer” blind spot.
 5. A system clock or time-zone change records immediately while awake. The
    database sequence remains the ordering authority; a wall-clock rollback is
@@ -63,7 +65,9 @@ order. A specific signed change is shown only when all of these conditions hold:
 - the newest observation is current and has a startup-volume UUID and available
   byte value;
 - a baseline exists near the 24-hour endpoint;
-- adjacent observations have no gap greater than 90 minutes;
+- adjacent observations have no gap greater than 90 minutes, except a strictly
+  adjacent persisted `sleep_boundary → wake_boundary` pair; an unmarked,
+  one-sided, or process-termination gap still fails closed;
 - commit order contains no wall-clock rollback;
 - the startup-volume identity does not change in the comparison epoch;
 - the bounded query did not truncate the evidence needed for the endpoint.
@@ -88,14 +92,18 @@ make package-background-lifecycle-qualification
 
 The deterministic suites cover:
 
-- sleep suppressing periodic writes and wake sampling immediately;
+- sleep/wake boundary persistence, sleep suppressing periodic writes, and wake
+  sampling immediately;
 - clock and time-zone changes, including deferral while asleep;
 - sampling failure visibility and later recovery;
 - failed retention followed by a later successful scheduled attempt;
 - 30 virtual days / 720 hourly ticks, including sleep/wake and time-change
   events, 30 retention opportunities, bounded state, and serialized work;
-- qualified 24-hour results plus gap, stale, rollback, volume replacement,
-  unavailable, and insufficient-history cases;
+- qualified 24-hour results plus genuine sleep-boundary acceptance and
+  awake-gap, stale, rollback, volume replacement, unavailable, and
+  insufficient-history rejection;
+- atomic v9-to-v10 capacity-table migration, rollback on injected
+  pre-commit failure, and the reviewed v9 golden fixture;
 - a real SQLite 25-sample path from persistence through the 24-hour query;
 - native notification-to-typed-event adaptation; and
 - MainActor menu-bar projection and fail-closed refresh behavior.

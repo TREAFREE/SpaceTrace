@@ -256,6 +256,11 @@ system for rapid retries; thermal XML is exported automatically; and the
 detached worker now finalizes at the end of the window using only system-path
 tools. A 60-second detached regression then passed automatic normal quit,
 thermal export, real privacy scanning, analyzer execution, and launchd cleanup.
+The capacity-history contract now also persists schema-v10 sleep/wake
+boundaries: only a strictly adjacent boundary pair can explain a long interval,
+while awake, missing, one-sided, and process-termination gaps still fail
+closed. Its v9 migration, rollback, and 24-hour query branches have
+deterministic regression coverage.
 The current-host matrix row remains open until a new default-policy run passes.
 
 ## Current-host smoke evidence

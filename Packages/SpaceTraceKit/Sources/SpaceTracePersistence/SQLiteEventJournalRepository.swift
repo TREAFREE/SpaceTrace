@@ -7,7 +7,7 @@ import Synchronization
 /// A dependency-free SQLite prototype for ADR-004. The actor is the sole
 /// owner of the connection and serializes every transaction and query.
 public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGenerationRepository, WatchedScopeBookmarkRepository, AuthorizedBaselineSnapshotRepository, DirectoryHistoryRepository, StartupVolumeCapacityHistoryRepository, StorageHistoryRetentionApplying {
-    public static let currentSchemaVersion = 9
+    public static let currentSchemaVersion = 10
     private static let schemaVersion = Int32(currentSchemaVersion)
 
     /// `Mutex` makes the non-Sendable C handle safe to release from the
@@ -1224,8 +1224,16 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 try migrateToVersionNine(database, failurePoint: failurePoint)
             case 8:
                 try migrateToVersionNine(database, failurePoint: failurePoint)
+            case 9:
+                break
             default:
                 throw SQLiteEventJournalError.unsupportedSchemaVersion(currentVersion)
+            }
+            if currentVersion < 10 {
+                try migrateToVersionTen(
+                    database,
+                    failurePoint: failurePoint
+                )
             }
         } catch SQLiteEventJournalError.injectedFailure {
             guard case let .beforeMigrationCommit(version)? = failurePoint else {
@@ -1415,6 +1423,82 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                     on: database,
                     "ROLLBACK TRANSACTION",
                     operation: "roll back schema migration v9"
+                )
+            } catch let rollbackError {
+                throw SQLiteEventJournalError.rollbackFailed(
+                    original: String(describing: migrationError),
+                    rollback: String(describing: rollbackError)
+                )
+            }
+            throw migrationError
+        }
+    }
+
+    private static func migrateToVersionTen(
+        _ database: OpaquePointer,
+        failurePoint: SQLiteEventJournalTestFailurePoint?
+    ) throws {
+        try execute(
+            on: database,
+            "BEGIN IMMEDIATE TRANSACTION",
+            operation: "begin schema migration v10"
+        )
+        do {
+            try execute(
+                on: database,
+                """
+                CREATE TABLE startup_volume_capacity_sample_v10 (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    observed_at_ms INTEGER NOT NULL,
+                    volume_uuid TEXT,
+                    total_bytes INTEGER
+                        CHECK(total_bytes IS NULL OR total_bytes >= 0),
+                    available_bytes INTEGER
+                        CHECK(available_bytes IS NULL OR available_bytes >= 0),
+                    important_available_bytes INTEGER
+                        CHECK(important_available_bytes IS NULL
+                            OR important_available_bytes >= 0),
+                    source TEXT NOT NULL CHECK(source IN (
+                        'lifecycle', 'baseline',
+                        'sleep_boundary', 'wake_boundary'
+                    ))
+                );
+
+                INSERT INTO startup_volume_capacity_sample_v10(
+                    sequence, observed_at_ms, volume_uuid, total_bytes,
+                    available_bytes, important_available_bytes, source
+                )
+                SELECT sequence, observed_at_ms, volume_uuid, total_bytes,
+                    available_bytes, important_available_bytes, source
+                FROM startup_volume_capacity_sample
+                ORDER BY sequence;
+
+                DROP TABLE startup_volume_capacity_sample;
+                ALTER TABLE startup_volume_capacity_sample_v10
+                    RENAME TO startup_volume_capacity_sample;
+
+                CREATE INDEX startup_volume_capacity_window
+                    ON startup_volume_capacity_sample(observed_at_ms, sequence);
+
+                INSERT INTO schema_migration(version, applied_at_ms, checksum)
+                VALUES(10, CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+                    'sleep-wake-capacity-boundaries-v10');
+                PRAGMA user_version = 10;
+                """,
+                operation: "apply schema migration version 10"
+            )
+            try failMigrationIfRequested(version: 10, failurePoint: failurePoint)
+            try execute(
+                on: database,
+                "COMMIT TRANSACTION",
+                operation: "commit schema migration v10"
+            )
+        } catch let migrationError {
+            do {
+                try execute(
+                    on: database,
+                    "ROLLBACK TRANSACTION",
+                    operation: "roll back schema migration v10"
                 )
             } catch let rollbackError {
                 throw SQLiteEventJournalError.rollbackFailed(

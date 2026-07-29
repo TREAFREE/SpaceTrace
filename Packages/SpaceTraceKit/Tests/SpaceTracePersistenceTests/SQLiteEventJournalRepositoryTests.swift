@@ -244,7 +244,10 @@ struct SQLiteEventJournalRepositoryTests {
         )
         #expect(samples.count == 1)
         #expect(samples.first?.source == .baseline)
-        #expect(try readSQLiteSchemaVersion(from: fixture.databaseURL) == 9)
+        #expect(
+            try readSQLiteSchemaVersion(from: fixture.databaseURL)
+                == SQLiteEventJournalRepository.currentSchemaVersion
+        )
 
         try await repository.close()
         fixture.remove()
@@ -290,6 +293,88 @@ struct SQLiteEventJournalRepositoryTests {
             table: "authorized_baseline_root",
             in: fixture.databaseURL
         ) == false)
+        fixture.remove()
+    }
+
+    @Test("Schema version nine migrates existing history and accepts sleep boundaries")
+    func migratesVersionNineSleepWakeBoundaries() async throws {
+        let fixture = try TemporaryDatabase()
+        try await createVersionNineFixture(at: fixture.databaseURL)
+
+        let repository = try SQLiteEventJournalRepository(
+            databaseURL: fixture.databaseURL
+        )
+        let volumeUUID = try #require(
+            UUID(uuidString: "eeeeeeee-ffff-0000-1111-222222222222")
+        )
+        for (index, source) in [
+            StartupVolumeCapacitySampleSource.sleepBoundary,
+            .wakeBoundary,
+        ].enumerated() {
+            try await repository.recordStartupVolumeCapacity(
+                StartupVolumeCapacitySnapshot(
+                    observedAt: Date(
+                        timeIntervalSince1970: 1_750_400_000
+                            + TimeInterval(index * 3_600)
+                    ),
+                    volumeUUID: volumeUUID,
+                    totalBytes: try ByteCount(10_000),
+                    availableBytes: try ByteCount(4_000 - Int64(index)),
+                    availableForImportantUsageBytes: nil
+                ),
+                source: source
+            )
+        }
+
+        let samples = try await repository.startupVolumeCapacityHistory(
+            from: Date(timeIntervalSince1970: 0),
+            through: Date(timeIntervalSince1970: 2_000_000_000)
+        )
+        #expect(samples.map(\.source) == [
+            .lifecycle,
+            .sleepBoundary,
+            .wakeBoundary,
+        ])
+        #expect(samples.map(\.sequence) == [1, 2, 3])
+        #expect(
+            try readSQLiteSchemaVersion(from: fixture.databaseURL)
+                == SQLiteEventJournalRepository.currentSchemaVersion
+        )
+
+        try await repository.close()
+        fixture.remove()
+    }
+
+    @Test("A failed schema-v10 boundary migration leaves the version-nine table intact")
+    func versionTenMigrationFailureRollsBack() async throws {
+        let fixture = try TemporaryDatabase()
+        try await createVersionNineFixture(at: fixture.databaseURL)
+
+        #expect(
+            throws: SQLiteEventJournalError.migrationFailed(
+                fromVersion: 9,
+                targetVersion: 10
+            )
+        ) {
+            _ = try SQLiteEventJournalRepository(
+                databaseURL: fixture.databaseURL,
+                failurePoint: .beforeMigrationCommit(version: 10)
+            )
+        }
+
+        #expect(try readSQLiteSchemaVersion(from: fixture.databaseURL) == 9)
+        #expect(
+            throws: (any Error).self
+        ) {
+            try executeFixtureSQL(
+                at: fixture.databaseURL,
+                sql: """
+                    INSERT INTO startup_volume_capacity_sample(
+                        observed_at_ms, source
+                    ) VALUES(1, 'sleep_boundary');
+                    """
+            )
+        }
         fixture.remove()
     }
 
@@ -1815,8 +1900,61 @@ private func createVersionEightFixture(
             DROP INDEX startup_volume_capacity_window;
             DROP TABLE startup_volume_capacity_sample;
             ALTER TABLE authorized_baseline_root DROP COLUMN volume_uuid;
-            DELETE FROM schema_migration WHERE version = 9;
+            DELETE FROM schema_migration WHERE version >= 9;
             PRAGMA user_version = 8;
+            """
+    )
+}
+
+private func createVersionNineFixture(at databaseURL: URL) async throws {
+    let repository = try SQLiteEventJournalRepository(databaseURL: databaseURL)
+    try await repository.recordStartupVolumeCapacity(
+        StartupVolumeCapacitySnapshot(
+            observedAt: Date(timeIntervalSince1970: 1_750_350_000),
+            volumeUUID: nil,
+            totalBytes: nil,
+            availableBytes: nil,
+            availableForImportantUsageBytes: nil
+        ),
+        source: .lifecycle
+    )
+    try await repository.close()
+    try executeFixtureSQL(
+        at: databaseURL,
+        sql: """
+            DROP INDEX startup_volume_capacity_window;
+            ALTER TABLE startup_volume_capacity_sample
+                RENAME TO startup_volume_capacity_sample_v10;
+
+            CREATE TABLE startup_volume_capacity_sample (
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                observed_at_ms INTEGER NOT NULL,
+                volume_uuid TEXT,
+                total_bytes INTEGER
+                    CHECK(total_bytes IS NULL OR total_bytes >= 0),
+                available_bytes INTEGER
+                    CHECK(available_bytes IS NULL OR available_bytes >= 0),
+                important_available_bytes INTEGER
+                    CHECK(important_available_bytes IS NULL
+                        OR important_available_bytes >= 0),
+                source TEXT NOT NULL
+                    CHECK(source IN ('lifecycle', 'baseline'))
+            );
+
+            INSERT INTO startup_volume_capacity_sample(
+                sequence, observed_at_ms, volume_uuid, total_bytes,
+                available_bytes, important_available_bytes, source
+            )
+            SELECT sequence, observed_at_ms, volume_uuid, total_bytes,
+                available_bytes, important_available_bytes, source
+            FROM startup_volume_capacity_sample_v10
+            ORDER BY sequence;
+
+            DROP TABLE startup_volume_capacity_sample_v10;
+            CREATE INDEX startup_volume_capacity_window
+                ON startup_volume_capacity_sample(observed_at_ms, sequence);
+            DELETE FROM schema_migration WHERE version = 10;
+            PRAGMA user_version = 9;
             """
     )
 }

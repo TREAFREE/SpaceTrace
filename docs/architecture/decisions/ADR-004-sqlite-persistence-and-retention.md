@@ -142,5 +142,12 @@ menu-bar presentation. Deterministic 30-virtual-day evidence and the remaining
 real 24-hour/minimum-OS matrix are recorded in
 [Background Storage Sampling Lifecycle and Menu Bar](../../engineering/background-storage-sampling-lifecycle.md).
 
+The 2026-07-29 schema-v10 amendment added explicit persisted sleep and wake
+capacity boundaries. A long interval is accepted only for a strictly adjacent
+`sleep_boundary → wake_boundary` pair; ordinary, missing, one-sided, and
+process-termination gaps remain disqualifying. The table recreation is one
+transaction, preserves explicit commit sequences, has an injected pre-commit
+rollback test, and adds the reviewed schema-v9 SHA-256 golden fixture.
+
 ADR acceptance still requires minimum-reference macOS 15.6 performance and
 distribution-signing evidence.

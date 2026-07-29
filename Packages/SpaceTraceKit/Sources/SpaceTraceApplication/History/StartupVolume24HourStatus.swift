@@ -249,7 +249,12 @@ public struct StartupVolume24HourStatusQuery:
             let gap = second.snapshot.observedAt.timeIntervalSince(
                 first.snapshot.observedAt
             )
-            return gap >= 0 && gap <= policy.maximumSampleGap
+            guard gap >= 0 else { return false }
+            if gap <= policy.maximumSampleGap {
+                return true
+            }
+            return first.source == .sleepBoundary
+                && second.source == .wakeBoundary
         }
     }
 

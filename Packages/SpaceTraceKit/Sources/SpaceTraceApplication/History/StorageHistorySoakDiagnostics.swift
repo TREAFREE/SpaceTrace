@@ -31,6 +31,7 @@ public enum StorageHistorySoakSampleTrigger:
 {
     case startup
     case periodic
+    case sleep
     case wake
     case significantTimeChange = "significant_time_change"
 }
@@ -606,6 +607,7 @@ public actor StorageHistorySoakDiagnosticRecorder {
         switch trigger {
         case .startup: .startup
         case .periodic: .periodic
+        case .sleep: .sleep
         case .wake: .wake
         case .significantTimeChange: .significantTimeChange
         }

@@ -228,9 +228,9 @@ public actor StorageHistoryBackgroundCoordinator:
             outcome = phase == .sleeping
                 ? .deferredWhileSleeping
                 : await sample(trigger: .periodic, at: at)
-        case .willSleep:
+        case let .willSleep(at):
+            outcome = await sample(trigger: .sleep, at: at)
             phase = .sleeping
-            outcome = .completed
         case let .didWake(at):
             phase = .awake
             outcome = await sample(trigger: .wake, at: at)

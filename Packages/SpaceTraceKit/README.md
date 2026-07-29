@@ -27,8 +27,9 @@ The authorized directory baseline, typed progress, cancellation, atomic-publicat
 
 The scope-bounded history read port, explicit-gap timeline, growth ranking, and Overview presentation contract are documented in [Directory History Application Layer and Overview](../../docs/engineering/directory-history-overview.md) and its [Chinese translation](../../docs/engineering/directory-history-overview.zh-CN.md).
 
-The monotonic startup-volume sampling, schema-v9 migration, conservative
-allocated-size reconciliation, and Overview truth contract are documented in
+The monotonic startup-volume sampling, schema-v10 sleep/wake-boundary
+migration, conservative allocated-size reconciliation, and Overview truth
+contract are documented in
 [Startup Volume History and Storage Reconciliation](../../docs/engineering/startup-volume-history-and-reconciliation.md)
 and its [Chinese translation](../../docs/engineering/startup-volume-history-and-reconciliation.zh-CN.md).
 

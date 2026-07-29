@@ -179,7 +179,9 @@ Scripts/run-current-host-soak.sh finalize \
 
 这些属于与能耗相关的进程资源测量，不是瓦特/焦耳测量。Power Profiler 拒绝 macOS target，非特权 `powermetrics` 则要求 superuser 授权。
 
-这次证据直接推动了四项 fail-closed 修正：wake 恢复时间只为每个新的成功 wake 记录一次；睡眠中延后的 retention 机会只确认一次，并在真实唤醒后由 App 补执行，避免要求系统快速重试；自动导出 thermal XML；脱离会话的 worker 在窗口结束后只依赖系统路径工具自动最终化。随后 60 秒 detached 回归通过自动正常退出、thermal 导出、真实隐私扫描、分析器执行和 launchd 清理。当前主机矩阵仍须等待新的默认策略运行通过。
+这次证据直接推动了四项 fail-closed 修正：wake 恢复时间只为每个新的成功 wake 记录一次；睡眠中延后的 retention 机会只确认一次，并在真实唤醒后由 App 补执行，避免要求系统快速重试；自动导出 thermal XML；脱离会话的 worker 在窗口结束后只依赖系统路径工具自动最终化。随后 60 秒 detached 回归通过自动正常退出、thermal 导出、真实隐私扫描、分析器执行和 launchd 清理。
+
+容量历史契约同时新增了 schema-v10 睡眠/唤醒边界：只有严格相邻的一对边界才能解释长间隔；醒着漏采、边界缺失/单侧以及 App 退出造成的缺口仍然失败关闭。v9 迁移、失败回滚和 24 小时查询分支均已有确定性回归。当前主机矩阵仍须等待新的默认策略运行通过。
 
 ## 当前主机 smoke 证据
 

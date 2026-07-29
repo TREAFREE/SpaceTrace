@@ -126,10 +126,10 @@ files.
   nested-root deduplication, external-volume exclusion, and identity changes.
 - SQLite tests cover monotonic commit sequence under repeated/rollback wall
   time, atomic baseline/capacity publication, root UUID round-trip, v8-to-v9
-  backfill, and capacity retention.
+  backfill, v9-to-v10 sleep/wake-boundary migration, and capacity retention.
 - MainActor/presentation tests cover volume-only loading and line breaks for
   gaps and identity replacement.
-- Released-schema SHA-256 fixtures migrate v6, v7, and v8 to the current
+- Released-schema SHA-256 fixtures migrate v6, v7, v8, and v9 to the current
   schema.
 - `make verify` remains the repository-wide final gate.
 
@@ -137,7 +137,9 @@ files.
 
 - The current-host evidence does not qualify real runtime behavior on macOS
   15.6; that minimum-reference run remains required.
-- Long sleep or app termination naturally creates explicit sampling gaps.
+- A successfully persisted sleep/wake boundary distinguishes genuine sleep
+  from an awake sampling gap. App termination and missing/one-sided boundaries
+  remain explicit, disqualifying gaps.
 - APFS physical uniqueness, snapshot enumeration, classification, move and
   deletion findings, menu-bar metrics, history reset, and release signing
   remain separate work.

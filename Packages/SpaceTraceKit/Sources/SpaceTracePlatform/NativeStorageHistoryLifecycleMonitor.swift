@@ -18,8 +18,9 @@ public enum NativeStorageHistoryLifecycleMonitorError:
 public final class NativeStorageHistoryLifecycleMonitor {
     private enum PeriodicTimerAction {
         case none
-        case pause
+        case pauseForSleep
         case restart
+        case restartAfterWake
     }
 
     private let receiver: any StorageHistoryLifecycleEventReceiving
@@ -36,6 +37,7 @@ public final class NativeStorageHistoryLifecycleMonitor {
     private var notificationTasks: [Task<Void, Never>] = []
     private var retentionScheduler: NSBackgroundActivityScheduler?
     private var retentionTask: Task<Void, Never>?
+    private var hasDeferredRetentionUntilWake = false
     private var isStarted = false
 
     public init(
@@ -79,12 +81,12 @@ public final class NativeStorageHistoryLifecycleMonitor {
             observeWorkspace(
                 NSWorkspace.willSleepNotification,
                 event: { .willSleep(at: $0) },
-                periodicTimerAction: .pause
+                periodicTimerAction: .pauseForSleep
             ),
             observeWorkspace(
                 NSWorkspace.didWakeNotification,
                 event: { .didWake(at: $0) },
-                periodicTimerAction: .restart
+                periodicTimerAction: .restartAfterWake
             ),
             observeSystem(
                 .NSSystemClockDidChange,
@@ -118,6 +120,7 @@ public final class NativeStorageHistoryLifecycleMonitor {
         retentionScheduler = nil
         retentionTask?.cancel()
         retentionTask = nil
+        hasDeferredRetentionUntilWake = false
         eventContinuation?.finish()
         eventContinuation = nil
         deliveryTask?.cancel()
@@ -158,11 +161,17 @@ public final class NativeStorageHistoryLifecycleMonitor {
         switch action {
         case .none:
             break
-        case .pause:
+        case .pauseForSleep:
             periodicTask?.cancel()
             periodicTask = nil
         case .restart:
             startPeriodicTimer()
+        case .restartAfterWake:
+            startPeriodicTimer()
+            if hasDeferredRetentionUntilWake {
+                hasDeferredRetentionUntilWake = false
+                eventContinuation?.yield(.maintenance(at: now()))
+            }
         }
     }
 
@@ -229,7 +238,18 @@ public final class NativeStorageHistoryLifecycleMonitor {
         outcome: StorageHistoryLifecycleOutcome,
         completion: @escaping NSBackgroundActivityScheduler.CompletionHandler
     ) {
-        completion(outcome == .completed ? .finished : .deferred)
         retentionTask = nil
+        switch outcome {
+        case .completed:
+            completion(.finished)
+        case .deferredWhileSleeping:
+            // A repeating scheduler treats `.deferred` as a request to retry
+            // soon. Acknowledge this opportunity, then perform one owned
+            // maintenance pass after the genuine wake notification.
+            hasDeferredRetentionUntilWake = true
+            completion(.finished)
+        case .failed, .stopped:
+            completion(.deferred)
+        }
     }
 }

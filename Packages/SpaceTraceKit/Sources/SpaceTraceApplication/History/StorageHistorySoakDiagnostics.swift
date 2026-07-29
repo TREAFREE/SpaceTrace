@@ -466,6 +466,7 @@ public actor StorageHistorySoakDiagnosticRecorder {
         any StorageHistorySoakResourceSnapshotProviding
     private let now: @Sendable () -> Date
     private var latestState = StorageHistoryBackgroundState.stopped
+    private var lastRecordedWakeAttemptAt: Date?
 
     public init(
         sessionID: UUID = UUID(),
@@ -564,7 +565,9 @@ public actor StorageHistorySoakDiagnosticRecorder {
         if reason == .stateChanged,
            state.lastSampleTrigger == .wake,
            state.lastSampleAttemptAt == state.lastSuccessfulSampleAt,
-           let wakeAt = state.lastSuccessfulSampleAt {
+           let wakeAt = state.lastSampleAttemptAt,
+           wakeAt != lastRecordedWakeAttemptAt {
+            lastRecordedWakeAttemptAt = wakeAt
             wakeRecovery = max(
                 0,
                 dateMilliseconds(recordedAt)

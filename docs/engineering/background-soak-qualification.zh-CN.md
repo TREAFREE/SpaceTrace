@@ -1,8 +1,8 @@
 # 后台长时间运行资格验证
 
-状态：**诊断基础设施已实现；真实 24 小时主机矩阵仍待完成**
+状态：**当前主机已采集真实长跑但容量资格失败；重跑与 macOS 15.6 矩阵仍待完成**
 
-最后复核：2026-07-25
+最后复核：2026-07-29
 
 英文原文：[Background Soak Qualification](background-soak-qualification.md)
 
@@ -107,7 +107,7 @@ Scripts/qualify-background-soak.sh \
 
 | 主机 | 时长 | 必需转换 | 状态 |
 | --- | ---: | --- | --- |
-| Apple Silicon 当前稳定版 macOS | 至少 24 小时 | 启动、普通运行、真实睡眠/唤醒、时间变化、时区变化、跨本地午夜、退出/重启 | 待完成 |
+| Apple Silicon 当前稳定版 macOS | 至少 24 小时 | 启动、普通运行、真实睡眠/唤醒、时间变化、时区变化、跨本地午夜、退出/重启 | 2026-07-27 尝试失败；需要重跑 |
 | Apple Silicon macOS 15.6 | 至少 24 小时 | 同一矩阵 | 待完成 |
 
 每台主机还必须：
@@ -137,18 +137,49 @@ Scripts/run-current-host-soak.sh status \
   "/path/to/evidence-directory"
 ```
 
-状态变为 `READY_TO_FINALIZE` 后，执行正常退出、受保护存储检查、隐私扫描和默认 24 小时分析：
+脱离会话的 worker 现在会在运行窗口结束后立即完成正常退出、受保护存储检查、隐私扫描和默认 24 小时分析；最终状态应为 `PASSED` 或 `FAILED`。手动命令只保留给停在 `READY_TO_FINALIZE` 的旧版/中断运行作恢复用途：
 
 ```bash
 Scripts/run-current-host-soak.sh finalize \
   "/path/to/evidence-directory"
 ```
 
-25 小时墙上时间窗口会在最后一个 24 小时切片之后再保留 1 小时，用于正常退出与最终分析。runner 不会阻止系统睡眠。每个 Instruments 切片都会导出目录、进程 ledger 和实时进程序列，其中包含 CPU 百分比/时间、Idle Wake Ups、物理内存、磁盘读写、App Nap、是否阻止睡眠，以及系统 Thermal State 区间。
+25 小时墙上时间窗口会在最后一个 24 小时切片之后再保留 1 小时，用于正常退出与最终分析。runner 不会阻止系统睡眠。每个 Instruments 切片都会导出目录、进程 ledger、实时进程序列和 Thermal State 区间，其中包含 CPU 百分比/时间、Idle Wake Ups、物理内存、磁盘读写、App Nap、是否阻止睡眠以及系统温度状态。
 
 在 Xcode 26 中，虽然列表里仍有 `Power Profiler`，但它会拒绝 macOS target，并明确表示只支持 iOS/iPadOS；旧 `Energy Log` 模板也未安装。因此 Activity Monitor 数据只能称为**与能耗相关的进程证据**，不能称为直接的焦耳/瓦特测量。`powermetrics --show-process-energy` 可以补充 SoC 估算功耗与进程 Energy Impact，但需要交互式管理员授权；其帮助文档也明确警告估算功耗不能用于跨设备比较。缺少授权时必须保留为证据缺口。每次运行还会把已安装模板列表，以及最新的 Power Profiler / 非特权 `powermetrics` 支持探针写入 `energy-capability.txt`。
 
 在较新 macOS 上以 15.6 deployment target 编译，不等于完成 macOS 15.6 真实运行资格验证。
+
+## 2026-07-27 当前主机真实长跑：已采集，未通过资格
+
+本次在 Apple Silicon MacBook Air、macOS 26.5.2 上运行独立 bundle identity 的 ad-hoc 签名 Release/App Sandbox 构建。App 只包含 App Sandbox、用户选择只读与 app-scoped bookmark 三项 entitlement，`LSMinimumSystemVersion = 15.6`。它属于当前主机工程证据，不属于 Developer ID、公证、分发或 macOS 15.6 运行证据。
+
+默认分析器按设计 fail closed：
+
+- 单一 session 的 1,693 条无路径记录覆盖 168,945,297 ms（46 小时 55 分 45.297 秒）；旧 runner 等待人工最终化，因此 App 超过预期 25 小时窗口后仍继续运行；
+- `final_capacity_not_qualified` 是真实资格缺口：一次长睡眠使 24 小时窗口的端点容差内不存在基线样本，退出前只有约 1.5 小时的新鲜清醒历史；
+- `wake_recovery_budget_exceeded` 暴露的是 recorder 缺陷，不是真实的 30 小时恢复。一次成功 wake 长期保留为“最后采样触发器”，后续延后的 maintenance 状态发布重复从旧 wake 计算耗时。原始证据中的即时 wake 发布为 0–198 ms，但正式报告仍必须保持失败，并用修正后的 recorder 重跑；
+- 其他分析器指标在预算内：最大清醒 heartbeat 间隔 62,047 ms、最大 RSS 141,115,392 字节、最大数据库 350,016 字节、平均 CPU 占比 0.00624%、区间 p95 CPU 占比 0.02325%，不存在未恢复采样失败，并且已观察到 retention 成功；以及
+- 有界诊断目录约 900 KiB，目录/文件权限为 `0700`/`0600`，禁止字段扫描为空。
+
+五段 Activity Monitor 记录与导出均无采集失败。五个 5 分钟 live 序列（合计 25 分钟）的证据如下：
+
+| 指标 | 证据 |
+| --- | ---: |
+| CPU 时间 | 0.493001 秒 |
+| 各切片平均 CPU | 0.011914%–0.038800% |
+| 各切片 p95 CPU | 0.023103%–0.073675% |
+| 最高瞬时 CPU | 启动切片 2.843294% |
+| Idle Wake Ups | 合计 1,180，约 0.79 次/秒 |
+| 磁盘写入 / 读取 | 2,023,424 / 155,648 字节 |
+| 最大物理内存 footprint | 53,068,760 字节 |
+| App Nap | 后四个切片均观察到 |
+| Preventing Sleep | 五个切片均未观察到 |
+| Thermal State | 五个切片均为 Nominal |
+
+这些属于与能耗相关的进程资源测量，不是瓦特/焦耳测量。Power Profiler 拒绝 macOS target，非特权 `powermetrics` 则要求 superuser 授权。
+
+这次证据直接推动了四项 fail-closed 修正：wake 恢复时间只为每个新的成功 wake 记录一次；睡眠中延后的 retention 机会只确认一次，并在真实唤醒后由 App 补执行，避免要求系统快速重试；自动导出 thermal XML；脱离会话的 worker 在窗口结束后只依赖系统路径工具自动最终化。随后 60 秒 detached 回归通过自动正常退出、thermal 导出、真实隐私扫描、分析器执行和 launchd 清理。当前主机矩阵仍须等待新的默认策略运行通过。
 
 ## 当前主机 smoke 证据
 

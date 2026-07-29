@@ -108,6 +108,55 @@ struct NativeStorageHistoryLifecycleMonitorTests {
         #expect(results.values == [.deferred, .finished])
     }
 
+    @Test("Sleeping retention is acknowledged once and replayed after wake")
+    func defersSleepingRetentionUntilWake() async throws {
+        let workspaceCenter = NotificationCenter()
+        let timestamp = Date(timeIntervalSince1970: 1_900_000_000)
+        let receiver = SleepDeferredRetentionReceiverFake()
+        let results = RetentionResultBox()
+        let monitor = try NativeStorageHistoryLifecycleMonitor(
+            receiver: receiver,
+            sampleInterval: 86_400,
+            workspaceNotificationCenter: workspaceCenter,
+            systemNotificationCenter: NotificationCenter(),
+            schedulesAutomaticRetention: false,
+            now: { timestamp }
+        )
+        monitor.start()
+        try await waitForEventCount(1, receiver: receiver)
+        await allowNotificationSubscriptionsToStart()
+
+        workspaceCenter.post(
+            name: NSWorkspace.willSleepNotification,
+            object: nil
+        )
+        try await waitForEventCount(2, receiver: receiver)
+        monitor.handleRetentionOpportunity { result in
+            results.append(result)
+        }
+        try await waitForEventCount(3, receiver: receiver)
+        try await waitForResultCount(1, results: results)
+
+        #expect(results.values == [.finished])
+
+        workspaceCenter.post(
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+        try await waitForEventCount(5, receiver: receiver)
+        monitor.stop()
+
+        #expect(
+            await receiver.events == [
+                .started(at: timestamp),
+                .willSleep(at: timestamp),
+                .maintenance(at: timestamp),
+                .didWake(at: timestamp),
+                .maintenance(at: timestamp),
+            ]
+        )
+    }
+
     private func allowNotificationSubscriptionsToStart() async {
         for _ in 0..<20 {
             await Task.yield()
@@ -131,6 +180,20 @@ struct NativeStorageHistoryLifecycleMonitorTests {
     private func waitForEventCount(
         _ expected: Int,
         receiver: DelayedRetentionReceiverFake
+    ) async throws {
+        for _ in 0..<100 {
+            if await receiver.events.count >= expected {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        Issue.record("Timed out waiting for \(expected) lifecycle events.")
+        throw LifecycleMonitorFixtureError.timeout
+    }
+
+    private func waitForEventCount(
+        _ expected: Int,
+        receiver: SleepDeferredRetentionReceiverFake
     ) async throws {
         for _ in 0..<100 {
             if await receiver.events.count >= expected {
@@ -188,6 +251,24 @@ private actor DelayedRetentionReceiverFake:
     func releaseMaintenance() {
         maintenanceContinuation?.resume()
         maintenanceContinuation = nil
+    }
+}
+
+private actor SleepDeferredRetentionReceiverFake:
+    StorageHistoryLifecycleEventReceiving
+{
+    private(set) var events: [StorageHistoryLifecycleEvent] = []
+    private var maintenanceCount = 0
+
+    func handle(
+        _ event: StorageHistoryLifecycleEvent
+    ) -> StorageHistoryLifecycleOutcome {
+        events.append(event)
+        guard case .maintenance = event else { return .completed }
+        maintenanceCount += 1
+        return maintenanceCount == 1
+            ? .deferredWhileSleeping
+            : .completed
     }
 }
 

@@ -414,6 +414,13 @@ worker_command() {
         if (( $? != 0 )); then
             export_failures=$(( export_failures + 1 ))
         fi
+        xcrun xctrace export --input "$trace" \
+            --xpath '/trace-toc/run[@number="1"]/data/table[@schema="device-thermal-state-intervals"]' \
+            --output "$evidence_directory/instruments/$prefix-thermal.xml" \
+            >>"$log" 2>&1
+        if (( $? != 0 )); then
+            export_failures=$(( export_failures + 1 ))
+        fi
         local -a exported_files
         exported_files=("$evidence_directory/instruments/$prefix"*.xml(N))
         if (( ${#exported_files} > 0 )); then
@@ -445,6 +452,7 @@ worker_command() {
     chmod 600 "$evidence_directory/capture-summary.txt"
     print "READY_TO_FINALIZE" >"$evidence_directory/run-status.txt"
     chmod 600 "$evidence_directory/run-status.txt"
+    finalize_command "$evidence_directory"
     completed=1
     remove_launchd_job
 }
@@ -493,7 +501,7 @@ finalize_command() {
     fi
 
     local privacy_status="PASS"
-    if rg -n \
+    if /usr/bin/grep -ERn \
         '/Users/|bookmark|volumeUUID|availableBytes|environment|commandLine|fileName|volumeName' \
         "$diagnostics_directory" \
         >"$evidence_directory/reports/privacy-scan.txt"

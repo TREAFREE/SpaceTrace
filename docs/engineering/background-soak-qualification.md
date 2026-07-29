@@ -1,8 +1,8 @@
 # Background Soak Qualification
 
-Status: **Diagnostic infrastructure implemented; real 24-hour host matrices remain open**
+Status: **Current-host run captured but failed capacity qualification; rerun and macOS 15.6 matrix remain open**
 
-Last reviewed: 2026-07-25
+Last reviewed: 2026-07-29
 
 Chinese translation: [后台长时间运行资格验证](background-soak-qualification.zh-CN.md)
 
@@ -130,7 +130,7 @@ Run the default analyzer after each signed sandbox run:
 
 | Host | Duration | Required transitions | Status |
 | --- | ---: | --- | --- |
-| Current stable macOS on Apple Silicon | At least 24 h | launch, ordinary operation, real sleep/wake, time change, time-zone change, local midnight, quit/relaunch | Open |
+| Current stable macOS on Apple Silicon | At least 24 h | launch, ordinary operation, real sleep/wake, time change, time-zone change, local midnight, quit/relaunch | 2026-07-27 attempt failed; rerun required |
 | macOS 15.6 on Apple Silicon | At least 24 h | Same matrix | Open |
 
 For each host:
@@ -168,9 +168,11 @@ Scripts/run-current-host-soak.sh status \
   "/path/to/evidence-directory"
 ```
 
-After the state becomes `READY_TO_FINALIZE`, perform normal application
-termination, protected-storage inspection, privacy scanning, and default
-24-hour analysis:
+The detached worker now performs normal application termination,
+protected-storage inspection, privacy scanning, and default 24-hour analysis
+immediately after the run window. A terminal state is `PASSED` or `FAILED`.
+The manual command is retained only as a recovery tool for an older/interrupted
+run that stopped at `READY_TO_FINALIZE`:
 
 ```bash
 Scripts/run-current-host-soak.sh finalize \
@@ -179,10 +181,10 @@ Scripts/run-current-host-soak.sh finalize \
 
 The 25-hour wall-clock window leaves one hour after the final 24-hour slice
 for graceful shutdown and final analysis. It never disables system sleep.
-Each Instruments slice exports its table of contents, process ledger, and live
-process series. Those tables provide CPU percentage/time, idle wakeups,
-physical memory, disk reads/writes, App Nap, sleep-prevention state, and system
-thermal intervals.
+Each Instruments slice exports its table of contents, process ledger, live
+process series, and thermal intervals. Those tables provide CPU
+percentage/time, idle wakeups, physical memory, disk reads/writes, App Nap,
+sleep-prevention state, and system thermal state.
 
 On Xcode 26, the listed `Power Profiler` instrument rejects macOS targets and
 states that it supports only iOS/iPadOS; the older `Energy Log` template is not
@@ -197,6 +199,64 @@ unprivileged `powermetrics` support probes in `energy-capability.txt`.
 
 Compiling with a 15.6 deployment target on a newer macOS host does not satisfy
 the macOS 15.6 runtime row.
+
+## 2026-07-27 current-host run: captured, not qualified
+
+An independently identified ad-hoc signed Release/App Sandbox build ran on a
+MacBook Air with Apple Silicon and macOS 26.5.2. The app had only App Sandbox,
+read-only user-selected files, and app-scoped bookmark entitlements, with
+`LSMinimumSystemVersion = 15.6`. This is current-host engineering evidence,
+not Developer ID, notarization, distribution, or macOS 15.6 runtime evidence.
+
+The default analyzer correctly failed closed:
+
+- one session and 1,693 path-free records covered 168,945,297 ms
+  (46 h 55 min 45.297 s); the older runner waited for manual finalization, so
+  the app continued past its intended 25-hour window;
+- `final_capacity_not_qualified` was genuine: a long sleep interval left no
+  baseline sample within the 24-hour endpoint tolerance, and only about
+  1.5 hours of fresh awake history existed before shutdown;
+- `wake_recovery_budget_exceeded` exposed a recorder defect rather than a
+  genuine 30-hour recovery. A successful wake remained the state's last sample
+  trigger, so later deferred-maintenance publications repeatedly recomputed
+  elapsed time from that old wake. Immediate wake publications in the raw
+  evidence were within 0–198 ms, but the official run remains failed and must
+  be repeated with the corrected recorder;
+- the other analyzer evidence stayed within budget: maximum awake heartbeat
+  gap 62,047 ms, maximum RSS 141,115,392 bytes, maximum database size
+  350,016 bytes, average CPU ratio 0.00624%, p95 interval CPU ratio 0.02325%,
+  no remaining sample failures, and successful retention observed; and
+- the bounded diagnostic directory was about 900 KiB with `0700`/`0600`
+  protection, while the forbidden-field scan was empty.
+
+All five Activity Monitor recordings and exports completed without capture
+failure. Across the five five-minute live series (25 bounded minutes):
+
+| Metric | Evidence |
+| --- | ---: |
+| CPU time | 0.493001 s |
+| Per-slice mean CPU | 0.011914%–0.038800% |
+| Per-slice p95 CPU | 0.023103%–0.073675% |
+| Highest instantaneous CPU | 2.843294% during the launch slice |
+| Idle wakeups | 1,180 total, about 0.79/s |
+| Disk writes / reads | 2,023,424 / 155,648 bytes |
+| Maximum physical footprint | 53,068,760 bytes |
+| App Nap | observed in the four post-launch slices |
+| Preventing Sleep | never observed |
+| Thermal State | Nominal in all five slices |
+
+These are energy-related process-resource measurements, not watt/joule
+measurements. Power Profiler rejected the macOS target, and unprivileged
+`powermetrics` required superuser authorization.
+
+The evidence drove four fail-closed changes: wake recovery is emitted once per
+new successful wake; a retention opportunity deferred during sleep is
+acknowledged once and replayed after the genuine wake instead of asking the
+system for rapid retries; thermal XML is exported automatically; and the
+detached worker now finalizes at the end of the window using only system-path
+tools. A 60-second detached regression then passed automatic normal quit,
+thermal export, real privacy scanning, analyzer execution, and launchd cleanup.
+The current-host matrix row remains open until a new default-policy run passes.
 
 ## Current-host smoke evidence
 

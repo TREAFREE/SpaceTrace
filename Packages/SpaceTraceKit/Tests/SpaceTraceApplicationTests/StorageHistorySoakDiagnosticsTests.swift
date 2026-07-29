@@ -163,6 +163,52 @@ struct StorageHistorySoakDiagnosticsTests {
 
         #expect(report.metrics.p95CPURatio < 0.001)
     }
+
+    @Test("Wake recovery is emitted once and is not inherited by later events")
+    func recordsWakeRecoveryOnce() async throws {
+        let wakeAt = Date(timeIntervalSince1970: 2_000_000_000)
+        let observer = SoakStateObserverFake()
+        let writer = SoakLogWriterFake()
+        let recorder = StorageHistorySoakDiagnosticRecorder(
+            stateObserver: observer,
+            statusLoader: SoakStatusLoaderFake(),
+            writer: writer,
+            resourceProvider: SoakResourceProviderFake(),
+            now: { wakeAt.addingTimeInterval(2) }
+        )
+        let runTask = Task {
+            await recorder.run(heartbeatInterval: .seconds(3_600))
+        }
+        try await waitForRecordCount(1, writer: writer)
+
+        await observer.yield(
+            backgroundState(
+                phase: .awake,
+                processedEventCount: 1,
+                lastSampleTrigger: .wake,
+                sampleAt: wakeAt
+            )
+        )
+        try await waitForRecordCount(2, writer: writer)
+        await observer.yield(
+            backgroundState(
+                phase: .sleeping,
+                processedEventCount: 2,
+                lastSampleTrigger: .wake,
+                sampleAt: wakeAt,
+                hasSuccessfulRetention: true
+            )
+        )
+        try await waitForRecordCount(3, writer: writer)
+        await observer.finish()
+        await runTask.value
+
+        let records = await writer.records
+        let recoveries = records
+            .filter { $0.reason == .stateChanged }
+            .map(\.background.wakeRecoveryMilliseconds)
+        #expect(recoveries == [2_000, nil])
+    }
 }
 
 private func healthyRecords() -> [StorageHistorySoakDiagnosticRecord] {
@@ -234,3 +280,103 @@ private let diagnosticSessionID = UUID(
         0x00, 0x00, 0x00, 0x00, 0x00, 0x01
     )
 )
+
+private actor SoakStateObserverFake:
+    StorageHistoryBackgroundStateObserving
+{
+    private var continuation:
+        AsyncStream<StorageHistoryBackgroundState>.Continuation?
+
+    func updates() -> AsyncStream<StorageHistoryBackgroundState> {
+        let pair = AsyncStream<StorageHistoryBackgroundState>.makeStream(
+            bufferingPolicy: .unbounded
+        )
+        continuation = pair.continuation
+        return pair.stream
+    }
+
+    func yield(_ state: StorageHistoryBackgroundState) {
+        continuation?.yield(state)
+    }
+
+    func finish() {
+        continuation?.finish()
+        continuation = nil
+    }
+}
+
+private actor SoakLogWriterFake: StorageHistorySoakLogWriting {
+    private(set) var records: [StorageHistorySoakDiagnosticRecord] = []
+
+    func append(_ record: StorageHistorySoakDiagnosticRecord) {
+        records.append(record)
+    }
+}
+
+private struct SoakStatusLoaderFake:
+    StartupVolume24HourStatusLoading
+{
+    func load(through end: Date) -> StartupVolume24HourStatus {
+        _ = end
+        return .unavailable
+    }
+}
+
+private struct SoakResourceProviderFake:
+    StorageHistorySoakResourceSnapshotProviding
+{
+    func snapshot() -> (
+        continuousTimeMilliseconds: Int64,
+        resource: StorageHistorySoakResourceSnapshot
+    ) {
+        (
+            1_000,
+            StorageHistorySoakResourceSnapshot(
+                cumulativeCPUMilliseconds: 1,
+                residentMemoryBytes: 1,
+                databaseBytes: 1
+            )
+        )
+    }
+}
+
+private func backgroundState(
+    phase: StorageHistoryBackgroundPhase,
+    processedEventCount: Int,
+    lastSampleTrigger: StorageHistorySampleTrigger,
+    sampleAt: Date,
+    hasSuccessfulRetention: Bool = false
+) -> StorageHistoryBackgroundState {
+    StorageHistoryBackgroundState(
+        phase: phase,
+        processedEventCount: processedEventCount,
+        lastSampleTrigger: lastSampleTrigger,
+        lastSampleAttemptAt: sampleAt,
+        lastSuccessfulSampleAt: sampleAt,
+        sampleFailureCount: 0,
+        consecutiveSampleFailureCount: 0,
+        lastRetentionAttemptAt:
+            hasSuccessfulRetention ? sampleAt : nil,
+        lastSuccessfulRetentionAt:
+            hasSuccessfulRetention ? sampleAt : nil,
+        retentionFailureCount: 0
+    )
+}
+
+private func waitForRecordCount(
+    _ expected: Int,
+    writer: SoakLogWriterFake
+) async throws {
+    for _ in 0..<100 {
+        if await writer.records.count >= expected {
+            return
+        }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    Issue.record("Timed out waiting for \(expected) soak records.")
+    throw SoakDiagnosticsFixtureError.timeout
+}
+
+private enum SoakDiagnosticsFixtureError: Error {
+    case timeout
+}

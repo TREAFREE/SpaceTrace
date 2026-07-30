@@ -6,14 +6,13 @@ struct DirectoryAuthorizationView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: SpaceTraceDesign.sectionSpacing) {
                 header
                 summaryCard
                 directoryList
                 privacyNote
             }
-            .padding(32)
-            .frame(maxWidth: 920, alignment: .leading)
+            .spaceTracePageLayout()
         }
         .navigationTitle("目录授权")
         .alert(
@@ -35,13 +34,12 @@ struct DirectoryAuthorizationView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("目录授权")
-                .font(.largeTitle.weight(.semibold))
-            Text("SpaceTrace 只读取你主动选择目录中的文件系统元数据。每个目录拥有独立授权，可以单独重新确认或移除。")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        SpaceTracePageHeader(
+            eyebrow: "隐私边界",
+            title: "目录授权",
+            detail: "SpaceTrace 只读取你主动选择目录中的文件系统元数据。每个目录拥有独立授权，可以单独重新确认或移除。",
+            symbol: "lock.shield"
+        )
     }
 
     private var summaryCard: some View {
@@ -51,10 +49,15 @@ struct DirectoryAuthorizationView: View {
                     Image(systemName: model.summary.symbolName)
                         .font(.title2)
                         .foregroundStyle(model.summary.symbolColor)
+                        .frame(width: 44, height: 44)
+                        .background(
+                            model.summary.symbolColor.opacity(0.12),
+                            in: Circle()
+                        )
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 6) {
                         Text(model.summary.title)
-                            .font(.headline)
+                            .font(.spaceTraceCardTitle)
                             .accessibilityIdentifier("authorization-status-title")
                         Text(model.summary.detail)
                             .foregroundStyle(.secondary)
@@ -72,7 +75,6 @@ struct DirectoryAuthorizationView: View {
                 Divider()
                 summaryActions
             }
-            .padding(8)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("目录授权概况")
@@ -85,6 +87,7 @@ struct DirectoryAuthorizationView: View {
                 Button(model.items.isEmpty ? "选择目录…" : "添加目录…") {
                     Task { await model.addDirectory() }
                 }
+                .buttonStyle(.borderedProminent)
                 .keyboardShortcut(model.items.isEmpty ? .defaultAction : nil)
                 .accessibilityIdentifier(
                     model.items.isEmpty
@@ -126,12 +129,16 @@ struct DirectoryAuthorizationView: View {
             Image(systemName: item.status.symbolName)
                 .font(.title3)
                 .foregroundStyle(item.status.symbolColor)
-                .frame(width: 24)
+                .frame(width: 32, height: 32)
+                .background(
+                    item.status.symbolColor.opacity(0.12),
+                    in: Circle()
+                )
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(item.status.title)
-                    .font(.headline)
+                    .font(.spaceTraceCardTitle)
                     .accessibilityIdentifier("authorization-scope-status-\(item.id.rawValue)")
                 Text(item.status.detail)
                     .foregroundStyle(.secondary)
@@ -184,6 +191,10 @@ struct DirectoryAuthorizationView: View {
         )
         .font(.callout)
         .foregroundStyle(.secondary)
+        .padding(16)
+        .spaceTraceCompactSurface()
         .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("隐私说明：授权为只读，移除授权不会删除目录中的文件。")
     }
 }

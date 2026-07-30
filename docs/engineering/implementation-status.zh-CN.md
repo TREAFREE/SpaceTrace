@@ -2,7 +2,7 @@
 
 状态：**架构验证阶段；已具备目录权限、基线与历史概览流程**
 
-最近验证日期：2026-07-30
+最近验证日期：2026-07-31
 
 英文事实源：[implementation-status.md](implementation-status.md)。本文是便于中文阅读的对应译文；如两者存在差异，以英文文档为架构事实源，并应在同一次变更中修正译文。
 
@@ -19,6 +19,7 @@
 | 权限与 catalog 生命周期 | 非 UI 的只读 bookmark 获取；opaque 应用层记录；精确 root/volume 恢复；重新派生 mount path；隐私安全的部分失败报告；外置卷缺席重试；配对 access lease | stale、路径移动、替换卷、符号链接、非目录和拒绝访问都不能悄悄扩大 scope 或自动刷新；只有暂时缺席会重试 |
 | 应用进程生命周期 | AppKit 启动/退出桥接；Application Support 组合；catalog 恢复；唯一 runtime 任务；唯一扫描调度 monitor；一个由应用层持有的后台容量/retention 协调器；异步退出协调；runtime 关闭后释放 lease | 关闭窗口不会停止监控；退出时会先停止原生生产者，再排空所属监控、调度、扫描、容量与 retention 工作，之后才释放权限能力；卷容量采样不依赖目录授权 |
 | 目录授权 UI | 用户主动触发的 `NSOpenPanel`；与路径无关的稳定 ID；按顺序投影多个 scope 的 MainActor 状态；可独立操作的已授权/不可用/需重新授权条目；拒绝完全重复根目录；有界新增；逐 scope 更换/移除；混合健康度概况与批量基线入口 | UI 不会从文本路径重建授权；stale 与身份变化必须再次使用系统选择器；变更失败会保留上一次可信投影；移除只释放选中的授权，不删除用户文件或测量历史 |
+| 视觉基础层 | 共用的系统语义字体、自适应证据蓝主题色、感知增强对比度的材质面板、统一页面/卡片/指标 Token、优化后的主窗口与菜单栏布局，以及完整原创 16–1024 px macOS 图标矩阵 | 视觉层级不改变证据语义；状态不只依靠颜色表达；不引入第三方字体或仅 macOS 26 可用的视觉 API，不抬高 macOS 15.6 最低版本 |
 | 失效映射 | 从适配器语义映射到应用层；词法 scope 校验；文件事件投影到父目录；过滤重放重叠；事件 ID generation 作废；祖先路径合并 | 路径含糊或连续性中断时，牺牲精度并退化为 scope 校准；事件 ID 回绕会作废旧 checkpoint，并让整个摄取批次不携带游标 |
 | 元数据校准扫描器 | 基于 Foundation/Darwin 的纯元数据遍历；显式限制条目数、深度、时长与批次；协作式取消；强制同卷；不跟随符号链接；硬链接分配量去重；强类型覆盖缺口 | 永不打开文件内容；叶子路径不会越过目录聚合边界；预算耗尽、权限丢失、挂载边界和取消都不能伪装成完整证据 |
 | 校准流水线 | actor 隔离的摄取与有界协调；通过应用层 scanner 端口执行扫描；使用结构化异步 staging | 部分完成或被取消的扫描会丢弃 staging 并保留 dirty work；扫描期间数据若变旧，完成的旧扫描不能发布数据或清除已经更新的工作 |
@@ -59,6 +60,7 @@
 - 当前主机 ad-hoc 签名 Release/App Sandbox 真实长跑采集到单一 session、1,693 条无路径记录、成功 retention、约 900 KiB 受保护诊断，以及五段无采集失败的完整 Activity Monitor/thermal 切片；默认分析器因长睡眠后缺少 24 小时容量端点以及重复计算的虚假 wake 恢复指标而失败，因此该运行只保留为失败/诊断证据，不报告为 qualified。合计 25 分钟的有界 Instruments 证据为：CPU 0.493001 秒、Idle Wake Ups 1,180 次、写入/读取 2,023,424/155,648 字节、最大物理内存 footprint 53,068,760 字节、未阻止睡眠、Thermal State 均为 Nominal。wake 指标和睡眠 retention 重试缺陷现已加入确定性回归，脱离会话自动最终化也通过 60 秒签名沙盒 smoke；
 - 2026-07-29 的 schema-v10 当前主机重跑通过签名沙盒预检和首段 Activity Monitor attach，但在 212.012 秒后收到外部正常 `exit(0)`；它只保留为中断证据，不属于 24 小时结果。主机后来还在计划窗口内关机并重启。本次中断暴露了 runner 的 zsh EXIT-trap 作用域以及 launchd 推断 KeepAlive 两项缺陷；
 - 两轮相互独立的签名沙盒 smoke 证明加固后的 runner：受控提前退出会生成受保护、带类型原因的 `FAILED` 证据并移除 supervisor；不受干扰的 60 秒运行则生成 `PASSED`，采集失败为 0、隐私扫描为空、分析器状态为 0、单一 session 的 4 条记录覆盖 59,737 ms，且 launchd job 无残留；
+- 2026-07-31 使用独立 bundle identity 的临时签名 App，在 1080 × 720 下完成概览层级和图表布局的视觉检查；16–1024 px 图标资产完成 Alpha 校验；App 单元测试及 `make verify` 通过。同日 UI 测试在初始化前因主机 Developer Mode 关闭而被阻塞，因此只记录为环境缺口，不报告为通过；
 - 多 scope 权限 UI 测试 target 已完成无签名 `build-for-testing` 编译，权限与“不伪造历史”共 7 个受控 DEBUG UI 场景通过；这些确定性 fixture 不覆盖真实 Powerbox、bookmark 与重启行为，且当前主机执行 `security find-identity -v -p codesigning` 仍未找到用于签名沙盒资格矩阵的稳定 Apple 签名身份；
 - 对当前主机 ad-hoc 签名 smoke App 完成严格签名校验，确认含 App Sandbox、用户选择只读、app-scoped bookmark 以及 `LSMinimumSystemVersion = 15.6`；该结果不是分发签名或 macOS 15.6 运行证据；
 - 当前主机签名沙盒 smoke 已证明精确 Powerbox 选择、正常退出后同一 bundle 无选择器恢复、App 内 bookmark 移除不删除夹具、一次性 APFS 镜像缺席时显示不可用，以及同一 Volume UUID 返回后自动恢复授权；

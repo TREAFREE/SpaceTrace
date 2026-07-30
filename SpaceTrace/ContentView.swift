@@ -13,16 +13,23 @@ struct ContentView: View {
         NavigationSplitView {
             List(SpaceTraceSection.allCases, selection: $selection) { section in
                 Label(section.title, systemImage: section.symbolName)
+                    .font(.body.weight(.medium))
+                    .padding(.vertical, 3)
                     .tag(section)
                     .accessibilityIdentifier(section.accessibilityIdentifier)
             }
+            .listStyle(.sidebar)
             .navigationTitle("SpaceTrace")
             .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 260)
         } detail: {
             detail
+                .background {
+                    SpaceTracePageBackground()
+                }
         }
         .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 760, minHeight: 520)
+        .groupBoxStyle(SpaceTracePanelGroupBoxStyle())
+        .frame(minWidth: 820, minHeight: 560)
         .safeAreaInset(edge: .top) {
             if let overview = databaseRecoveryModel.overview {
                 DatabaseRecoveryBanner(overview: overview)
@@ -88,7 +95,7 @@ private struct DatabaseRecoveryBanner: View {
         Label {
             VStack(alignment: .leading, spacing: 2) {
                 Text("数据库已进入只读恢复模式")
-                    .font(.headline)
+                    .font(.spaceTraceCardTitle)
                 Text("为避免覆盖原始数据，SpaceTrace 已停止扫描和写入。请保留恢复资料并重新打开应用。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -100,7 +107,13 @@ private struct DatabaseRecoveryBanner: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.orange.opacity(0.1))
+        .background(.regularMaterial)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(.orange.opacity(0.35))
+                .frame(height: 1)
+                .accessibilityHidden(true)
+        }
         .accessibilityIdentifier("database-recovery-banner")
     }
 }

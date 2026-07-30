@@ -21,7 +21,7 @@ struct SpaceTraceApp: App {
                 databaseRecoveryModel: appDelegate.databaseRecoveryModel
             )
         }
-        .defaultSize(width: 920, height: 620)
+        .defaultSize(width: 1_080, height: 720)
         .windowToolbarStyle(.unified)
 
         MenuBarExtra {

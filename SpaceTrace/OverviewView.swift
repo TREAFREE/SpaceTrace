@@ -16,27 +16,25 @@ struct OverviewView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: SpaceTraceDesign.sectionSpacing) {
                 header
                 readinessCard
                 baselineCard
                 DirectoryHistoryOverviewView(model: directoryHistoryModel)
                 workflow
             }
-            .padding(32)
-            .frame(maxWidth: 920, alignment: .leading)
+            .spaceTracePageLayout()
         }
         .navigationTitle("概览")
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("空间变化，从这里开始")
-                .font(.largeTitle.weight(.semibold))
-            Text("SpaceTrace 会在本机记录你授权目录的变化，并用可核验的扫描结果解释空间去了哪里。")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        SpaceTracePageHeader(
+            eyebrow: "本机空间证据",
+            title: "空间变化，从这里开始",
+            detail: "SpaceTrace 会在本机记录你授权目录的变化，并用可核验的扫描结果解释空间去了哪里。",
+            symbol: "sparkles"
+        )
     }
 
     private var readinessCard: some View {
@@ -45,11 +43,13 @@ struct OverviewView: View {
                 Image(systemName: readinessSymbol)
                     .font(.title)
                     .foregroundStyle(readinessColor)
+                    .frame(width: 48, height: 48)
+                    .background(readinessColor.opacity(0.12), in: Circle())
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text(readinessTitle)
-                        .font(.title3.weight(.semibold))
+                        .font(.spaceTraceSectionTitle)
                         .accessibilityIdentifier("overview-readiness-title")
                     Text(readinessDetail)
                         .foregroundStyle(.secondary)
@@ -65,7 +65,6 @@ struct OverviewView: View {
 
                 Spacer(minLength: 0)
             }
-            .padding(8)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("监控准备状态")
@@ -83,7 +82,6 @@ struct OverviewView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .contain)
@@ -279,8 +277,7 @@ struct OverviewView: View {
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.quaternary.opacity(0.5))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .spaceTraceCompactSurface()
             }
             Text("大小使用二进制单位。可观察分配大小不等于 APFS 唯一物理占用，也不代表可回收空间。")
                 .font(.caption)
@@ -413,7 +410,7 @@ struct OverviewView: View {
                 .foregroundStyle(color)
                 .accessibilityHidden(true)
             Text(title)
-                .font(.headline)
+                .font(.spaceTraceCardTitle)
             Text(detail)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(color)
@@ -433,10 +430,7 @@ struct OverviewView: View {
     }
 
     private var workflow: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("工作方式")
-                .font(.headline)
-
+        GroupBox("工作方式") {
             HStack(alignment: .top, spacing: 12) {
                 WorkflowStep(
                     number: 1,
@@ -458,6 +452,8 @@ struct OverviewView: View {
                 )
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("SpaceTrace 工作方式")
     }
 
     private var isAuthorized: Bool {
@@ -712,7 +708,7 @@ private struct WorkflowStep: View {
                     .background(state.color.opacity(0.16))
                     .clipShape(Circle())
                 Text(title)
-                    .font(.headline)
+                    .font(.spaceTraceCardTitle)
             }
             Text(detail)
                 .foregroundStyle(.secondary)
@@ -723,12 +719,7 @@ private struct WorkflowStep: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, minHeight: 138, alignment: .topLeading)
-        .background(.background.secondary)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(.separator, lineWidth: 1)
-        }
+        .spaceTraceCompactSurface()
         .accessibilityElement(children: .combine)
     }
 }

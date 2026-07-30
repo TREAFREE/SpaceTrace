@@ -13,7 +13,6 @@ struct DirectoryHistoryOverviewView: View {
                 controls
                 content
             }
-            .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
         } label: {
             Label("历史变化", systemImage: "chart.xyaxis.line")
@@ -303,12 +302,7 @@ struct DirectoryHistoryOverviewView: View {
                         }
                     }
                 }
-                .background(.background.secondary)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(.separator, lineWidth: 1)
-                }
+                .spaceTraceCompactSurface()
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("目录增长来源排名")
             }
@@ -372,7 +366,7 @@ private struct ReconciliationMetric: View {
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.title3.monospacedDigit().weight(.semibold))
+                .font(.spaceTraceMetric)
             Text(detail)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -380,12 +374,7 @@ private struct ReconciliationMetric: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
-        .background(.background.secondary)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(.separator, lineWidth: 1)
-        }
+        .spaceTraceCompactSurface()
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title)：\(value)")
         .accessibilityValue(detail)
@@ -407,14 +396,14 @@ private struct StartupVolumeHistoryChart: View {
                 y: .value("可用空间", Double(point.availableBytes)),
                 series: .value("连续区间", point.segmentID)
             )
-            .foregroundStyle(.blue)
+            .foregroundStyle(Color.accentColor)
             .interpolationMethod(.linear)
 
             PointMark(
                 x: .value("时间", point.observedAt),
                 y: .value("可用空间", Double(point.availableBytes))
             )
-            .foregroundStyle(.blue)
+            .foregroundStyle(Color.accentColor)
             .symbolSize(point.coverage == .complete ? 20 : 56)
             .accessibilityLabel("启动数据卷可用空间")
             .accessibilityValue(
@@ -439,6 +428,11 @@ private struct StartupVolumeHistoryChart: View {
         }
         .chartXAxis {
             AxisMarks(values: .automatic(desiredCount: bucket == .hourly ? 6 : 7))
+        }
+        .chartPlotStyle { plotArea in
+            plotArea
+                .background(Color.accentColor.opacity(0.035))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .frame(minHeight: 220)
         .accessibilityLabel("启动数据卷可用空间历史图")
@@ -527,6 +521,11 @@ private struct DirectoryHistoryChart: View {
         .chartXAxis {
             AxisMarks(values: .automatic(desiredCount: overview.bucket == .hourly ? 6 : 7))
         }
+        .chartPlotStyle { plotArea in
+            plotArea
+                .background(Color.accentColor.opacity(0.035))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
         .chartLegend(position: .bottom, alignment: .leading, spacing: 8)
         .frame(minHeight: 260)
         .accessibilityLabel("目录逻辑大小历史图")
@@ -610,7 +609,7 @@ private struct DirectoryGrowthRow: View {
             Spacer(minLength: 12)
 
             Text(delta)
-                .font(.callout.monospacedDigit().weight(.semibold))
+                .font(.callout.monospacedDigit().weight(.bold))
                 .foregroundStyle(.green)
         }
         .padding(12)

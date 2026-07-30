@@ -20,18 +20,19 @@ struct MenuBarStatusView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             header
-            Divider()
-            storageEvidence
-            reconciliationEvidence
+            evidencePanel
             qualificationDiagnosticsIndicator
             backgroundWarning
             Divider()
             actions
         }
-        .padding(16)
-        .frame(width: 340)
+        .padding(18)
+        .frame(width: 360)
+        .background {
+            SpaceTracePageBackground()
+        }
         .accessibilityIdentifier("menu-bar-status")
     }
 
@@ -40,10 +41,18 @@ struct MenuBarStatusView: View {
             Image(systemName: operationalState.symbolName)
                 .font(.title2)
                 .foregroundStyle(operationalState.color)
+                .frame(width: 44, height: 44)
+                .background(
+                    operationalState.color.opacity(0.14),
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                )
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
+                Text("SpaceTrace")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tint)
                 Text(operationalState.title)
-                    .font(.headline)
+                    .font(.spaceTraceSectionTitle)
                 Text(statusDetail)
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -54,6 +63,19 @@ struct MenuBarStatusView: View {
         .accessibilityLabel(
             "\(operationalState.title)。\(statusDetail)"
         )
+    }
+
+    private var evidencePanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            storageEvidence
+            Divider()
+            reconciliationEvidence
+        }
+        .font(.callout)
+        .padding(14)
+        .spaceTraceCompactSurface()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("空间证据摘要")
     }
 
     @ViewBuilder
@@ -133,7 +155,11 @@ struct MenuBarStatusView: View {
                 openWindow(id: "main")
                 NSApplication.shared.activate(ignoringOtherApps: true)
             }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .frame(maxWidth: .infinity)
             .keyboardShortcut("o", modifiers: .command)
+            .help("打开 SpaceTrace 主窗口（⌘O）")
             .accessibilityIdentifier("menu-bar-open-main-window")
 
             Button("立即刷新状态") {
@@ -144,7 +170,9 @@ struct MenuBarStatusView: View {
                     }
                 }
             }
+            .buttonStyle(.bordered)
             .disabled(authorizationModel.isBusy)
+            .help("重新读取启动卷与目录授权状态")
             .accessibilityIdentifier("menu-bar-refresh-status")
 
             Divider()
@@ -152,6 +180,7 @@ struct MenuBarStatusView: View {
             Button("退出 SpaceTrace") {
                 NSApplication.shared.terminate(nil)
             }
+            .buttonStyle(.plain)
             .keyboardShortcut("q", modifiers: .command)
         }
     }

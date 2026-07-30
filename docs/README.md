@@ -8,8 +8,9 @@ This directory is the durable source of truth for product, architecture, enginee
 
 1. [Product Requirements](product/product-requirements.md)
 2. [Product Roadmap](product/product-roadmap.md)
-3. [Technical Architecture](architecture/technical-architecture.md)
-4. [Privacy and Security](security/privacy-and-security.md)
+3. [Visual Design System](product/visual-design-system.md) · [中文](product/visual-design-system.zh-CN.md)
+4. [Technical Architecture](architecture/technical-architecture.md)
+5. [Privacy and Security](security/privacy-and-security.md)
 
 ### Engineering onboarding
 
@@ -33,7 +34,7 @@ This directory is the durable source of truth for product, architecture, enginee
 18. [Direct DMG Distribution and Code Signing](engineering/direct-distribution-signing.md) · [中文](engineering/direct-distribution-signing.zh-CN.md)
 19. [Background Storage Sampling Lifecycle and Menu Bar](engineering/background-storage-sampling-lifecycle.md) · [中文](engineering/background-storage-sampling-lifecycle.zh-CN.md)
 20. [Background Soak Qualification](engineering/background-soak-qualification.md) · [中文](engineering/background-soak-qualification.zh-CN.md)
-20. [Contributing](../CONTRIBUTING.md)
+21. [Contributing](../CONTRIBUTING.md)
 
 ### Product evidence
 

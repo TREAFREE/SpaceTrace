@@ -1,8 +1,8 @@
 # 后台长时间运行资格验证
 
-状态：**当前主机已采集真实长跑但容量资格失败；重跑与 macOS 15.6 矩阵仍待完成**
+状态：**当前主机两次尝试仍为失败/中断；加固后的重跑与 macOS 15.6 矩阵仍待完成**
 
-最后复核：2026-07-29
+最后复核：2026-07-30
 
 英文原文：[Background Soak Qualification](background-soak-qualification.md)
 
@@ -107,7 +107,7 @@ Scripts/qualify-background-soak.sh \
 
 | 主机 | 时长 | 必需转换 | 状态 |
 | --- | ---: | --- | --- |
-| Apple Silicon 当前稳定版 macOS | 至少 24 小时 | 启动、普通运行、真实睡眠/唤醒、时间变化、时区变化、跨本地午夜、退出/重启 | 2026-07-27 尝试失败；需要重跑 |
+| Apple Silicon 当前稳定版 macOS | 至少 24 小时 | 启动、普通运行、真实睡眠/唤醒、时间变化、时区变化、跨本地午夜、退出/重启 | 2026-07-27 资格失败；2026-07-29 被中断；需用加固 runner 重跑 |
 | Apple Silicon macOS 15.6 | 至少 24 小时 | 同一矩阵 | 待完成 |
 
 每台主机还必须：
@@ -128,7 +128,7 @@ Scripts/run-current-host-soak.sh start \
   90000
 ```
 
-请先创建证据目录，并避开 Desktop、Documents 和 Downloads。脱离终端运行的 launchd worker 不会继承 Terminal/Codex 对这些隐私保护目录的访问权。runner 会在启动前把不可变的 App、分析器和 worker 复制进证据目录。
+请先创建证据目录，并避开 Desktop、Documents 和 Downloads。脱离终端运行的 launchd worker 不会继承 Terminal/Codex 对这些隐私保护目录的访问权。runner 会在启动前把不可变的 App、分析器和 worker 复制进证据目录，并为本次运行创建显式的 LaunchAgent plist：`RunAtLoad=true`、`KeepAlive=false`。worker 失败后必须以 `FAILED` 终止，不能被静默重新拉起。
 
 可以在不中断长跑的情况下查看 detached supervisor：
 
@@ -182,6 +182,21 @@ Scripts/run-current-host-soak.sh finalize \
 这次证据直接推动了四项 fail-closed 修正：wake 恢复时间只为每个新的成功 wake 记录一次；睡眠中延后的 retention 机会只确认一次，并在真实唤醒后由 App 补执行，避免要求系统快速重试；自动导出 thermal XML；脱离会话的 worker 在窗口结束后只依赖系统路径工具自动最终化。随后 60 秒 detached 回归通过自动正常退出、thermal 导出、真实隐私扫描、分析器执行和 launchd 清理。
 
 容量历史契约同时新增了 schema-v10 睡眠/唤醒边界：只有严格相邻的一对边界才能解释长间隔；醒着漏采、边界缺失/单侧以及 App 退出造成的缺口仍然失败关闭。v9 迁移、失败回滚和 24 小时查询分支均已有确定性回归。当前主机矩阵仍须等待新的默认策略运行通过。
+
+## 2026-07-29 当前主机重跑：被外部中断
+
+提交 `3ae4f24` 的 schema-v10 构建使用独立 bundle identity，完成 ad-hoc 签名并在 Release/App Sandbox 中启动。签名预检、三项必要 entitlement、`LSMinimumSystemVersion = 15.6`、诊断记录以及第一段 Activity Monitor attach 均成功。
+
+App 在运行 212.012 秒后以 `exit(0)` 完成有序退出。无路径日志包含一个 session、三次 heartbeat 和最终 `stopped` 记录，没有采样失败；系统没有对应 crash report 或信号终止证据，现存统一日志也无法确定外部正常终止请求的来源。监督器正确发现 App 未到资格端点就已退出。主机随后又在 2026-07-30 01:11 关机、09:36 重启，这一点也独立地使整轮墙上时间证据失去资格。因此它属于“运行被中断”，既不是产品可靠性失败结论，也不是 24 小时结果。
+
+这次中断暴露了 runner 的两个缺陷：zsh `EXIT` trap 在函数作用域结束后读取局部变量，导致状态文件遗留为 `RUNNING`；`launchctl submit` 还会推断 `KeepAlive`，非零退出的 worker 可能被重新拉起。runner 现改为脚本生命周期清理状态、受保护的类型化失败摘要、对遗留孤儿 `RUNNING` 的失败投影，以及不自动重启的逐次运行 LaunchAgent。
+
+两轮相互独立的签名沙盒回归覆盖了两个终态：
+
+- 受控提前 `exit(0)` 后写入 `FAILED` 与 `failure_reason=app_exited_before_qualification_end`，App 和 supervisor 均清理且没有重启；
+- 不受干扰的 60 秒 smoke 写入 `PASSED`：采集失败为 0、隐私扫描为空、分析器退出码为 0；一个 session 的 4 条记录覆盖 59,737 ms，最大 RSS 为 139,509,760 字节，最大数据库为 292,336 字节，launchd job 无残留。
+
+这些 smoke 只验证 runner 管线，不关闭当前主机 24 小时门禁。下一轮仍保持正常系统睡眠，但期间不能关机、注销或主动退出 SpaceTrace。
 
 ## 当前主机 smoke 证据
 

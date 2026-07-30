@@ -2,7 +2,7 @@
 
 状态：**架构验证阶段；已具备目录权限、基线与历史概览流程**
 
-最近验证日期：2026-07-29
+最近验证日期：2026-07-30
 
 英文事实源：[implementation-status.md](implementation-status.md)。本文是便于中文阅读的对应译文；如两者存在差异，以英文文档为架构事实源，并应在同一次变更中修正译文。
 
@@ -57,6 +57,8 @@
 - 确定性的后台 soak 测试证明无路径编码、序号/资源/retention 的 fail closed 分析、睡眠包围缺口处理、受保护的有界轮转与过期、原生聚合资源探针，以及菜单栏明确记录提示；recorder、writer、probe 与分析器同时通过严格并发编译；
 - 当前主机使用独立 bundle identity 的 ad-hoc 签名 Release/App Sandbox 诊断 smoke：7 条记录 / 241.636 秒、正常退出、3,585 字节受保护无路径日志、分析器 smoke 通过、平均/p95 CPU 占比 0.0344%/0.0907%、最大常驻内存 135,495,680 字节、数据库聚合大小 263,496 字节；它明确不属于 24 小时、能耗、Apple 身份或 macOS 15.6 运行证据；
 - 当前主机 ad-hoc 签名 Release/App Sandbox 真实长跑采集到单一 session、1,693 条无路径记录、成功 retention、约 900 KiB 受保护诊断，以及五段无采集失败的完整 Activity Monitor/thermal 切片；默认分析器因长睡眠后缺少 24 小时容量端点以及重复计算的虚假 wake 恢复指标而失败，因此该运行只保留为失败/诊断证据，不报告为 qualified。合计 25 分钟的有界 Instruments 证据为：CPU 0.493001 秒、Idle Wake Ups 1,180 次、写入/读取 2,023,424/155,648 字节、最大物理内存 footprint 53,068,760 字节、未阻止睡眠、Thermal State 均为 Nominal。wake 指标和睡眠 retention 重试缺陷现已加入确定性回归，脱离会话自动最终化也通过 60 秒签名沙盒 smoke；
+- 2026-07-29 的 schema-v10 当前主机重跑通过签名沙盒预检和首段 Activity Monitor attach，但在 212.012 秒后收到外部正常 `exit(0)`；它只保留为中断证据，不属于 24 小时结果。主机后来还在计划窗口内关机并重启。本次中断暴露了 runner 的 zsh EXIT-trap 作用域以及 launchd 推断 KeepAlive 两项缺陷；
+- 两轮相互独立的签名沙盒 smoke 证明加固后的 runner：受控提前退出会生成受保护、带类型原因的 `FAILED` 证据并移除 supervisor；不受干扰的 60 秒运行则生成 `PASSED`，采集失败为 0、隐私扫描为空、分析器状态为 0、单一 session 的 4 条记录覆盖 59,737 ms，且 launchd job 无残留；
 - 多 scope 权限 UI 测试 target 已完成无签名 `build-for-testing` 编译，权限与“不伪造历史”共 7 个受控 DEBUG UI 场景通过；这些确定性 fixture 不覆盖真实 Powerbox、bookmark 与重启行为，且当前主机执行 `security find-identity -v -p codesigning` 仍未找到用于签名沙盒资格矩阵的稳定 Apple 签名身份；
 - 对当前主机 ad-hoc 签名 smoke App 完成严格签名校验，确认含 App Sandbox、用户选择只读、app-scoped bookmark 以及 `LSMinimumSystemVersion = 15.6`；该结果不是分发签名或 macOS 15.6 运行证据；
 - 当前主机签名沙盒 smoke 已证明精确 Powerbox 选择、正常退出后同一 bundle 无选择器恢复、App 内 bookmark 移除不删除夹具、一次性 APFS 镜像缺席时显示不可用，以及同一 Volume UUID 返回后自动恢复授权；
@@ -71,7 +73,7 @@
 ## 明确不作出的声明
 
 - 面向用户的多目录权限列表、批量基线、启动卷容量历史、版本/Schema 元数据、重启恢复、感知电源/温度/睡眠的暂停与重试、schema v10 睡眠感知目录/卷历史概览，以及具备资格判断的菜单栏 24 小时指标均已实现。归因只使用互不重叠授权根 allocated-size 增长，是有证据边界的近似；APFS 唯一物理块核算、确定性分类、移动/删除 finding、真正从枚举器内存中点续扫和导出尚未实现。
-- 当前主机真实长跑属于有价值的失败证据和进程资源证据，但最终容量状态未 qualified，因此没有关闭真实 24 小时主机门禁。Activity Monitor 的 CPU、唤醒、内存、I/O 与 thermal 区间属于能耗相关证据，不是直接瓦特/焦耳测量；该运行也不能证明系统调度到达保证、签名状态项交互矩阵、Apple 身份分发或 macOS 15.6 运行资格。
+- 当前主机真实长跑属于有价值的失败/中断证据和进程资源证据，但两次尝试都没有关闭真实 24 小时主机门禁。Activity Monitor 的 CPU、唤醒、内存、I/O 与 thermal 区间属于能耗相关证据，不是直接瓦特/焦耳测量；这些运行也不能证明系统调度到达保证、签名状态项交互矩阵、Apple 身份分发或 macOS 15.6 运行资格。
 - 用户主动基线调度会响应休眠、低电量模式、严重/危急温度，并观察当前供电来源。后台速率预算、系统负载调度以及架构中的 token bucket 尚未实现。硬链接去重受条目预算限制，但每次扫描运行期间仍保存在内存中。
 - 真实 sandbox Powerbox 展示以及 stale/身份失败的重新授权 UI 已实现；当前主机上的持久选择、同一 bundle 重启、明确 App 内移除和同镜像外置卷返回已经通过。真实 stale 证据、UI 流程中的不同 UUID 换卷子项、Apple 身份签名以及 macOS 15.6 运行矩阵仍未完成，或受到当前环境阻塞。
 - 不会依据 FSEvents 推断精确字节差值或进程归因。

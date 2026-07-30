@@ -2,6 +2,12 @@
 
 set -u
 
+worker_cleanup_completed=0
+worker_cleanup_app_pid=""
+worker_cleanup_bundle_identifier=""
+worker_cleanup_evidence_directory=""
+worker_cleanup_failure_reason="unexpected_worker_exit"
+
 usage() {
     print -u2 "usage:"
     print -u2 "  $0 start /absolute/path/to/SpaceTrace.app /absolute/path/to/evidence <duration-seconds>"
@@ -47,24 +53,42 @@ status_command() {
     local supervisor_label_file="$evidence_directory/supervisor.label"
     local app_pid_file="$evidence_directory/app.pid"
 
-    if [[ -f $state_file ]]; then
-        print "status: $(<"$state_file")"
-    else
-        print "status: NOT_STARTED"
-    fi
+    local recorded_status="NOT_STARTED"
+    [[ -f $state_file ]] && recorded_status=$(<"$state_file")
+    local supervisor_running=0
+    local app_running=0
     if [[ -f $supervisor_label_file ]]; then
         local supervisor_label
         supervisor_label=$(<"$supervisor_label_file")
         if launchd_is_running "$supervisor_label"; then
-            print "supervisor: running ($supervisor_label)"
-        else
-            print "supervisor: not running ($supervisor_label)"
+            supervisor_running=1
         fi
     fi
     if [[ -f $app_pid_file ]]; then
         local app_pid
         app_pid=$(<"$app_pid_file")
         if kill -0 "$app_pid" 2>/dev/null; then
+            app_running=1
+        fi
+    fi
+    if [[ $recorded_status == "RUNNING" &&
+          $supervisor_running == 0 &&
+          $app_running == 0 ]]; then
+        print "status: FAILED (recorded RUNNING; supervisor and app absent)"
+    else
+        print "status: $recorded_status"
+    fi
+    if [[ -f $supervisor_label_file ]]; then
+        supervisor_label=$(<"$supervisor_label_file")
+        if (( supervisor_running == 1 )); then
+            print "supervisor: running ($supervisor_label)"
+        else
+            print "supervisor: not running ($supervisor_label)"
+        fi
+    fi
+    if [[ -f $app_pid_file ]]; then
+        app_pid=$(<"$app_pid_file")
+        if (( app_running == 1 )); then
             print "app: running (pid $app_pid)"
         else
             print "app: not running (last pid $app_pid)"
@@ -244,16 +268,36 @@ start_command() {
     analyzer_smoke=${SPACETRACE_SOAK_ANALYZER_SMOKE_SECONDS:-}
     : >"$evidence_directory/supervisor.log"
     chmod 600 "$evidence_directory/supervisor.log"
-    launchctl submit \
-        -l "$supervisor_label" \
-        -o "$evidence_directory/supervisor.log" \
-        -e "$evidence_directory/supervisor.log" \
-        -- /usr/bin/env \
-        "SPACETRACE_SOAK_INSTRUMENT_DURATION=$instrument_duration" \
-        "SPACETRACE_SOAK_CAPTURE_OFFSETS_SECONDS=$capture_offsets" \
-        "SPACETRACE_SOAK_ANALYZER_SMOKE_SECONDS=$analyzer_smoke" \
-        "$runtime_directory/run-current-host-soak.sh" \
-        worker "$runtime_app" "$evidence_directory" "$duration_seconds"
+    local supervisor_plist="$runtime_directory/supervisor.plist"
+    plutil -create xml1 "$supervisor_plist"
+    plutil -insert Label -string "$supervisor_label" "$supervisor_plist"
+    plutil -insert ProgramArguments -array "$supervisor_plist"
+    plutil -insert ProgramArguments.0 \
+        -string "$runtime_directory/run-current-host-soak.sh" \
+        "$supervisor_plist"
+    plutil -insert ProgramArguments.1 -string worker "$supervisor_plist"
+    plutil -insert ProgramArguments.2 \
+        -string "$runtime_app" "$supervisor_plist"
+    plutil -insert ProgramArguments.3 \
+        -string "$evidence_directory" "$supervisor_plist"
+    plutil -insert ProgramArguments.4 \
+        -string "$duration_seconds" "$supervisor_plist"
+    plutil -insert EnvironmentVariables -dictionary "$supervisor_plist"
+    plutil -insert EnvironmentVariables.SPACETRACE_SOAK_INSTRUMENT_DURATION \
+        -string "$instrument_duration" "$supervisor_plist"
+    plutil -insert EnvironmentVariables.SPACETRACE_SOAK_CAPTURE_OFFSETS_SECONDS \
+        -string "$capture_offsets" "$supervisor_plist"
+    plutil -insert EnvironmentVariables.SPACETRACE_SOAK_ANALYZER_SMOKE_SECONDS \
+        -string "$analyzer_smoke" "$supervisor_plist"
+    plutil -insert RunAtLoad -bool true "$supervisor_plist"
+    plutil -insert KeepAlive -bool false "$supervisor_plist"
+    plutil -insert ProcessType -string Background "$supervisor_plist"
+    plutil -insert StandardOutPath \
+        -string "$evidence_directory/supervisor.log" "$supervisor_plist"
+    plutil -insert StandardErrorPath \
+        -string "$evidence_directory/supervisor.log" "$supervisor_plist"
+    chmod 600 "$supervisor_plist"
+    launchctl bootstrap "gui/$(id -u)" "$supervisor_plist"
     local launch_status=$?
     if (( launch_status != 0 )); then
         print -u2 "error: launchd rejected the soak supervisor"
@@ -283,30 +327,48 @@ worker_command() {
     local -a capture_offsets
     capture_offsets=(${(s:,:)offsets_text})
     local app_pid=""
-    local completed=0
     local capture_failures=0
+    worker_cleanup_completed=0
+    worker_cleanup_app_pid=""
+    worker_cleanup_bundle_identifier=$bundle_identifier
+    worker_cleanup_evidence_directory=$evidence_directory
+    worker_cleanup_failure_reason="unexpected_worker_exit"
 
     remove_launchd_job() {
         trap - EXIT INT TERM HUP
         if [[ -n ${XPC_SERVICE_NAME:-} ]]; then
-            launchctl remove "$XPC_SERVICE_NAME" >/dev/null 2>&1
+            launchctl bootout \
+                "gui/$(id -u)/$XPC_SERVICE_NAME" >/dev/null 2>&1 ||
+                launchctl remove "$XPC_SERVICE_NAME" >/dev/null 2>&1
         fi
     }
 
     stop_app_after_failure() {
-        if [[ -n $app_pid ]] && kill -0 "$app_pid" 2>/dev/null; then
-            osascript -e "tell application id \"$bundle_identifier\" to quit" \
+        if [[ -n $worker_cleanup_app_pid ]] &&
+            kill -0 "$worker_cleanup_app_pid" 2>/dev/null
+        then
+            osascript -e \
+                "tell application id \"$worker_cleanup_bundle_identifier\" to quit" \
                 >/dev/null 2>&1
             sleep 5
-            if kill -0 "$app_pid" 2>/dev/null; then
-                kill -TERM "$app_pid" 2>/dev/null
+            if kill -0 "$worker_cleanup_app_pid" 2>/dev/null; then
+                kill -TERM "$worker_cleanup_app_pid" 2>/dev/null
             fi
         fi
     }
 
     cleanup() {
-        if (( completed == 0 )); then
-            print "FAILED" >"$evidence_directory/run-status.txt"
+        if (( worker_cleanup_completed == 0 )); then
+            print "FAILED" \
+                >"$worker_cleanup_evidence_directory/run-status.txt"
+            chmod 600 \
+                "$worker_cleanup_evidence_directory/run-status.txt"
+            {
+                print "failure_reason=$worker_cleanup_failure_reason"
+                print "failed_at_utc=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+            } >"$worker_cleanup_evidence_directory/failure-summary.txt"
+            chmod 600 \
+                "$worker_cleanup_evidence_directory/failure-summary.txt"
             stop_app_after_failure
         fi
         remove_launchd_job
@@ -332,6 +394,7 @@ worker_command() {
     local open_status=$?
     launchctl unsetenv SPACETRACE_BACKGROUND_SOAK_DIAGNOSTICS
     if (( open_status != 0 )); then
+        worker_cleanup_failure_reason="launch_services_rejected_app"
         print -u2 "error: LaunchServices rejected SpaceTrace"
         exit 1
     fi
@@ -345,25 +408,29 @@ worker_command() {
         sleep 1
     done
     if [[ -z $app_pid ]]; then
+        worker_cleanup_failure_reason="app_did_not_start"
         print -u2 "error: SpaceTrace did not become a running application"
         exit 1
     fi
+    worker_cleanup_app_pid=$app_pid
     print -r -- "$app_pid" >"$evidence_directory/app.pid"
     chmod 600 "$evidence_directory/app.pid"
 
     wait_until() {
         local target_epoch=$1
+        local current_epoch
+        local remaining
         while true; do
             if ! kill -0 "$app_pid" 2>/dev/null; then
+                worker_cleanup_failure_reason="app_exited_before_qualification_end"
                 print -u2 "error: SpaceTrace exited before qualification ended"
                 return 1
             fi
-            local current_epoch
             current_epoch=$(date +%s)
             if (( current_epoch >= target_epoch )); then
                 return 0
             fi
-            local remaining=$(( target_epoch - current_epoch ))
+            remaining=$(( target_epoch - current_epoch ))
             if (( remaining > 30 )); then
                 sleep 30
             else
@@ -436,6 +503,7 @@ worker_command() {
     local offset
     for offset in "${capture_offsets[@]}"; do
         if [[ $offset != <-> || $offset -ge $duration_seconds ]]; then
+            worker_cleanup_failure_reason="invalid_capture_offset"
             print -u2 "error: invalid capture offset: $offset"
             exit 64
         fi
@@ -452,8 +520,9 @@ worker_command() {
     chmod 600 "$evidence_directory/capture-summary.txt"
     print "READY_TO_FINALIZE" >"$evidence_directory/run-status.txt"
     chmod 600 "$evidence_directory/run-status.txt"
+    worker_cleanup_failure_reason="automatic_finalization_failed"
     finalize_command "$evidence_directory"
-    completed=1
+    worker_cleanup_completed=1
     remove_launchd_job
 }
 

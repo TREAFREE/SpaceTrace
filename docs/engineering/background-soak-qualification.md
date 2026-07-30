@@ -1,8 +1,8 @@
 # Background Soak Qualification
 
-Status: **Current-host run captured but failed capacity qualification; rerun and macOS 15.6 matrix remain open**
+Status: **Two current-host attempts remain failed/interrupted; hardened rerun and macOS 15.6 matrix remain open**
 
-Last reviewed: 2026-07-29
+Last reviewed: 2026-07-30
 
 Chinese translation: [后台长时间运行资格验证](background-soak-qualification.zh-CN.md)
 
@@ -130,7 +130,7 @@ Run the default analyzer after each signed sandbox run:
 
 | Host | Duration | Required transitions | Status |
 | --- | ---: | --- | --- |
-| Current stable macOS on Apple Silicon | At least 24 h | launch, ordinary operation, real sleep/wake, time change, time-zone change, local midnight, quit/relaunch | 2026-07-27 attempt failed; rerun required |
+| Current stable macOS on Apple Silicon | At least 24 h | launch, ordinary operation, real sleep/wake, time change, time-zone change, local midnight, quit/relaunch | 2026-07-27 failed qualification; 2026-07-29 interrupted; hardened rerun required |
 | macOS 15.6 on Apple Silicon | At least 24 h | Same matrix | Open |
 
 For each host:
@@ -159,7 +159,10 @@ Scripts/run-current-host-soak.sh start \
 Create the evidence directory first and keep it outside Desktop, Documents, and
 Downloads. The detached launchd worker does not inherit Terminal/Codex access
 to those privacy-protected folders. The runner copies an immutable app,
-analyzer, and worker into the evidence directory before launch.
+analyzer, and worker into the evidence directory before launch. It bootstraps
+an explicit per-run LaunchAgent plist with `RunAtLoad=true` and
+`KeepAlive=false`; an unsuccessful worker must terminate as `FAILED`, not be
+silently relaunched.
 
 Query the detached supervisor without interrupting it:
 
@@ -262,6 +265,44 @@ while awake, missing, one-sided, and process-termination gaps still fail
 closed. Its v9 migration, rollback, and 24-hour query branches have
 deterministic regression coverage.
 The current-host matrix row remains open until a new default-policy run passes.
+
+## 2026-07-29 current-host rerun: externally interrupted
+
+The schema-v10 build at commit `3ae4f24` started with a separate ad-hoc signed
+Release/App Sandbox identity. Signature preflight, all three required
+entitlements, `LSMinimumSystemVersion = 15.6`, diagnostics, and the first
+Activity Monitor attachment succeeded.
+
+The app then completed an orderly `exit(0)` after 212.012 seconds. Its path-free
+log contains one session, three heartbeats, and a final `stopped` record with
+no sample failure. There is no matching crash report or signal termination,
+and the retained unified log does not identify the external normal-termination
+request. The supervisor correctly detected that the app exited before the
+qualification endpoint. The host later shut down at 2026-07-30 01:11 and
+rebooted at 09:36, which independently makes the attempted wall-clock run
+ineligible. This evidence is an interrupted run, not a failed product
+reliability claim and not a 24-hour result.
+
+The interruption exposed two runner defects. The zsh `EXIT` trap referenced
+function-local state after that scope had ended, leaving the persisted status
+as `RUNNING`; and `launchctl submit` inferred `KeepAlive`, so a nonzero worker
+could be relaunched. The runner now uses script-lifetime cleanup state, writes
+a protected typed failure summary, derives a failure for legacy orphaned
+`RUNNING` state, and bootstraps a non-restarting per-run LaunchAgent.
+
+Two independent signed-sandbox regressions exercise both terminal paths:
+
+- a controlled early `exit(0)` writes `FAILED` with
+  `failure_reason=app_exited_before_qualification_end`, removes the App and
+  supervisor, and does not relaunch; and
+- an uninterrupted 60-second smoke writes `PASSED`, with zero capture
+  failures, an empty privacy scan, analyzer exit status 0, one session/four
+  records over 59,737 ms, 139,509,760-byte maximum RSS, 292,336-byte maximum
+  database size, and no remaining launchd job.
+
+These smokes qualify runner plumbing only. The current-host 24-hour row remains
+open, and its next run requires normal sleep to remain enabled while the user
+does not shut down, log out, or quit SpaceTrace.
 
 ## Current-host smoke evidence
 

@@ -175,15 +175,15 @@ Commit: `建立首版分类规则语料与精度门禁`
 **Interfaces:**
 - Documents rule governance, evidence semantics, Unknown/ambiguity behavior, fixture extension, privacy boundary, current precision evidence, and remaining application/persistence/UI integration.
 
-- [ ] **Step 1: Write English and Chinese engineering documentation**
+- [x] **Step 1: Write English and Chinese engineering documentation**
 
 Include a contributor workflow for adding a rule and its positive, negative, and ambiguous fixtures. State that a category is an explanation, not a deletion recommendation.
 
-- [ ] **Step 2: Reconcile roadmap and implementation status**
+- [x] **Step 2: Reconcile roadmap and implementation status**
 
 Mark the classifier engine/corpus complete only to the extent proven. Keep finding generation, persistence, historical wording, UI projection, move/deletion semantics, export, real-user review, and macOS 15.6 runtime evidence open.
 
-- [ ] **Step 3: Final verification and commit**
+- [x] **Step 3: Final verification and commit**
 
 Run:
 

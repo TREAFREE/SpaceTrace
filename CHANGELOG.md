@@ -6,6 +6,7 @@ All notable user-visible changes are recorded in this file.
 
 ### Added
 
+- Add a pure offline deterministic attribution module with validated versioned rules, path-free evidence codes, stable precedence, cross-category ambiguity fallback, eight initial P0 category families, and a versioned precision/recall/Unknown regression corpus.
 - Add fail-closed ad-hoc Release Candidate packaging with clean-commit provenance, exact sandbox-entitlement checks, Hardened Runtime, a read-only compressed DMG, JSON truth manifest, SHA-256 verification, and bilingual install/removal guidance.
 - Add a native macOS application shell with an accessible sidebar, an honest overview readiness state, and the existing directory-permission journey as a dedicated destination.
 - Add a system `MenuBarExtra` for lightweight permission health, reopening the main window, bounded retry when a volume is unavailable, and normal application quit.

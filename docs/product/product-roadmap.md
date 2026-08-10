@@ -6,7 +6,7 @@
 |---|---|
 | Document status | Draft for product and engineering review |
 | Version | 0.1.0 |
-| Last updated | 2026-08-10 |
+| Last updated | 2026-08-11 |
 | Planning horizon | Eight weeks to Public Beta (Assumption); 1.0 date TBD |
 | Platform state | Accepted baseline: macOS 15.6+ on Apple Silicon. All Project/App/Unit Tests/UI Tests configurations are aligned; runtime qualification remains a Public Beta gate. |
 | Source of requirements | [Product Requirements Document](./product-requirements.md) |
@@ -22,7 +22,7 @@ This roadmap is a sequencing and evidence plan, not a promise that every propose
 | Current-stable-macOS endurance and process-resource evidence | Passed for current-host ad-hoc scope | Corrected 25-hour run and deterministic Instruments analysis are recorded in the [background soak protocol](../engineering/background-soak-qualification.md); this is not watt/joule, Apple-identity, or minimum-OS evidence |
 | Current-host controlled UI/accessibility tree | Passed for automated fixture scope | Eight authorization/history scenarios passed; manual VoiceOver, Full Keyboard Access, contrast/motion/larger-text review remains open in the [visual design system](./visual-design-system.md) |
 | Ad-hoc RC artifact contract | Passed | Two independent `0.1.0-rc.1` builds from `f2119be` passed checksums, strict code signing, entitlement, architecture, deployment-target, DMG, and manifest checks; Gatekeeper rejected them as expected |
-| Complete P0 product workflow | Open — release blocking | Deterministic classification, move/deletion findings, true in-enumerator continuation, and user-controlled export are not implemented; diagnostic export redaction release gate cannot pass |
+| Complete P0 product workflow | Open — release blocking | The pure deterministic classifier and initial 24-known/8-Unknown corpus are implemented, but finding/persistence/UI integration, the at-least-60-known corpus gate, move/deletion findings, true in-enumerator continuation, and user-controlled export remain open; diagnostic export redaction cannot pass |
 | macOS 15.6 Apple Silicon runtime | Blocked by unavailable qualified host | Compile/link target is 15.6, but no P0 runtime/benchmark evidence exists on that OS |
 | ADR-003 and ADR-004 | Open — release blocking | Both remain Proposed; genuine daemon drop/wrap, permission revocation, minimum-OS behavior, and maintainer review remain incomplete |
 | Developer identity and notarization | Blocked for trusted public distribution | No stable Apple signing identity is installed. Ad-hoc tester risk has documentation but is not equivalent to Developer ID/notarization |

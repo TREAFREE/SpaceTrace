@@ -4,7 +4,7 @@ SpaceTrace is a local-first macOS utility that explains **where disk space chang
 
 > What caused my Mac to lose disk space during the last day or week?
 
-The repository contains the Xcode macOS app scaffold and the first tested architecture slice in a local Swift package. User-facing product behavior has not been implemented yet; the current work establishes the product contracts and validates the domain, FSEvents, persistence, and build boundaries that later features must follow.
+The repository contains the Xcode macOS app, tested local Swift modules, and the first user-facing permission, baseline, history, reconciliation, and menu-bar slices. It remains an architecture-stage product rather than a release-qualified app; current work establishes strict evidence contracts for each additional workflow.
 
 ## Product principles
 
@@ -35,6 +35,7 @@ The MVP does **not** promise exact process attribution, reproduce Apple's System
 | Startup-volume history and reconciliation | [Engineering contract](docs/engineering/startup-volume-history-and-reconciliation.md) · [中文](docs/engineering/startup-volume-history-and-reconciliation.zh-CN.md) |
 | Background sampling lifecycle and menu bar | [Engineering contract](docs/engineering/background-storage-sampling-lifecycle.md) · [中文](docs/engineering/background-storage-sampling-lifecycle.zh-CN.md) |
 | Background 24-hour soak qualification | [Qualification protocol](docs/engineering/background-soak-qualification.md) · [中文](docs/engineering/background-soak-qualification.zh-CN.md) |
+| Deterministic storage attribution | [Engineering contract](docs/engineering/deterministic-attribution.md) · [中文](docs/engineering/deterministic-attribution.zh-CN.md) |
 | Ad-hoc release candidate packaging | [Checklist](docs/engineering/release-candidate-checklist.md) · [中文](docs/engineering/release-candidate-checklist.zh-CN.md) |
 | FSEvents continuity qualification | [Protocol](docs/engineering/fsevents-continuity-qualification.md) · [中文](docs/engineering/fsevents-continuity-qualification.zh-CN.md) |
 | Scan scheduling lifecycle | [Engineering contract](docs/engineering/scan-scheduling-lifecycle.md) · [中文](docs/engineering/scan-scheduling-lifecycle.zh-CN.md) |
@@ -50,7 +51,7 @@ The MVP does **not** promise exact process attribution, reproduce Apple's System
 - Supported baseline: macOS 15.6+, Apple Silicon first
 - Minimum-version qualification: build/test configuration is aligned; a macOS 15.6 runtime matrix remains required before Public Beta
 - Proposed implementation: Swift, SwiftUI with targeted AppKit integration
-- Implemented foundation: local `SpaceTraceKit` modules for domain observations, bounded FSEvents and mount lifecycles, security-scoped directory authorization, a metadata-only bounded calibration scanner, revision-safe SQLite publication, multi-root baseline UI, monotonic startup-volume capacity history, conservative storage reconciliation, typed power/thermal/sleep pause-and-retry scheduling, and qualified 24-hour menu-bar evidence
+- Implemented foundation: local `SpaceTraceKit` modules for domain observations, deterministic path/context attribution with versioned evidence and Unknown fallback, bounded FSEvents and mount lifecycles, security-scoped directory authorization, a metadata-only bounded calibration scanner, revision-safe SQLite publication, multi-root baseline UI, monotonic startup-volume capacity history, conservative storage reconciliation, typed power/thermal/sleep pause-and-retry scheduling, and qualified 24-hour menu-bar evidence
 - Proposed license: MIT (**TBD until explicitly approved**)
 - Distribution and signing: fail-closed ad-hoc RC packaging is implemented for trusted testing; Developer ID, notarization, the complete replacement matrix, and update strategy remain release blockers
 

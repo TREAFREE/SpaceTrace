@@ -35,7 +35,8 @@ This directory is the durable source of truth for product, architecture, enginee
 19. [Ad-hoc Release Candidate Checklist](engineering/release-candidate-checklist.md) · [中文](engineering/release-candidate-checklist.zh-CN.md)
 20. [Background Storage Sampling Lifecycle and Menu Bar](engineering/background-storage-sampling-lifecycle.md) · [中文](engineering/background-storage-sampling-lifecycle.zh-CN.md)
 21. [Background Soak Qualification](engineering/background-soak-qualification.md) · [中文](engineering/background-soak-qualification.zh-CN.md)
-22. [Contributing](../CONTRIBUTING.md)
+22. [Deterministic Storage Attribution](engineering/deterministic-attribution.md) · [中文](engineering/deterministic-attribution.zh-CN.md)
+23. [Contributing](../CONTRIBUTING.md)
 
 ### Product evidence
 

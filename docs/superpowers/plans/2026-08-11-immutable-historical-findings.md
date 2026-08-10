@@ -146,19 +146,19 @@ Commit: `建立不可变观测端点与比较契约`
 - Produces `VersionedAttributionDecision(catalogVersion:result:)` and `DeterministicAttributionClassifier.classifyVersioned(_:)`.
 - `AttributionClassificationResult` and `AttributionUnknownReason` become Codable so persistence can freeze classified, no-match, and ambiguous decisions without inventing a category.
 
-- [ ] **Step 1: Write failing catalog/decision durability tests**
+- [x] **Step 1: Write failing catalog/decision durability tests**
 
 Verify invalid catalog versions, classified round trip, no-match round trip, sorted ambiguous rule IDs, and preservation of both catalog and winning rule version.
 
-- [ ] **Step 2: Confirm RED with focused attribution tests**
+- [x] **Step 2: Confirm RED with focused attribution tests**
 
 Run: `swift test --package-path Packages/SpaceTraceKit --filter AttributionTests` and `swift test --package-path Packages/SpaceTraceKit --filter VersionedAttributionDecisionTests`.
 
-- [ ] **Step 3: Implement distinct catalog identity and versioned decisions**
+- [x] **Step 3: Implement distinct catalog identity and versioned decisions**
 
 Keep the existing `classify(_:)` source-compatible. `classifyVersioned(_:)` wraps that exact deterministic result with `catalog.version`; it performs no second classification and never logs input paths.
 
-- [ ] **Step 4: Verify all attribution fixtures and commit**
+- [x] **Step 4: Verify all attribution fixtures and commit**
 
 Run:
 

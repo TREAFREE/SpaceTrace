@@ -89,6 +89,46 @@ public struct AttributionRuleVersion: Sendable, Equatable, Hashable, Codable, Co
     }
 }
 
+/// The positive version of one complete attribution-rule catalog.
+///
+/// This is intentionally distinct from ``AttributionRuleVersion``: a catalog
+/// can evolve while a winning rule remains unchanged, and individual rules
+/// can evolve independently within one catalog release.
+public struct AttributionCatalogVersion: Sendable, Equatable, Hashable, Codable, Comparable {
+    public let rawValue: Int
+
+    public init(_ rawValue: Int) throws(AttributionValidationError) {
+        guard rawValue > 0 else {
+            throw .invalidCatalogVersion(rawValue)
+        }
+
+        self.rawValue = rawValue
+    }
+
+    public static func < (lhs: AttributionCatalogVersion, rhs: AttributionCatalogVersion) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(Int.self)
+
+        do {
+            try self.init(rawValue)
+        } catch {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "AttributionCatalogVersion must be greater than zero."
+            )
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
 public struct AttributionEvidenceCode: Sendable, Equatable, Hashable, Codable {
     public let rawValue: String
 
@@ -153,6 +193,7 @@ public struct StorageAttribution: Sendable, Equatable, Hashable, Codable {
     }
 
     public init(from decoder: any Decoder) throws {
+        try rejectUnknownStorageAttributionCodingKeys(in: decoder)
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let category = try container.decode(StorageAttributionCategory.self, forKey: .category)
         let confidence = try container.decode(AttributionConfidence.self, forKey: .confidence)
@@ -190,6 +231,7 @@ public enum AttributionValidationError: Error, Sendable, Equatable {
     case emptyRuleID
     case invalidRuleID
     case invalidRuleVersion(Int)
+    case invalidCatalogVersion(Int)
     case emptyEvidenceCode
     case invalidEvidenceCode
     case unknownConfidenceCannotClassify
@@ -201,5 +243,47 @@ private func isStableCodeByte(_ byte: UInt8) -> Bool {
         true
     default:
         false
+    }
+}
+
+private func rejectUnknownStorageAttributionCodingKeys(
+    in decoder: any Decoder
+) throws {
+    let container = try decoder.container(
+        keyedBy: StorageAttributionDynamicCodingKey.self
+    )
+    let allowedKeys: Set<String> = [
+        "category",
+        "confidence",
+        "ruleID",
+        "ruleVersion",
+        "evidenceCode",
+    ]
+    guard let unknownKey = container.allKeys.first(
+        where: { allowedKeys.contains($0.stringValue) == false }
+    ) else {
+        return
+    }
+
+    throw DecodingError.dataCorrupted(
+        DecodingError.Context(
+            codingPath: decoder.codingPath + [unknownKey],
+            debugDescription: "StorageAttribution contains an unknown durable field."
+        )
+    )
+}
+
+private struct StorageAttributionDynamicCodingKey: CodingKey {
+    let stringValue: String
+    let intValue: Int?
+
+    init?(stringValue: String) {
+        self.stringValue = stringValue
+        intValue = nil
+    }
+
+    init?(intValue: Int) {
+        stringValue = String(intValue)
+        self.intValue = intValue
     }
 }

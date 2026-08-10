@@ -150,11 +150,11 @@ public struct AttributionRule: Sendable, Equatable, Hashable {
 }
 
 public struct AttributionRuleCatalog: Sendable, Equatable {
-    public let version: AttributionRuleVersion
+    public let version: AttributionCatalogVersion
     public let rules: [AttributionRule]
 
     public init(
-        version: AttributionRuleVersion,
+        version: AttributionCatalogVersion,
         rules: [AttributionRule]
     ) throws(AttributionRuleValidationError) {
         guard rules.isEmpty == false else {

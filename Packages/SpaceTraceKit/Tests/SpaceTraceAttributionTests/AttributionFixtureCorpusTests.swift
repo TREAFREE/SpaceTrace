@@ -7,13 +7,13 @@ struct AttributionFixtureCorpusTests {
     @Test("Versioned P0 fixtures remain deterministic and conservative")
     func evaluatesVersionedCorpus() throws {
         let corpus = try loadCorpus()
-        #expect(corpus.schemaVersion == 1)
-        #expect(corpus.catalogVersion == 1)
-
-        let cases = try corpus.cases.map { try $0.evaluationCase }
         let classifier = DeterministicAttributionClassifier(
             catalog: try BuiltInAttributionCatalog.version1()
         )
+        #expect(corpus.schemaVersion == 1)
+        #expect(corpus.catalogVersion == classifier.catalog.version.rawValue)
+
+        let cases = try corpus.cases.map { try $0.evaluationCase }
         let report = AttributionFixtureEvaluator().evaluate(cases, with: classifier)
 
         #expect(report.known.expected == 24)

@@ -2,41 +2,42 @@ import SpaceTraceDomain
 
 public enum BuiltInAttributionCatalog {
     public static func version1() throws -> AttributionRuleCatalog {
-        let version = try AttributionRuleVersion(1)
+        let catalogVersion = try AttributionCatalogVersion(1)
+        let ruleVersion = try AttributionRuleVersion(1)
         return try AttributionRuleCatalog(
-            version: version,
+            version: catalogVersion,
             rules: [
-                try pathRule("developer.xcode.derived-data", version, .developerTools, .high, "home.library.developer.xcode.derived-data", ["Library", "Developer", "Xcode", "DerivedData"]),
-                try pathRule("developer.xcode.simulator", version, .developerTools, .high, "home.library.developer.core-simulator", ["Library", "Developer", "CoreSimulator"]),
-                try pathRule("developer.xcode.cache", version, .developerTools, .high, "home.library.caches.xcode", ["Library", "Caches", "com.apple.dt.Xcode"]),
+                try pathRule("developer.xcode.derived-data", ruleVersion, .developerTools, .high, "home.library.developer.xcode.derived-data", ["Library", "Developer", "Xcode", "DerivedData"]),
+                try pathRule("developer.xcode.simulator", ruleVersion, .developerTools, .high, "home.library.developer.core-simulator", ["Library", "Developer", "CoreSimulator"]),
+                try pathRule("developer.xcode.cache", ruleVersion, .developerTools, .high, "home.library.caches.xcode", ["Library", "Caches", "com.apple.dt.Xcode"]),
 
-                try pathRule("virtualization.docker.container", version, .virtualization, .high, "home.library.containers.docker", ["Library", "Containers", "com.docker.docker"]),
-                try pathRule("virtualization.docker.group", version, .virtualization, .high, "home.library.group-containers.docker", ["Library", "Group Containers", "group.com.docker"]),
-                try pathRule("virtualization.utm", version, .virtualization, .high, "home.library.application-support.utm", ["Library", "Application Support", "UTM"]),
+                try pathRule("virtualization.docker.container", ruleVersion, .virtualization, .high, "home.library.containers.docker", ["Library", "Containers", "com.docker.docker"]),
+                try pathRule("virtualization.docker.group", ruleVersion, .virtualization, .high, "home.library.group-containers.docker", ["Library", "Group Containers", "group.com.docker"]),
+                try pathRule("virtualization.utm", ruleVersion, .virtualization, .high, "home.library.application-support.utm", ["Library", "Application Support", "UTM"]),
 
-                try pathRule("ai.ollama.models", version, .aiModelsAndCaches, .high, "home.ollama.models", [".ollama", "models"]),
-                try pathRule("ai.huggingface.cache", version, .aiModelsAndCaches, .high, "home.cache.huggingface", [".cache", "huggingface"]),
-                try pathRule("ai.lm-studio.models", version, .aiModelsAndCaches, .high, "home.library.application-support.lm-studio.models", ["Library", "Application Support", "LM Studio", "models"]),
+                try pathRule("ai.ollama.models", ruleVersion, .aiModelsAndCaches, .high, "home.ollama.models", [".ollama", "models"]),
+                try pathRule("ai.huggingface.cache", ruleVersion, .aiModelsAndCaches, .high, "home.cache.huggingface", [".cache", "huggingface"]),
+                try pathRule("ai.lm-studio.models", ruleVersion, .aiModelsAndCaches, .high, "home.library.application-support.lm-studio.models", ["Library", "Application Support", "LM Studio", "models"]),
 
-                try pathRule("creative.adobe.cache", version, .creativeCachesAndRenderData, .high, "home.library.caches.adobe", ["Library", "Caches", "Adobe"]),
-                try pathRule("creative.adobe.media-cache", version, .creativeCachesAndRenderData, .high, "home.library.application-support.adobe.media-cache", ["Library", "Application Support", "Adobe", "Common", "Media Cache Files"]),
-                try pathRule("creative.davinci.cache-clip", version, .creativeCachesAndRenderData, .high, "home.library.application-support.davinci.cache-clip", ["Library", "Application Support", "Blackmagic Design", "DaVinci Resolve", "CacheClip"]),
+                try pathRule("creative.adobe.cache", ruleVersion, .creativeCachesAndRenderData, .high, "home.library.caches.adobe", ["Library", "Caches", "Adobe"]),
+                try pathRule("creative.adobe.media-cache", ruleVersion, .creativeCachesAndRenderData, .high, "home.library.application-support.adobe.media-cache", ["Library", "Application Support", "Adobe", "Common", "Media Cache Files"]),
+                try pathRule("creative.davinci.cache-clip", ruleVersion, .creativeCachesAndRenderData, .high, "home.library.application-support.davinci.cache-clip", ["Library", "Application Support", "Blackmagic Design", "DaVinci Resolve", "CacheClip"]),
 
-                try pathRule("games.steam.steamapps", version, .games, .high, "home.library.application-support.steam.steamapps", ["Library", "Application Support", "Steam", "steamapps"]),
-                try pathRule("games.epic", version, .games, .high, "home.library.application-support.epic", ["Library", "Application Support", "Epic"]),
-                try pathRule("games.blizzard", version, .games, .high, "home.library.application-support.blizzard", ["Library", "Application Support", "Blizzard"]),
+                try pathRule("games.steam.steamapps", ruleVersion, .games, .high, "home.library.application-support.steam.steamapps", ["Library", "Application Support", "Steam", "steamapps"]),
+                try pathRule("games.epic", ruleVersion, .games, .high, "home.library.application-support.epic", ["Library", "Application Support", "Epic"]),
+                try pathRule("games.blizzard", ruleVersion, .games, .high, "home.library.application-support.blizzard", ["Library", "Application Support", "Blizzard"]),
 
-                try pathRule("cloud.mobile-documents", version, .cloudLocalData, .high, "home.library.mobile-documents", ["Library", "Mobile Documents"]),
-                try pathRule("cloud.storage-providers", version, .cloudLocalData, .high, "home.library.cloud-storage", ["Library", "CloudStorage"]),
-                try pathRule("cloud.apple-cloud-docs", version, .cloudLocalData, .medium, "home.library.application-support.cloud-docs", ["Library", "Application Support", "CloudDocs"]),
+                try pathRule("cloud.mobile-documents", ruleVersion, .cloudLocalData, .high, "home.library.mobile-documents", ["Library", "Mobile Documents"]),
+                try pathRule("cloud.storage-providers", ruleVersion, .cloudLocalData, .high, "home.library.cloud-storage", ["Library", "CloudStorage"]),
+                try pathRule("cloud.apple-cloud-docs", ruleVersion, .cloudLocalData, .medium, "home.library.application-support.cloud-docs", ["Library", "Application Support", "CloudDocs"]),
 
-                try pathRule("generic.user-caches", version, .logsAndCaches, .medium, "home.library.caches", ["Library", "Caches"], priority: 0),
-                try pathRule("generic.user-logs", version, .logsAndCaches, .medium, "home.library.logs", ["Library", "Logs"], priority: 0),
-                try absolutePathRule("generic.system-caches", version, .logsAndCaches, .medium, "absolute.library.caches", ["Library", "Caches"], priority: 0),
-                try absolutePathRule("generic.system-logs", version, .logsAndCaches, .medium, "absolute.library.logs", ["Library", "Logs"], priority: 0),
+                try pathRule("generic.user-caches", ruleVersion, .logsAndCaches, .medium, "home.library.caches", ["Library", "Caches"], priority: 0),
+                try pathRule("generic.user-logs", ruleVersion, .logsAndCaches, .medium, "home.library.logs", ["Library", "Logs"], priority: 0),
+                try absolutePathRule("generic.system-caches", ruleVersion, .logsAndCaches, .medium, "absolute.library.caches", ["Library", "Caches"], priority: 0),
+                try absolutePathRule("generic.system-logs", ruleVersion, .logsAndCaches, .medium, "absolute.library.logs", ["Library", "Logs"], priority: 0),
 
-                try contextRule("snapshot.apfs.local", version, "context.snapshot.apfs-local", .localAPFSSnapshot),
-                try contextRule("snapshot.time-machine.local", version, "context.snapshot.time-machine-local", .timeMachineLocalSnapshot),
+                try contextRule("snapshot.apfs.local", ruleVersion, "context.snapshot.apfs-local", .localAPFSSnapshot),
+                try contextRule("snapshot.time-machine.local", ruleVersion, "context.snapshot.time-machine-local", .timeMachineLocalSnapshot),
             ]
         )
     }

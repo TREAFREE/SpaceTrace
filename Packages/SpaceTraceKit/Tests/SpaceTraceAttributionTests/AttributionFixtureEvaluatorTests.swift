@@ -49,7 +49,7 @@ struct AttributionFixtureEvaluatorTests {
 private func classifier(_ rules: [AttributionRule]) throws -> DeterministicAttributionClassifier {
     try DeterministicAttributionClassifier(
         catalog: AttributionRuleCatalog(
-            version: AttributionRuleVersion(1),
+            version: AttributionCatalogVersion(1),
             rules: rules
         )
     )

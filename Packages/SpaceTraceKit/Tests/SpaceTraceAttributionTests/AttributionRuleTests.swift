@@ -9,14 +9,14 @@ struct AttributionRuleTests {
         let second = try makeRule(id: "test.duplicate", components: ["Library", "Logs"])
 
         #expect(throws: AttributionRuleValidationError.duplicateRuleID(first.ruleID)) {
-            try AttributionRuleCatalog(version: AttributionRuleVersion(1), rules: [first, second])
+            try AttributionRuleCatalog(version: AttributionCatalogVersion(1), rules: [first, second])
         }
     }
 
     @Test("A catalog cannot silently classify nothing")
     func rejectsEmptyCatalog() throws {
         #expect(throws: AttributionRuleValidationError.emptyCatalog) {
-            try AttributionRuleCatalog(version: AttributionRuleVersion(1), rules: [])
+            try AttributionRuleCatalog(version: AttributionCatalogVersion(1), rules: [])
         }
     }
 

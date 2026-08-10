@@ -144,6 +144,9 @@ exclusiveDelta(node) = inclusiveDelta(node) - childFlowDelta(node)
 - `noMatchingRule`；
 - `ambiguous`：按稳定顺序排列的竞争规则 ID。
 
+耐久决策使用带显式判别字段的对象格式。在带 schema 版本的兼容策略获批之前，
+解码器必须拒绝未知字段或互相矛盾的字段，不得静默丢弃不可变证据。
+
 规则/规则目录升级不得改写较早的发现。若日后明确批准重新计算，则必须创建另一个带版本的投影或一条取代原发现的新发现。
 
 ### 7. 仅追加投影与持久化义务

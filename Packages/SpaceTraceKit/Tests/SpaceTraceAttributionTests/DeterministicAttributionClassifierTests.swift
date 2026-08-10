@@ -179,7 +179,7 @@ private func makeClassifier<S: Sequence>(_ rules: S) throws -> DeterministicAttr
 where S.Element == AttributionRule {
     try DeterministicAttributionClassifier(
         catalog: AttributionRuleCatalog(
-            version: AttributionRuleVersion(1),
+            version: AttributionCatalogVersion(1),
             rules: Array(rules)
         )
     )

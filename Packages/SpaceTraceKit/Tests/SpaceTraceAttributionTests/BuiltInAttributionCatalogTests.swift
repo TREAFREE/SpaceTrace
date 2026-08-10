@@ -6,9 +6,10 @@ struct BuiltInAttributionCatalogTests {
     @Test("Version one contains every P0 category")
     func containsEveryP0Category() throws {
         let catalog = try BuiltInAttributionCatalog.version1()
-        let expectedVersion = try AttributionRuleVersion(1)
+        let expectedVersion = try AttributionCatalogVersion(1)
 
         #expect(catalog.version == expectedVersion)
+        #expect(Set(catalog.rules.map(\.ruleVersion)) == [try AttributionRuleVersion(1)])
         #expect(Set(catalog.rules.map(\.category)) == Set(StorageAttributionCategory.allCases))
     }
 

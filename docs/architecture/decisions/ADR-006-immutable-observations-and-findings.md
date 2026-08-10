@@ -144,6 +144,10 @@ Every frozen decision contains the catalog version and one of:
 - `noMatchingRule`;
 - `ambiguous`: stable ordered competing rule IDs.
 
+Durable decisions use an explicit discriminated object format. Until a
+schema-versioned compatibility policy is approved, decoders reject unknown or
+contradictory fields instead of silently discarding immutable evidence.
+
 A rule/catalog upgrade does not rewrite an earlier finding. Explicit recomputation, if later approved, creates another versioned projection or superseding finding.
 
 ### 7. Append-only projection and persistence obligations

@@ -49,6 +49,32 @@ struct AttributionTests {
         }
     }
 
+    @Test(
+        "Catalog versions are positive identifiers independent from rule versions",
+        arguments: [Int.min, -1, 0]
+    )
+    func rejectsNonPositiveCatalogVersions(value: Int) {
+        #expect(throws: AttributionValidationError.invalidCatalogVersion(value)) {
+            try AttributionCatalogVersion(value)
+        }
+    }
+
+    @Test("Catalog version decoding revalidates the durable positive-value invariant")
+    func catalogVersionRoundTripsAndRejectsMaliciousPayloads() throws {
+        let version = try AttributionCatalogVersion(7)
+
+        let encoded = try JSONEncoder().encode(version)
+        let decoded = try JSONDecoder().decode(AttributionCatalogVersion.self, from: encoded)
+
+        #expect(decoded == version)
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(
+                AttributionCatalogVersion.self,
+                from: Data("0".utf8)
+            )
+        }
+    }
+
     @Test("Round-trips a durable successful attribution")
     func roundTripsAttribution() throws {
         let attribution = try StorageAttribution(
@@ -80,10 +106,20 @@ struct AttributionTests {
 
     @Test("Decoding revalidates persisted attribution invariants")
     func decodingRejectsInvalidAttribution() {
-        let invalid = Data(#"{"category":"games","confidence":"unknown","ruleID":"game.steam","ruleVersion":1,"evidenceCode":"home.steam.steamapps"}"#.utf8)
+        let invalid = Data(#"""
+        {"category":"games","confidence":"unknown","ruleID":"game.steam",
+         "ruleVersion":1,"evidenceCode":"home.steam.steamapps"}
+        """#.utf8)
+        let unknownField = Data(#"""
+        {"category":"games","confidence":"high","ruleID":"game.steam",
+         "ruleVersion":1,"evidenceCode":"home.steam.steamapps","future":true}
+        """#.utf8)
 
         #expect(throws: DecodingError.self) {
             try JSONDecoder().decode(StorageAttribution.self, from: invalid)
+        }
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(StorageAttribution.self, from: unknownField)
         }
     }
 }

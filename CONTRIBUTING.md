@@ -45,7 +45,7 @@ make verify
 make app-test-ui
 ```
 
-该命令需要钥匙串中存在稳定的 Apple 开发签名身份，使 UI test runner 与沙盒 App 能建立稳定容器身份。ad-hoc 签名可用于手工 smoke，但在 macOS 14 及以上可能使 UI runner 无法完成应用启动握手，因此不能替代该门禁。完整的真实权限矩阵见[用户选择目录 UI 与沙盒资格验证](docs/engineering/user-selected-directory-qualification.zh-CN.md)。
+该命令使用 Xcode 的本机 “Sign to Run Locally” 配置；在当前 Xcode 26.1.1、macOS 26.5.2 主机上，即使钥匙串没有 Apple 开发签名身份，ad-hoc 签名的 UI test runner 与沙盒 App 也可完成受控 DEBUG fixture。该结果只验证确定性的界面状态、操作名称与可访问性树，不替代真实 Powerbox/bookmark/重启流程，也不替代 Apple 身份签名、Developer ID 分发或 macOS 15.6 运行门禁。若 runner 无法初始化，应把主机、Xcode、签名与 Developer Mode 状态记为环境证据，不能把 `build-for-testing` 当作通过。完整的真实权限矩阵见[用户选择目录 UI 与沙盒资格验证](docs/engineering/user-selected-directory-qualification.zh-CN.md)。
 
 ## Branches and commits
 

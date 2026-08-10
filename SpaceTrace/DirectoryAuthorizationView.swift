@@ -94,6 +94,7 @@ struct DirectoryAuthorizationView: View {
                         ? "choose-directory-button"
                         : "add-directory-button"
                 )
+                .accessibilityHint("打开系统目录选择器。SpaceTrace 只申请只读访问。")
                 .disabled(model.canAddDirectory == false)
             }
             if model.hasUnavailableScope || model.summary == .failed {
@@ -101,6 +102,7 @@ struct DirectoryAuthorizationView: View {
                     Task { await model.refresh() }
                 }
                 .accessibilityIdentifier("refresh-directories-button")
+                .accessibilityHint("重新检查暂不可用目录的授权状态。")
             }
         }
         .disabled(model.isBusy)
@@ -160,17 +162,20 @@ struct DirectoryAuthorizationView: View {
                     Task { await model.refresh() }
                 }
                 .accessibilityIdentifier("refresh-directory-button-\(item.id.rawValue)")
+                .accessibilityHint("重新检查此目录当前是否可用。")
             }
 
             Button(scopeAuthorizationActionTitle(item.status)) {
                 Task { await model.reauthorize(scopeID: item.id) }
             }
             .accessibilityIdentifier("reauthorize-directory-button-\(item.id.rawValue)")
+            .accessibilityHint("打开系统目录选择器，重新确认此目录的只读授权。")
 
             Button("移除授权", role: .destructive) {
                 Task { await model.revoke(scopeID: item.id) }
             }
             .accessibilityIdentifier("revoke-directory-button-\(item.id.rawValue)")
+            .accessibilityHint("只移除 SpaceTrace 的访问授权，不会删除目录内容。")
         }
         .disabled(model.isBusy)
     }
@@ -195,6 +200,7 @@ struct DirectoryAuthorizationView: View {
         .spaceTraceCompactSurface()
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("authorization-privacy-note")
         .accessibilityLabel("隐私说明：授权为只读，移除授权不会删除目录中的文件。")
     }
 }

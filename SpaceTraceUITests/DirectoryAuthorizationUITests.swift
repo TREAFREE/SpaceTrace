@@ -15,6 +15,32 @@ final class DirectoryAuthorizationUITests: XCTestCase {
     }
 
     @MainActor
+    func testUnconfiguredStateExposesAccessibleActionAndPrivacyBoundary() {
+        let app = launch(scenario: "unconfigured")
+        openPermissions(in: app)
+
+        let action = app.buttons["choose-directory-button"]
+        XCTAssertTrue(action.waitForExistence(timeout: 3))
+        XCTAssertEqual(action.label, "选择目录…")
+        XCTAssertTrue(action.isHittable)
+
+        let detail = app.staticTexts["authorization-status-detail"]
+        XCTAssertTrue(detail.exists)
+        XCTAssertTrue(
+            String(describing: detail.value)
+                .contains("系统目录选择器只会授权你明确确认的位置")
+        )
+
+        let privacy = app.descendants(matching: .any)
+            .matching(identifier: "authorization-privacy-note")
+            .firstMatch
+        XCTAssertTrue(privacy.exists)
+        let privacyValue = String(describing: privacy.value)
+        XCTAssertTrue(privacyValue.contains("授权为只读"))
+        XCTAssertTrue(privacyValue.contains("不会删除"))
+    }
+
+    @MainActor
     func testStaleStateOffersReauthorizationWithoutSilentRefresh() {
         let app = launch(scenario: "stale")
         openPermissions(in: app)
@@ -42,7 +68,16 @@ final class DirectoryAuthorizationUITests: XCTestCase {
 
         assertStatus("目录授权已就绪", in: app)
         XCTAssertTrue(app.staticTexts["/Volumes/SpaceTraceFixture/Selected"].exists)
-        XCTAssertTrue(app.buttons["revoke-directory-button-scope-ui-authorized"].exists)
+
+        let change = app.buttons["reauthorize-directory-button-scope-ui-authorized"]
+        XCTAssertTrue(change.exists)
+        XCTAssertEqual(change.label, "更换目录…")
+        XCTAssertTrue(change.isHittable)
+
+        let revoke = app.buttons["revoke-directory-button-scope-ui-authorized"]
+        XCTAssertTrue(revoke.exists)
+        XCTAssertEqual(revoke.label, "移除授权")
+        XCTAssertTrue(revoke.isHittable)
     }
 
     @MainActor

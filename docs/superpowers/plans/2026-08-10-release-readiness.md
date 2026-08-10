@@ -119,30 +119,30 @@ Commit: `收口当前主机长跑与 Instruments 证据`
 - Modify: `docs/engineering/implementation-status.zh-CN.md`
 
 **Interfaces:**
-- Consumes: existing seven controlled UI scenarios and stable sandbox application identity.
-- Produces: repeatable UI-runner evidence for keyboard navigation, authorization states, history gaps, menu-bar projection, and accessibility labels.
+- Consumes: existing controlled UI scenarios and a host capable of launching the local sandbox UI runner.
+- Produces: repeatable UI-runner evidence for authorization states, history gaps, key action names/hittability, and accessibility values.
 
-- [ ] **Step 1: Record the host prerequisite without mutating it**
+- [x] **Step 1: Record the host prerequisite without mutating it**
 
 Run: `/usr/sbin/DevToolsSecurity -status` and `security find-identity -v -p codesigning`.
 
 Expected: either a usable UI-test environment or a typed blocked result. Enabling Developer Mode or adding an identity requires explicit owner action.
 
-- [ ] **Step 2: Add focused accessibility assertions before implementation changes**
+Result: `security find-identity -v -p codesigning` reported zero stable Apple identities and `DevToolsSecurity -status` did not return a usable status on this host. Xcode 26.1.1 nevertheless established a real automation session using local ad-hoc “Sign to Run Locally” signatures, so the controlled current-host fixture was usable without changing system security settings.
 
-```swift
-XCTAssertTrue(app.buttons["Choose Directory"].isHittable)
-XCTAssertTrue(app.staticTexts["Coverage is incomplete"].exists)
-XCTAssertFalse(app.staticTexts["Qualified"].exists)
-```
+- [x] **Step 2: Add focused accessibility assertions before implementation changes**
 
-- [ ] **Step 3: Execute the complete interactive UI matrix**
+The new test was observed failing first for missing accessibility exposure, then passing after stable privacy semantics and action hints were added. The authorized fixture now also asserts the replacement and revocation actions' exact names and hittability.
 
-Run the `CONTRIBUTING.md` command with a fresh DerivedData directory and record all scenario counts. Manually verify VoiceOver labels, full keyboard access, increased contrast, reduced motion, and larger system text without changing product data.
+- [x] **Step 3: Execute the complete automated UI matrix and bound its claim**
 
-- [ ] **Step 4: Verify and commit**
+The fresh Xcode UI runner passed all eight `DirectoryAuthorizationUITests` scenarios on macOS 26.5.2. This proves the controlled fixture's names, values, hittability, authorization-state projection, and no-fabricated-history behavior. Manual VoiceOver speech, Full Keyboard Access traversal, increased contrast, reduced motion, and larger system text remain explicitly open release-matrix work; no system accessibility preference was silently changed.
+
+- [x] **Step 4: Verify and commit**
 
 Run `make verify`, the complete UI command, and `git diff --check`.
+
+Result: `make verify` passed with 247 package tests in 38 suites, the strict-concurrency audit, 24 application unit tests, and Debug/Release builds. After Xcode cleaned DerivedData left by the repository relocation, the repository-standard `make app-test-ui` entry point passed all eight scenarios.
 
 Commit: `补齐界面与无障碍资格验证`
 

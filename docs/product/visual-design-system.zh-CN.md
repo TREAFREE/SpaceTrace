@@ -2,7 +2,7 @@
 
 状态：**基础层已实现**
 
-最近验证：2026-07-31
+最近验证：2026-08-10
 
 英文源文档：[visual-design-system.md](visual-design-system.md)。
 
@@ -68,4 +68,8 @@ SpaceTrace 使用系统字体栈。这样可以保留高质量中文回退、动
 - 人工检查 1024 px、128 px 和 32 px 图标；十个资产槽位的像素尺寸与 Alpha 通道均正确；
 - App 单元测试通过；
 - `make verify` 通过，覆盖架构检查、37 个 suite 的 244 个 package 测试、严格并发、App 测试及 Debug/Release 构建；
-- 本轮 UI 测试在执行任何断言前被主机环境阻塞：Developer Mode 处于关闭状态，Runner 无法初始化。这不是通过结果；历史受控 UI fixture 证据仍在工程状态文档中单独记录。
+- 当日 UI 测试在执行任何断言前无法建立自动化会话，因此只保留为历史阻塞证据，不会在之后被追溯改写成通过。
+
+2026-08-10，Xcode 26.1.1 使用本机 ad-hoc “Sign to Run Locally” 签名，成功启动真实 macOS UI runner 与 App Sandbox 应用。`DirectoryAuthorizationUITests` 的 8 个受控场景在 macOS 26.5.2 上全部通过，覆盖已授权、stale、外置卷不可用、多目录、不伪造历史以及未配置状态。聚焦的辅助功能断言证明：主要目录操作，以及已授权目录的更换/移除操作具有稳定名称且可点击；授权状态说明与“只读、移除授权不删除文件”的隐私边界也存在于 macOS 可访问性 value 树中。
+
+这只是当前主机上的自动化 fixture 证据，不代表已经完成人工 VoiceOver 朗读检查、Full Keyboard Access 遍历、增强对比度/减少动态效果/更大系统文字视觉检查，也不代表具备稳定 Apple 签名身份、验证了真实 Powerbox/bookmark，或完成 macOS 15.6 运行资格。这些仍属于发布矩阵门禁。

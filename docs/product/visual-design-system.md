@@ -2,7 +2,7 @@
 
 Status: **Implemented foundation**
 
-Last verified: 2026-07-31
+Last verified: 2026-08-10
 
 Chinese companion translation: [visual-design-system.zh-CN.md](visual-design-system.zh-CN.md).
 
@@ -91,6 +91,20 @@ On 2026-07-31:
 - application unit tests passed;
 - `make verify` passed, including architecture checks, 244 package tests in 37 suites,
   strict concurrency, application tests, and Debug/Release builds;
-- the current UI-test rerun was blocked before test initialization because host
-  Developer Mode is disabled. This is an environment qualification gap, not a passing
-  result; historical controlled UI fixtures remain documented separately.
+- the UI-test rerun on that date was blocked before test initialization because the
+  host runner could not establish an automation session. It remains historical blocked
+  evidence and is not retroactively reported as a pass.
+
+On 2026-08-10, Xcode 26.1.1 successfully launched the real macOS UI runner and the
+App Sandbox application using local ad-hoc “Sign to Run Locally” signatures. All eight
+controlled `DirectoryAuthorizationUITests` scenarios passed on macOS 26.5.2, including
+authorized, stale, unavailable-volume, multi-scope, no-fabricated-history, and
+unconfigured states. Focused accessibility assertions prove that the primary directory
+action and authorized-scope replacement/removal actions have stable names and are
+hittable, while the status detail and the read-only/no-deletion privacy boundary are
+present in the macOS accessibility value tree.
+
+This is automated current-host fixture evidence. It does not claim a manual VoiceOver
+speech review, Full Keyboard Access traversal, increased-contrast/reduced-motion/larger-
+text visual review, a stable Apple signing identity, real Powerbox/bookmark behavior, or
+macOS 15.6 runtime qualification. Those remain release-matrix gates.

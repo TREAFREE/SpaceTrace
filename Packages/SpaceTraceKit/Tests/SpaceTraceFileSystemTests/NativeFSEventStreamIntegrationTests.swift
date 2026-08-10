@@ -1,6 +1,7 @@
 import CoreServices
 import Darwin
 import Foundation
+import Synchronization
 import Testing
 @testable import SpaceTraceFileSystem
 
@@ -137,20 +138,25 @@ struct NativeFSEventStreamIntegrationTests {
         let fixture = try DisposableAPFSFixture()
         defer { fixture.remove() }
 
-        let client = FSEventStreamClient()
+        let deliveredObservationCount = NativeObservationCounter()
+        let client = FSEventStreamClient(onNativeObservationYielded: {
+            deliveredObservationCount.increment()
+        })
         let stream = try client.start(
             configuration: try configuration(for: fixture.root, bufferCapacity: 1)
         )
         defer { client.stop() }
 
-        _ = try fixture.createFile(named: "stream-ready.bin")
-        try #require(client.flushSynchronously())
-        _ = try await firstObservation(in: stream)
-
+        // Keep the capacity-one stream unconsumed until two native bridge
+        // calls complete so the second yield must exercise overflow.
         _ = try fixture.createFile(named: "overflow-one.bin")
         try #require(client.flushSynchronously())
         _ = try fixture.createFile(named: "overflow-two.bin")
         try #require(client.flushSynchronously())
+        try await waitForObservationCount(
+            2,
+            counter: deliveredObservationCount
+        )
 
         let overflow = try await firstOverflowMarker(in: stream)
         #expect(overflow.reasons == [.callbackBridgeOverflow])
@@ -248,6 +254,29 @@ struct NativeFSEventStreamIntegrationTests {
             }
             throw NativeFSEventIntegrationError.streamEndedBeforeExpectedEvidence
         }
+    }
+
+    private func waitForObservationCount(
+        _ minimumCount: UInt64,
+        counter: NativeObservationCounter
+    ) async throws {
+        try await withIntegrationTimeout {
+            while counter.value < minimumCount {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+        }
+    }
+}
+
+private final class NativeObservationCounter: Sendable {
+    private let storage = Mutex<UInt64>(0)
+
+    var value: UInt64 {
+        storage.withLock { $0 }
+    }
+
+    func increment() {
+        storage.withLock { $0 &+= 1 }
     }
 }
 

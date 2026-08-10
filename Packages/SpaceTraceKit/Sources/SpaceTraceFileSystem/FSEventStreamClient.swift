@@ -25,8 +25,17 @@ public final class FSEventStreamClient: Sendable {
     public typealias ObservationStream = AsyncThrowingStream<FSEventObservation, any Error>
 
     private let state = Mutex(State())
+    private let onNativeObservationYielded: (@Sendable () -> Void)?
 
-    public init() {}
+    public init() {
+        onNativeObservationYielded = nil
+    }
+
+    /// Internal observation seam used by integration tests to wait on native
+    /// callback completion without consuming the bounded application stream.
+    init(onNativeObservationYielded: @escaping @Sendable () -> Void) {
+        self.onNativeObservationYielded = onNativeObservationYielded
+    }
 
     deinit {
         stop()
@@ -59,7 +68,8 @@ public final class FSEventStreamClient: Sendable {
                 let generation = state.generation
                 let callbackBox = FSEventCallbackBox(
                     continuation: streamPair.continuation,
-                    pathTransform: configuration.callbackPathTransform
+                    pathTransform: configuration.callbackPathTransform,
+                    onNativeObservationYielded: onNativeObservationYielded
                 )
                 let callbackInfo = Unmanaged.passUnretained(callbackBox).toOpaque()
                 var context = FSEventStreamContext(
@@ -208,13 +218,16 @@ private extension FSEventStreamClient {
 private final class FSEventCallbackBox: Sendable {
     private let continuation: FSEventStreamClient.ObservationStream.Continuation
     private let pathTransform: FSEventCallbackPathTransform
+    private let onNativeObservationYielded: (@Sendable () -> Void)?
 
     init(
         continuation: FSEventStreamClient.ObservationStream.Continuation,
-        pathTransform: FSEventCallbackPathTransform
+        pathTransform: FSEventCallbackPathTransform,
+        onNativeObservationYielded: (@Sendable () -> Void)?
     ) {
         self.continuation = continuation
         self.pathTransform = pathTransform
+        self.onNativeObservationYielded = onNativeObservationYielded
     }
 
     func receive(
@@ -236,6 +249,7 @@ private final class FSEventCallbackBox: Sendable {
                 rawFlags: eventFlags[index]
             )
             FSEventCallbackBridge.yield(observation, to: continuation)
+            onNativeObservationYielded?()
         }
     }
 }

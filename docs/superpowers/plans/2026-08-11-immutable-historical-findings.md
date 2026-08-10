@@ -77,8 +77,8 @@ Commit: `确立不可变观测与历史发现架构`
 - Create: `Packages/SpaceTraceKit/Tests/SpaceTraceDomainTests/StorageChangeTests.swift`
 
 **Interfaces:**
-- Produces `ObservationEndpointID`, `ObservationCommitSequence`, `ObservationSemanticsVersion`, `ObservationVolumeID`, `ObservationMountGenerationID`, `ObservationCoverageEpochID`, `ObservationLocationID`, `ObservationSubjectIdentityBasis`, `CompleteParentAbsenceEvidence`, `ObservationEndpointState`, and `ObservationEndpoint`.
-- Produces `StorageChangeKind`, `StorageChange`, `ObservationIncomparability`, `ObservationComparisonOutcome`, and `ObservationEndpoint.compare(from:)`.
+- Produces `ObservationEndpointID`, `ObservationCommitSequence`, `ObservationSemanticsVersion`, `ObservationVolumeID`, `ObservationMountGenerationID`, `ObservationCoverageEpochID`, `ObservationLocationID`, `ObservationSubjectIdentityBasis`, `ParentAbsenceReference`, `ObservationEndpointState`, and `ObservationEndpoint`.
+- Produces `StorageChangeKind`, `StorageChange`, `ObservationIncomparability`, `ObservationComparisonCorruption`, `ObservationComparisonOutcome`, and `ObservationEndpoint.compare(from:)`.
 
 The public comparison seam is:
 
@@ -90,32 +90,33 @@ public extension ObservationEndpoint {
 public enum ObservationComparisonOutcome: Sendable, Equatable {
     case comparable(StorageChange)
     case incomparable(ObservationIncomparability)
+    case corrupt(ObservationComparisonCorruption)
 }
 ```
 
-- [ ] **Step 1: Write a failing endpoint-validation test**
+- [x] **Step 1: Write a failing endpoint-validation test**
 
 Test stable-code validation, positive sequence/version validation, present/partial/unknown byte invariants, explicit absence parent evidence, and Codable revalidation through the public initializers.
 
-- [ ] **Step 2: Run the endpoint tests and confirm RED**
+- [x] **Step 2: Run the endpoint tests and confirm RED**
 
 Run: `swift test --package-path Packages/SpaceTraceKit --filter ObservationEndpointTests`
 
 Expected: FAIL because the endpoint contract does not exist.
 
-- [ ] **Step 3: Implement the smallest immutable endpoint contract**
+- [x] **Step 3: Implement the smallest immutable endpoint contract**
 
-Use value types only and no Foundation import. `unknown` carries no bytes; `absent` carries a complete-parent endpoint reference; partial present bytes remain measurable but incomparable.
+Use value types only and no Foundation import. `unknown` carries no bytes; `absent` carries an unresolved parent endpoint reference; partial present bytes remain measurable but incomparable. Reject self-referential absence, but defer same-frame complete-direct-parent validation to Task 4.
 
-- [ ] **Step 4: Write one failing comparison behavior at a time**
+- [x] **Step 4: Write one failing comparison behavior at a time**
 
-Cover complete growth/decrease/unchanged, explicit appearance/disappearance, stable-identity move, path-identity location change rejection, scope/volume/mount/coverage-epoch/metric/path-semantics/measurement-semantics mismatch, partial/unknown endpoints, non-increasing sequence, and wall-clock rollback with increasing sequence.
+Cover complete growth/decrease/unchanged, appearance/disappearance candidates, stable-identity relocation candidates, path-identity location change rejection, scope/volume/mount/coverage-epoch/metric/path-semantics/measurement-semantics mismatch, endpoint-ID reuse, partial/unknown endpoints, non-increasing sequence, wall-clock rollback with increasing sequence, and malicious Codable payloads.
 
-- [ ] **Step 5: Implement typed comparison without throwing for expected evidence gaps**
+- [x] **Step 5: Implement typed comparison without throwing for expected evidence gaps**
 
-`StorageChange` retains both endpoint IDs, both locations, optional endpoint bytes, signed inclusive delta, metric, commit sequences, and wall-clock instants. Only construction corruption remains a thrown validation error; evidence insufficiency returns `.incomparable`.
+`StorageChange` retains both endpoint IDs, both locations, optional endpoint bytes, signed inclusive delta, metric, commit sequences, and wall-clock instants. Candidate names prevent unvalidated parent or identity evidence from becoming a causal claim. Centralized Codable revalidation rejects corrupt construction; evidence insufficiency returns `.incomparable`, while immutable endpoint-ID reuse returns distinct `.corrupt` evidence before compatibility checks.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run:
 

@@ -74,9 +74,9 @@ Every endpoint used by a finding has a durable endpoint ID and records:
 - path-semantics and measurement-semantics versions;
 - database-generated monotonic commit sequence;
 - UTC wall time;
-- one explicit state: `present(bytes, coverage)`, `absent(completeParentEvidence)`, or `unknown(reason)`.
+- one explicit state: `present(bytes, coverage)`, `absent(parentAbsenceReference)`, or `unknown(reason)`.
 
-An absent endpoint is a stored fact, not a missing row. Its evidence references a complete parent endpoint in the same observation frame. Permission loss, unmount, root replacement, event gaps without completed reconciliation, partial enumeration, and missing endpoint rows produce unknown/incomparable evidence.
+An absent endpoint is a stored fact, not a missing row. Its raw parent reference is not proof by itself. The Application frame validator must resolve that reference to a complete direct parent in the same compatible observation frame before promoting an absence transition. Permission loss, unmount, root replacement, event gaps without completed reconciliation, partial enumeration, and missing endpoint rows produce unknown/incomparable evidence.
 
 ### 2. Measurement compatibility
 
@@ -84,17 +84,17 @@ Two endpoints are measurement-compatible only when scope, persistent volume, mou
 
 Wall-clock time may repeat or move backward; the monotonic commit sequence controls ordering. Classifier catalog/rule versions do **not** participate in byte-measurement compatibility. Classification happens only after a compatible `StorageChange` exists.
 
-Expected evidence insufficiency returns a typed `incomparable` outcome. Corrupt identifiers, invalid state construction, and checked-arithmetic failure remain errors.
+Expected evidence insufficiency returns a typed `incomparable` outcome. Reuse of one immutable endpoint ID on both sides returns a distinct `corrupt` outcome before compatibility checks, so it cannot be hidden as ordinary suppression. Corrupt identifiers, invalid state construction, invalid durable payloads, and checked-arithmetic failure remain errors.
 
 ### 3. Change and absence semantics
 
-Complete present endpoints produce a metric-preserving signed inclusive delta. Explicit absent-to-present and present-to-absent endpoints produce appearance and disappearance. Product copy must not claim the user created or deleted data at an exact event time; the times are observation endpoints.
+Complete present endpoints produce a metric-preserving signed inclusive delta. Raw absent-to-present and present-to-absent comparisons produce `appearanceCandidate` and `disappearanceCandidate`; only the validated Application frame projection can promote them to appearance and disappearance findings. Product copy must not claim the user created or deleted data at an exact event time; the times are observation endpoints.
 
 A missing counterpart, partial value, unknown state, or invalid parent proof cannot produce a causal finding. The first complete baseline remains descriptive.
 
 ### 4. Move proof
 
-A move is produced only when all of the following hold:
+The endpoint comparator may emit `relocationCandidate` after endpoint-level compatibility, complete presence, stable-identity basis, and a location change are established. That candidate is not a move claim. The Application frame projection produces a move only when all of the following hold:
 
 1. both endpoints are present and complete;
 2. both belong to the same persistent volume and mount generation;

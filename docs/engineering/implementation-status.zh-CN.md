@@ -98,3 +98,10 @@
 5. 使用稳定 Apple 身份在 Apple Silicon macOS 15.6 上重跑签名沙盒协议，并覆盖真实 stale 证据、UI 的不同 UUID 换卷子项和系统菜单栏交互矩阵；不得以已完成的当前主机 ad-hoc smoke 代替该门禁。
 6. 在签名沙盒矩阵中验证活跃扫描期间撤权和多目录列表变更。
 7. 在把当前已经用户可见的基线切片视为 Beta 就绪或具备发布资格之前，完成 ADR-003 与 ADR-004 的维护者评审。
+
+## 发布决策（2026-08-10）
+
+- **本地工程 RC 生成：CONDITIONAL GO（有条件继续）。** 可以使用 fail-closed ad-hoc 打包器，为明确互相信任的维护者/测试者生成带 provenance 的受控测试产物。
+- **GitHub Release 与 Public Beta：NO-GO（暂不发布）。** 本次没有创建 tag、Release 或上传产物。
+- 阻塞门禁包括：尚未完成的分类/移动删除/export P0 行为与导出脱敏证据；macOS 15.6 真实运行；人工辅助功能与规定的可用性测试；真实权限/替换 bookmark 矩阵；ADR-003/ADR-004 接受；Developer ID/公证，或项目所有者明确接受未签名风险并完成干净 quarantine 安装；打包升级/回滚；正式许可、第三方 notices 与 SBOM。
+- 逐行门禁表和未发布的测试者说明见[产品路线图](../product/product-roadmap.md)与 [Changelog](../../CHANGELOG.md)。

@@ -205,17 +205,19 @@ Commit: `建立未签名发布候选打包流程`
 - Consumes: Tasks 1–3 evidence plus macOS 15.6 and Apple-identity matrix status.
 - Produces: an explicit `GO`, `CONDITIONAL GO`, or `NO-GO` record; publishing remains a separate owner-authorized action.
 
-- [ ] **Step 1: Reconcile every Public Beta and RC gate**
+- [x] **Step 1: Reconcile every Public Beta and RC gate**
 
 Mark current-host endurance, UI accessibility, macOS 15.6 runtime, ADR review, signing/notarization, fresh install, update/replacement, database migration, and rollback as passed, blocked, or open with linked evidence.
 
-- [ ] **Step 2: Prepare release notes without publishing**
+- [x] **Step 2: Prepare release notes without publishing**
 
 State supported architecture/system, permission model, unsigned-install friction, known gaps, data location/removal, checksum verification, and rollback behavior. Do not create a Git tag, GitHub Release, or upload artifact.
 
-- [ ] **Step 3: Verify and commit**
+- [x] **Step 3: Verify and commit**
 
 Run `make verify`, documentation link checks, `git diff --check`, and review the gate table line by line.
+
+Result: `make verify` passed with 247 package tests in 38 suites, the strict-concurrency audit, 24 application unit tests, and Debug/Release builds. Local documentation links and `git diff --check` passed. The gate table was reconciled against the PRD Public Beta gates, current implementation evidence, ADR statuses, artifact qualification, and absent license/signing/minimum-OS/user-research evidence.
 
 Commit: `形成首个发布候选决策记录`
 

@@ -98,3 +98,10 @@ The strict-concurrency run is an audit for newly introduced package code. The ap
 5. Rerun the signed sandbox protocol with a stable Apple identity on Apple Silicon macOS 15.6, including genuine stale evidence, the different-UUID UI replacement subcase, and the system menu-bar interaction matrix; do not substitute the completed current-host ad-hoc smoke for this gate.
 6. Qualify permission revocation during active scanning and multi-directory list mutations in the signed sandbox matrix.
 7. Complete maintainer review of ADR-003 and ADR-004 before treating the now-user-visible baseline slice as beta-ready or release-qualified.
+
+## Release decision — 2026-08-10
+
+- **Local engineering RC generation: CONDITIONAL GO.** The fail-closed ad-hoc packager may be used to create provenance-bound artifacts for controlled testing by explicitly trusted maintainers/testers.
+- **GitHub Release and Public Beta: NO-GO.** No tag, release, or artifact upload was created.
+- Blocking gates are: incomplete classification/move-delete/export P0 behavior and export-redaction evidence; macOS 15.6 runtime; manual accessibility and required usability sessions; genuine permission/replacement-bookmark matrices; ADR-003/ADR-004 approval; Developer ID/notarization or explicit owner risk acceptance plus a clean quarantined install; packaged upgrade/rollback; approved license, third-party notices, and SBOM.
+- The complete line-by-line gate table and draft non-published tester notes are in the [product roadmap](../product/product-roadmap.md) and [changelog](../../CHANGELOG.md).

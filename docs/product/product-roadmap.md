@@ -6,12 +6,34 @@
 |---|---|
 | Document status | Draft for product and engineering review |
 | Version | 0.1.0 |
-| Last updated | 2026-07-18 |
+| Last updated | 2026-08-10 |
 | Planning horizon | Eight weeks to Public Beta (Assumption); 1.0 date TBD |
 | Platform state | Accepted baseline: macOS 15.6+ on Apple Silicon. All Project/App/Unit Tests/UI Tests configurations are aligned; runtime qualification remains a Public Beta gate. |
 | Source of requirements | [Product Requirements Document](./product-requirements.md) |
 
 This roadmap is a sequencing and evidence plan, not a promise that every proposed feature will ship. Product scope and acceptance criteria remain authoritative in the PRD. A phase exits only when its evidence gate passes; reaching a calendar date is not sufficient.
+
+## Current Release Decision — 2026-08-10
+
+**Public Beta and GitHub Release: NO-GO. Local engineering RC generation: CONDITIONAL GO.** No tag, GitHub Release, or artifact upload was created by this decision. The local RC channel exists only to continue controlled qualification with the [ad-hoc release candidate checklist](../engineering/release-candidate-checklist.md).
+
+| Gate | Status | Evidence / remaining condition |
+|---|---|---|
+| Current-stable-macOS endurance and process-resource evidence | Passed for current-host ad-hoc scope | Corrected 25-hour run and deterministic Instruments analysis are recorded in the [background soak protocol](../engineering/background-soak-qualification.md); this is not watt/joule, Apple-identity, or minimum-OS evidence |
+| Current-host controlled UI/accessibility tree | Passed for automated fixture scope | Eight authorization/history scenarios passed; manual VoiceOver, Full Keyboard Access, contrast/motion/larger-text review remains open in the [visual design system](./visual-design-system.md) |
+| Ad-hoc RC artifact contract | Passed | Two independent `0.1.0-rc.1` builds from `f2119be` passed checksums, strict code signing, entitlement, architecture, deployment-target, DMG, and manifest checks; Gatekeeper rejected them as expected |
+| Complete P0 product workflow | Open — release blocking | Deterministic classification, move/deletion findings, true in-enumerator continuation, and user-controlled export are not implemented; diagnostic export redaction release gate cannot pass |
+| macOS 15.6 Apple Silicon runtime | Blocked by unavailable qualified host | Compile/link target is 15.6, but no P0 runtime/benchmark evidence exists on that OS |
+| ADR-003 and ADR-004 | Open — release blocking | Both remain Proposed; genuine daemon drop/wrap, permission revocation, minimum-OS behavior, and maintainer review remain incomplete |
+| Developer identity and notarization | Blocked for trusted public distribution | No stable Apple signing identity is installed. Ad-hoc tester risk has documentation but is not equivalent to Developer ID/notarization |
+| Fresh quarantined clean-account install | Open — release blocking | DMG verification passed locally; an actual downloaded/quarantined clean-account flow and per-app Gatekeeper exception have not been qualified |
+| Update/replacement and bookmark continuity | Partial — release blocking | Fresh/same-build/replacement process launch passed under a disposable ID; no bookmark was created, so cross-build restore/reselection behavior remains open |
+| Migration, corruption, and retention | Partial | Deterministic current-schema/golden-fixture recovery and large-row benchmarks passed; packaged upgrade, downgrade, and rollback remain open |
+| Permission, stale, denial, and external-volume RC matrix | Partial | Deterministic and earlier sandbox/native rows exist; genuine stale/denial, different-UUID packaged UI, and active-scan revocation remain open |
+| License, notices, and SBOM | Blocked — owner decision required | MIT is still an assumption; no approved `LICENSE`, complete third-party notices, or release SBOM is present |
+| Usability and severity gates | Open — release blocking | Required formative sessions, KPI review, and release-specific Sev-0/Sev-1 triage record are incomplete |
+
+The next release review may change `NO-GO` only after every release-blocking row has linked, current evidence. A paid signing identity alone is not sufficient because product-completeness, minimum-OS, usability, accessibility, license, and update/rollback gates are independent.
 
 ## Planning Rules
 

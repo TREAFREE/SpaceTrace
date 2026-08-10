@@ -52,7 +52,7 @@ The MVP does **not** promise exact process attribution, reproduce Apple's System
 - Proposed implementation: Swift, SwiftUI with targeted AppKit integration
 - Implemented foundation: local `SpaceTraceKit` modules for domain observations, bounded FSEvents and mount lifecycles, security-scoped directory authorization, a metadata-only bounded calibration scanner, revision-safe SQLite publication, multi-root baseline UI, monotonic startup-volume capacity history, conservative storage reconciliation, typed power/thermal/sleep pause-and-retry scheduling, and qualified 24-hour menu-bar evidence
 - Proposed license: MIT (**TBD until explicitly approved**)
-- Distribution and signing: Developer ID, notarization, and update strategy remain release-blocking decisions
+- Distribution and signing: fail-closed ad-hoc RC packaging is implemented for trusted testing; Developer ID, notarization, the complete replacement matrix, and update strategy remain release blockers
 
 ## Contributing
 

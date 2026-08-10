@@ -86,7 +86,7 @@ make package-release-candidate-test VERSION=0.1.0-rc.1
 
 每一个不同 RC 构建都必须执行并记录以下各行；过去的 ad-hoc smoke 不能自动替代新 DMG 的资格验证。
 
-非交互式启动/替换子集会使用一次性 Bundle ID，并且只删除与其精确匹配的临时沙盒容器：
+非交互式启动/替换子集会使用一次性 Bundle ID，并尝试把与其精确匹配的临时沙盒容器移入废纸篓：
 
 ```bash
 make qualify-release-candidate \
@@ -94,7 +94,7 @@ make qualify-release-candidate \
   REPLACEMENT_APP=/第二份/SpaceTrace-0.1.0-rc.1.app/绝对路径
 ```
 
-它能证明全新启动、同构建正常退出/重启、独立二进制替换后启动以及一次性容器精确清理。该流程不会选择目录，因此不能验证 bookmark 连续性、拒绝权限、stale 授权或外置卷行为。
+它会分别报告全新启动、同构建正常退出/重启和独立二进制替换后启动。容器移除采用 fail closed：如果 macOS 容器隐私保护拒绝终端访问，命令会返回 `container-cleanup-blocked-by-macos-privacy`，打印精确残留路径，而且不会修改容器元数据或扩大删除范围。该流程不会选择目录，因此不能验证 bookmark 连续性、拒绝权限、stale 授权或外置卷行为。
 
 | 场景 | 期望结果 | 当前资格状态 |
 |---|---|---|
@@ -107,12 +107,24 @@ make qualify-release-candidate \
 | 同名但不同 Volume UUID 的替换卷 | 旧授权不得转移 | 原生生命周期已通过；打包 UI 行未完成 |
 | 数据库/Schema 替换 | 迁移备份与恢复符合 released-schema fixture，不静默重建 | 确定性测试已通过；打包升级行未完成 |
 
+### 当前主机非交互证据（2026-08-10）
+
+从干净 commit `f2119be3fe0ed05e98ef5ec3656e6f7ccbe1d860` 独立生成了两份 `0.1.0-rc.1` 产物。两次运行的签名、entitlement、架构、部署目标、DMG、manifest 与 checksum 校验都通过。与预期相同，两份可执行文件和 DMG 的哈希不同；各自 manifest 记录自己的真实值，且没有声称字节完全一致。`spctl` 对 ad-hoc 未公证 App 返回 3 和 `rejected`。
+
+在同一个一次性 Bundle ID 下，先使用第一份 App，再使用独立构建的替换 App；全新启动、同构建正常重启和替换后启动均通过。流程没有选择目录。macOS containermanager 隐私保护同时拒绝直接删除和系统 `trash` 对约 32 KiB 一次性容器的操作，因此清理记录为阻塞而不是通过。当前主机的精确残留为：
+
+```text
+~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260810152354p52734
+```
+
+删除它需要另一次由用户明确授权 Full Disk Access 的操作。该容器只含资格测试数据，没有修改任何被监控目录。
+
 如果替换构建后需要重新选择目录，GitHub Release 说明必须在测试者安装前明确写出。
 
 ## 卸载与回滚
 
 - 退出 SpaceTrace，只把 `SpaceTrace.app` 移到废纸篓即可卸载；这不会删除被监控文件。
-- 沙盒容器可能保留 bookmark、历史和设置，便于以后重装。只有明确需要完全重置的测试者，才应在核对精确 Bundle ID 后，按维护者复核过的手动流程删除 SpaceTrace 容器；发布产物不能自动删除它。
+- 沙盒容器可能保留 bookmark、历史和设置，便于以后重装。只有明确需要完全重置的测试者，才应在核对精确 Bundle ID 后，按维护者复核过的手动流程删除 SpaceTrace 容器，并为实际执行删除的工具授予 macOS 所需隐私权限；发布产物不能自动删除它、修改 containermanager 元数据，或在正常使用时要求广泛磁盘权限。
 - 回滚必须使用以前已校验 checksum 的产物。Schema 兼容与 bookmark 行为没有测试前，不能声称支持回滚。
 - 在 SpaceTrace 内移除授权只会释放该 grant，绝不会删除被选择目录及其中内容。
 

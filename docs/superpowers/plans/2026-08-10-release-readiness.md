@@ -167,7 +167,7 @@ Commit: `补齐界面与无障碍资格验证`
 - Consumes: clean source commit, Release build, explicit semantic version, and immutable bundle identifier.
 - Produces: `.app`, `.dmg`, `.sha256`, and JSON manifest clearly marked `adhoc` or `unsigned`; no GitHub Release is created by this task.
 
-- [ ] **Step 1: Add packaging-script contract tests using a disposable output directory**
+- [x] **Step 1: Add packaging-script contract tests using a disposable output directory**
 
 ```bash
 Scripts/package-release-candidate.sh \
@@ -177,17 +177,19 @@ Scripts/package-release-candidate.sh \
 
 Assert an exact artifact set, matching SHA-256, expected entitlements, `LSMinimumSystemVersion=15.6`, arm64 architecture, and a manifest that does not claim Developer ID or notarization.
 
-- [ ] **Step 2: Implement fail-closed packaging**
+- [x] **Step 2: Implement fail-closed packaging**
 
 Reject dirty source, missing version, unexpected signing authority, entitlement drift, wrong deployment target, existing output, and a failed Release build. Stage a read-only compressed DMG without altering user data or installing anything.
 
-- [ ] **Step 3: Execute installation and replacement matrices**
+- [x] **Step 3: Execute the non-interactive installation/replacement subset and record open rows**
 
-Use disposable app/container identities to test fresh launch, explicit Gatekeeper override instructions, same-build restart, replacement build, bookmark restoration or required reselection, denied permission, external-volume absence/return, and complete removal instructions.
+Two independently packaged binaries from commit `f2119be` passed fresh launch, same-build restart, and replacement launch under one disposable identity. `spctl` rejected the unnotarized app as expected. No directory was selected, so bookmark, denied-permission, stale, and external-volume RC rows remain open. macOS privacy denied removal of the exact disposable container; the typed blocker, residual path, and owner-authorized removal boundary are documented rather than bypassed.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run `make verify`, packaging verification twice from the same commit, checksum validation, `codesign --verify --deep --strict`, `spctl --assess` with the expected non-notarized result, and `git diff --check`.
+
+Result: `make verify` passed with 247 package tests in 38 suites, the strict-concurrency audit, 24 application unit tests, and Debug/Release builds. Two independent packages from commit `f2119be` passed their checksums and strict code-sign verification; their DMG SHA-256 values were intentionally distinct and individually recorded. `spctl` returned 3/`rejected`, matching the manifest's unnotarized ad-hoc disclosure.
 
 Commit: `建立未签名发布候选打包流程`
 

@@ -86,7 +86,7 @@ The first launch must present an unconfigured, evidence-honest state. SpaceTrace
 
 Every distinct RC build must execute and record these rows. A previous ad-hoc smoke does not qualify a new DMG.
 
-The non-interactive launch/replacement subset uses a disposable Bundle ID and removes only its matching temporary sandbox container:
+The non-interactive launch/replacement subset uses a disposable Bundle ID and attempts to move only its exact matching temporary sandbox container to Trash:
 
 ```bash
 make qualify-release-candidate \
@@ -94,7 +94,7 @@ make qualify-release-candidate \
   REPLACEMENT_APP=/absolute/path/to/second/SpaceTrace-0.1.0-rc.1.app
 ```
 
-It proves fresh launch, graceful same-build restart, independent-binary replacement launch, and exact disposable-container cleanup. It deliberately does not select a directory, so it cannot qualify bookmark continuity, denial, stale authorization, or external-volume behavior.
+It separately reports fresh launch, graceful same-build restart, and independent-binary replacement launch. Container removal is fail-closed: if macOS container privacy denies Terminal access, the command returns `container-cleanup-blocked-by-macos-privacy`, prints the exact residual path, and never changes container metadata or broadens the deletion target. The flow deliberately does not select a directory, so it cannot qualify bookmark continuity, denial, stale authorization, or external-volume behavior.
 
 | Row | Expected result | Current qualification |
 |---|---|---|
@@ -107,12 +107,24 @@ It proves fresh launch, graceful same-build restart, independent-binary replacem
 | Same-name replacement with a different Volume UUID | Old authorization does not transfer | Native lifecycle passed; packaged UI row open |
 | Database/schema replacement | Migration backup/recovery behavior matches released-schema fixtures; no silent rebuild | Deterministic tests passed; packaged upgrade row open |
 
+### Current-host non-interactive evidence (2026-08-10)
+
+Two independent `0.1.0-rc.1` artifacts were built from clean commit `f2119be3fe0ed05e98ef5ec3656e6f7ccbe1d860`. Both packaging runs passed signature, entitlement, architecture, deployment-target, DMG, manifest, and checksum verification. As expected, their executable and DMG hashes differed; each manifest recorded its own values and made no byte-identical claim. `spctl` returned 3 and `rejected` for the ad-hoc unnotarized App.
+
+Using the first App and then the independently built replacement under one disposable Bundle ID, fresh launch, graceful same-build restart, and replacement launch all passed. No directory was selected. macOS containermanager privacy denied both direct deletion and the system `trash` operation for the approximately 32 KiB disposable container, so cleanup is recorded as blocked rather than passed. The exact current-host residual is:
+
+```text
+~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260810152354p52734
+```
+
+Removing it requires a separate, explicit user-authorized Full Disk Access action. It contains qualification data only; no monitored directory was modified.
+
 If a replacement build requires directory reselection, the GitHub Release notes must state that plainly before testers install it.
 
 ## Removal and rollback
 
 - Quit SpaceTrace and move only `SpaceTrace.app` to Trash to uninstall the application. This does not delete monitored files.
-- The sandbox container may retain bookmarks, history, and settings for a future reinstall. A tester who explicitly wants a complete reset may remove the SpaceTrace container through an owner-reviewed manual procedure after confirming the exact Bundle ID. The release artifact must not delete it automatically.
+- The sandbox container may retain bookmarks, history, and settings for a future reinstall. A tester who explicitly wants a complete reset may remove the SpaceTrace container through an owner-reviewed manual procedure after confirming the exact Bundle ID and granting the tool used for removal the required macOS privacy access. The release artifact must not delete it automatically, alter containermanager metadata, or ask for broad disk access during normal use.
 - Rollback must use a previously checksummed artifact. Schema compatibility and bookmark behavior must be tested before calling rollback supported.
 - Removing an authorization inside SpaceTrace releases that grant; it never deletes the selected directory or its contents.
 

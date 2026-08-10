@@ -78,9 +78,6 @@ stop_runtime() {
 cleanup() {
     stop_runtime
     rm -rf -- "$temporary_root"
-    if [[ $container_path == "$HOME/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run"* ]]; then
-        rm -rf -- "$container_path"
-    fi
 }
 trap cleanup EXIT INT TERM HUP
 
@@ -138,10 +135,15 @@ launch_and_stop "independent-build-replacement"
     exit 1
 }
 
-rm -rf -- "$container_path"
+if ! /usr/bin/trash "$container_path"; then
+    print -u2 "error: container-cleanup-blocked-by-macos-privacy"
+    print -u2 "container: $container_path"
+    print -u2 "action: remove only this exact disposable container with explicit user-authorized Full Disk Access"
+    exit 3
+fi
 [[ ! -e $container_path ]] || {
-    print -u2 "error: disposable sandbox container removal failed"
-    exit 1
+    print -u2 "error: disposable sandbox container remained after trash accepted it"
+    exit 3
 }
 
 print "release candidate launch/replacement qualification: PASS"

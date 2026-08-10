@@ -27,6 +27,10 @@ let package = Package(
             name: "SpaceTraceSoakAnalyzer",
             targets: ["SpaceTraceSoakAnalyzer"]
         ),
+        .executable(
+            name: "SpaceTraceInstrumentsAnalyzer",
+            targets: ["SpaceTraceInstrumentsAnalyzer"]
+        ),
     ],
     targets: [
         .target(name: "SpaceTraceDomain"),
@@ -62,6 +66,11 @@ let package = Package(
         .executableTarget(
             name: "SpaceTraceSoakAnalyzer",
             dependencies: ["SpaceTraceApplication"]
+        ),
+        .target(name: "SpaceTraceQualification"),
+        .executableTarget(
+            name: "SpaceTraceInstrumentsAnalyzer",
+            dependencies: ["SpaceTraceQualification"]
         ),
         .target(
             name: "SpaceTracePlatform",
@@ -121,6 +130,10 @@ let package = Package(
                 "SpaceTracePersistence",
                 "SpaceTracePlatform",
             ]
+        ),
+        .testTarget(
+            name: "SpaceTraceQualificationTests",
+            dependencies: ["SpaceTraceQualification"]
         ),
     ],
     swiftLanguageModes: [.v5]

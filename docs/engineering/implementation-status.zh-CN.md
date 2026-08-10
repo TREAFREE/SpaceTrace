@@ -2,7 +2,7 @@
 
 状态：**架构验证阶段；已具备目录权限、基线与历史概览流程**
 
-最近验证日期：2026-07-31
+最近验证日期：2026-08-10
 
 英文事实源：[implementation-status.md](implementation-status.md)。本文是便于中文阅读的对应译文；如两者存在差异，以英文文档为架构事实源，并应在同一次变更中修正译文。
 
@@ -60,6 +60,7 @@
 - 当前主机 ad-hoc 签名 Release/App Sandbox 真实长跑采集到单一 session、1,693 条无路径记录、成功 retention、约 900 KiB 受保护诊断，以及五段无采集失败的完整 Activity Monitor/thermal 切片；默认分析器因长睡眠后缺少 24 小时容量端点以及重复计算的虚假 wake 恢复指标而失败，因此该运行只保留为失败/诊断证据，不报告为 qualified。合计 25 分钟的有界 Instruments 证据为：CPU 0.493001 秒、Idle Wake Ups 1,180 次、写入/读取 2,023,424/155,648 字节、最大物理内存 footprint 53,068,760 字节、未阻止睡眠、Thermal State 均为 Nominal。wake 指标和睡眠 retention 重试缺陷现已加入确定性回归，脱离会话自动最终化也通过 60 秒签名沙盒 smoke；
 - 2026-07-29 的 schema-v10 当前主机重跑通过签名沙盒预检和首段 Activity Monitor attach，但在 212.012 秒后收到外部正常 `exit(0)`；它只保留为中断证据，不属于 24 小时结果。主机后来还在计划窗口内关机并重启。本次中断暴露了 runner 的 zsh EXIT-trap 作用域以及 launchd 推断 KeepAlive 两项缺陷；
 - 两轮相互独立的签名沙盒 smoke 证明加固后的 runner：受控提前退出会生成受保护、带类型原因的 `FAILED` 证据并移除 supervisor；不受干扰的 60 秒运行则生成 `PASSED`，采集失败为 0、隐私扫描为空、分析器状态为 0、单一 session 的 4 条记录覆盖 59,737 ms，且 launchd job 无残留；
+- 修正后的 2026-07-30 当前主机 ad-hoc Release/App Sandbox 长跑自动生成 `PASSED`：单一 session 的 794 条无路径记录覆盖 90,529,656 ms，retention 成功且最终容量为 qualified；最大清醒间隔 62,097 ms、最大唤醒恢复 1 ms、最大 RSS 139,984,896 字节、最大数据库 613,696 字节、平均 CPU 0.011710%、p95 CPU 0.039200%。五段 Activity Monitor/thermal 导出全部完成且采集失败为 0；确定性后分析得到采集区间 CPU 0.401045252 秒、Idle Wake Ups 959 次、写入/读取 811,008/352,256 字节、最大 footprint 99,271,664 字节、未阻止睡眠、温度状态均为 Nominal。受保护的 Instruments 汇总不含路径并固定 SHA-256；这只关闭当前主机 ad-hoc 24 小时门禁。2026-08-10 又以独立 bundle identity 完成 60 秒 smoke，新的双分析器最终化在采集失败为 0、两个分析器退出码为 0、报告受保护以及 App/launchd 无残留的条件下通过；
 - 2026-07-31 使用独立 bundle identity 的临时签名 App，在 1080 × 720 下完成概览层级和图表布局的视觉检查；16–1024 px 图标资产完成 Alpha 校验；App 单元测试及 `make verify` 通过。同日 UI 测试在初始化前因主机 Developer Mode 关闭而被阻塞，因此只记录为环境缺口，不报告为通过；
 - 多 scope 权限 UI 测试 target 已完成无签名 `build-for-testing` 编译，权限与“不伪造历史”共 7 个受控 DEBUG UI 场景通过；这些确定性 fixture 不覆盖真实 Powerbox、bookmark 与重启行为，且当前主机执行 `security find-identity -v -p codesigning` 仍未找到用于签名沙盒资格矩阵的稳定 Apple 签名身份；
 - 对当前主机 ad-hoc 签名 smoke App 完成严格签名校验，确认含 App Sandbox、用户选择只读、app-scoped bookmark 以及 `LSMinimumSystemVersion = 15.6`；该结果不是分发签名或 macOS 15.6 运行证据；
@@ -75,7 +76,7 @@
 ## 明确不作出的声明
 
 - 面向用户的多目录权限列表、批量基线、启动卷容量历史、版本/Schema 元数据、重启恢复、感知电源/温度/睡眠的暂停与重试、schema v10 睡眠感知目录/卷历史概览，以及具备资格判断的菜单栏 24 小时指标均已实现。归因只使用互不重叠授权根 allocated-size 增长，是有证据边界的近似；APFS 唯一物理块核算、确定性分类、移动/删除 finding、真正从枚举器内存中点续扫和导出尚未实现。
-- 当前主机真实长跑属于有价值的失败/中断证据和进程资源证据，但两次尝试都没有关闭真实 24 小时主机门禁。Activity Monitor 的 CPU、唤醒、内存、I/O 与 thermal 区间属于能耗相关证据，不是直接瓦特/焦耳测量；这些运行也不能证明系统调度到达保证、签名状态项交互矩阵、Apple 身份分发或 macOS 15.6 运行资格。
+- 修正后的当前主机运行关闭了提交 `ed0d660` 的 ad-hoc 24 小时进程/耐久门禁。Activity Monitor 的 CPU、唤醒、内存、I/O 与 thermal 区间仍只是能耗相关证据，不是直接瓦特/焦耳测量；该结果也不能证明普遍的系统调度到达保证、签名状态项交互矩阵、Apple 身份分发、Release Candidate 替换或 macOS 15.6 运行资格。
 - 用户主动基线调度会响应休眠、低电量模式、严重/危急温度，并观察当前供电来源。后台速率预算、系统负载调度以及架构中的 token bucket 尚未实现。硬链接去重受条目预算限制，但每次扫描运行期间仍保存在内存中。
 - 真实 sandbox Powerbox 展示以及 stale/身份失败的重新授权 UI 已实现；当前主机上的持久选择、同一 bundle 重启、明确 App 内移除和同镜像外置卷返回已经通过。真实 stale 证据、UI 流程中的不同 UUID 换卷子项、Apple 身份签名以及 macOS 15.6 运行矩阵仍未完成，或受到当前环境阻塞。
 - 不会依据 FSEvents 推断精确字节差值或进程归因。
@@ -87,7 +88,7 @@
 
 ## 下一批验收门禁
 
-1. 先重跑已经修正并可自动最终化的当前主机协议，再使用 Apple 身份签名 sandbox App 在 macOS 15.6 上完成同一套真实 24 小时运行、睡眠/唤醒、时间/时区变化、交流电/电池、低电量模式和安全可控温度转换的生产信号资格验证；同时验证 retention 到达、菜单栏资格/降级、能耗相关进程证据、内存和数据库增长。只有具备 benchmark 证据后才增加后台 token bucket/速率策略。
+1. 使用 Apple 身份签名 sandbox App 在 macOS 15.6 上完成同一套真实 24 小时运行、睡眠/唤醒、时间/时区变化、交流电/电池、低电量模式和安全可控温度转换的生产信号资格验证；并在当前稳定版 macOS 上以 Release Candidate 重跑，验证 retention 到达、菜单栏资格/降级、能耗相关进程证据、内存和数据库增长。只有具备 benchmark 证据后才增加后台 token bucket/速率策略。
 2. 只有在符合连续性丢失资格规程且能够安全复现时，才采集真实守护进程 drop/wrap 证据，并在最低支持 macOS 运行时验证恢复行为。
 3. 扩展页级主库/WAL 损坏场景和已发布 fixture，且不得静默重建。
 4. 在接受 ADR-004 前，于最低参考 macOS 15.6 机器上复跑 50 万/100 万行 benchmark。

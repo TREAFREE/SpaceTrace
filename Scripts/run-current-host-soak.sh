@@ -237,6 +237,16 @@ start_command() {
         print -u2 "error: qualification analyzer build failed"
         exit "$analyzer_build_status"
     fi
+    swift build \
+        --package-path "$repository_root/Packages/SpaceTraceKit" \
+        -c release \
+        --product SpaceTraceInstrumentsAnalyzer \
+        >>"$evidence_directory/analyzer-build.log" 2>&1
+    analyzer_build_status=$?
+    if (( analyzer_build_status != 0 )); then
+        print -u2 "error: Instruments analyzer build failed"
+        exit "$analyzer_build_status"
+    fi
 
     local runtime_directory="$evidence_directory/runtime"
     local runtime_app="$runtime_directory/SpaceTrace.app"
@@ -245,8 +255,12 @@ start_command() {
     cp \
         "$repository_root/Packages/SpaceTraceKit/.build/release/SpaceTraceSoakAnalyzer" \
         "$runtime_directory/SpaceTraceSoakAnalyzer"
+    cp \
+        "$repository_root/Packages/SpaceTraceKit/.build/release/SpaceTraceInstrumentsAnalyzer" \
+        "$runtime_directory/SpaceTraceInstrumentsAnalyzer"
     chmod 700 "$runtime_directory/run-current-host-soak.sh" \
-        "$runtime_directory/SpaceTraceSoakAnalyzer"
+        "$runtime_directory/SpaceTraceSoakAnalyzer" \
+        "$runtime_directory/SpaceTraceInstrumentsAnalyzer"
     codesign --verify --deep --strict "$runtime_app" \
         >>"$evidence_directory/signature-preflight.txt" 2>&1
     local runtime_signature_status=$?
@@ -541,6 +555,7 @@ finalize_command() {
 
     local app_path="$evidence_directory/runtime/SpaceTrace.app"
     local analyzer="$evidence_directory/runtime/SpaceTraceSoakAnalyzer"
+    local instruments_analyzer="$evidence_directory/runtime/SpaceTraceInstrumentsAnalyzer"
     local info_plist="$app_path/Contents/Info.plist"
     local bundle_identifier
     bundle_identifier=$(/usr/libexec/PlistBuddy \
@@ -600,6 +615,11 @@ finalize_command() {
     "$analyzer" "${analyzer_arguments[@]}" \
         >"$evidence_directory/reports/qualification-analyzer.log" 2>&1
     local analyzer_status=$?
+    "$instruments_analyzer" \
+        --input "$evidence_directory/instruments" \
+        --output "$evidence_directory/reports/instruments-report.json" \
+        >"$evidence_directory/reports/instruments-analyzer.log" 2>&1
+    local instruments_analyzer_status=$?
     chmod 600 "$evidence_directory/reports/"*
 
     local capture_failures
@@ -610,13 +630,15 @@ finalize_command() {
         print "capture_failures=$capture_failures"
         print "privacy_scan=$privacy_status"
         print "analyzer_exit_status=$analyzer_status"
+        print "instruments_analyzer_exit_status=$instruments_analyzer_status"
         print "finished_at_utc=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     } >"$evidence_directory/final-summary.txt"
     chmod 600 "$evidence_directory/final-summary.txt"
 
     if [[ $capture_failures == "0" ]] &&
        [[ $privacy_status == "PASS" ]] &&
-       (( analyzer_status == 0 )); then
+       (( analyzer_status == 0 )) &&
+       (( instruments_analyzer_status == 0 )); then
         print "PASSED" >"$state_file"
         chmod 600 "$state_file"
         print "current-host soak: PASSED"

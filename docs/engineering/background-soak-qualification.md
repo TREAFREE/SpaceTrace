@@ -1,8 +1,8 @@
 # Background Soak Qualification
 
-Status: **Two current-host attempts remain failed/interrupted; hardened rerun and macOS 15.6 matrix remain open**
+Status: **Current-host ad-hoc endurance passed; Apple-identity and macOS 15.6 matrices remain open**
 
-Last reviewed: 2026-07-30
+Last reviewed: 2026-08-10
 
 Chinese translation: [后台长时间运行资格验证](background-soak-qualification.zh-CN.md)
 
@@ -130,7 +130,7 @@ Run the default analyzer after each signed sandbox run:
 
 | Host | Duration | Required transitions | Status |
 | --- | ---: | --- | --- |
-| Current stable macOS on Apple Silicon | At least 24 h | launch, ordinary operation, real sleep/wake, time change, time-zone change, local midnight, quit/relaunch | 2026-07-27 failed qualification; 2026-07-29 interrupted; hardened rerun required |
+| Current stable macOS on Apple Silicon | At least 24 h | launch, ordinary operation, real sleep/wake, time change, time-zone change, local midnight, quit/relaunch | 2026-07-30 ad-hoc endurance passed; explicit time/time-zone, signed status-item, and Release Candidate replacement rows remain open |
 | macOS 15.6 on Apple Silicon | At least 24 h | Same matrix | Open |
 
 For each host:
@@ -303,6 +303,71 @@ Two independent signed-sandbox regressions exercise both terminal paths:
 These smokes qualify runner plumbing only. The current-host 24-hour row remains
 open, and its next run requires normal sleep to remain enabled while the user
 does not shut down, log out, or quit SpaceTrace.
+
+## 2026-07-30 current-host rerun: passed
+
+The hardened runner started commit `ed0d660` at 2026-07-30 16:00:58 UTC with
+an independent bundle identifier, ad-hoc signature, Release configuration, and
+App Sandbox on Apple Silicon macOS 26.5.2. It ended automatically at
+2026-07-31 17:09:52 UTC. The preflight verified the copied runtime bundle and
+`LSMinimumSystemVersion = 15.6`; this remains current-host engineering evidence,
+not Developer ID, notarization, distribution, or macOS 15.6 runtime evidence.
+
+The terminal artifacts report `PASSED`, zero capture failures, an empty
+forbidden-field scan, and analyzer exit status 0. One session produced 794
+path-free records covering 90,529,656 ms (25 h 8 min 49.656 s). The default
+policy found no issue:
+
+| Analyzer metric | Evidence | Budget |
+| --- | ---: | ---: |
+| Maximum awake heartbeat gap | 62,097 ms | 300,000 ms |
+| Maximum wake recovery | 1 ms | 10,000 ms |
+| Maximum resident memory | 139,984,896 bytes | 150,000,000 bytes |
+| Maximum aggregate database | 613,696 bytes | 250,000,000 bytes |
+| Average CPU | 0.011710% | 0.5% |
+| p95 interval CPU | 0.039200% | 2% |
+
+Successful retention and a final qualified capacity endpoint were both
+observed. The bounded diagnostics occupied about 452 KiB, retained `0700`
+directory and `0600` file protection, and contained none of the prohibited
+path, bookmark, volume, capacity-value, environment, command-line, or file-name
+fields.
+
+All five requested Activity Monitor captures and their ledger/live/thermal
+exports completed. A typed analyzer added after the run resolves xctrace
+`id`/`ref` cells and fails closed on missing companions, counter regression,
+or inconsistent ledgers. Re-analysis of the retained exports produced a
+3,457-byte protected JSON report with SHA-256
+`759627dd8ad595d79a06821cfefd2e0d192ed67d50f562d495fc63289920bc44`:
+
+| Instruments metric | Evidence |
+| --- | ---: |
+| CPU time across captured intervals | 0.401045252 s |
+| Per-slice mean CPU | 0.011421%–0.033809% |
+| Per-slice p95 CPU | 0.022102%–0.126791% |
+| Highest instantaneous CPU | 1.507951% |
+| Idle wakeups | 959 |
+| Disk writes / reads | 811,008 / 352,256 bytes |
+| Maximum physical footprint | 99,271,664 bytes |
+| App Nap | observed in 3 of 5 slices |
+| Preventing Sleep | never observed |
+| Thermal State | Nominal in all five slices |
+
+The five nominal five-minute capture requests include system-sleep gaps in
+their exported live intervals; the analyzer therefore uses actual rows and
+cumulative-counter deltas rather than assuming exactly 25 elapsed minutes.
+These are energy-related process-resource measurements, not watt/joule
+measurements. The same evidence directory records that Power Profiler rejects
+macOS targets and unprivileged `powermetrics` requires interactive superuser
+authorization. The current-host ad-hoc 24-hour gate is closed; direct power,
+Apple-identity, release-candidate, and macOS 15.6 runtime gates remain open.
+
+On 2026-08-10, a separate 60-second ad-hoc Release/App Sandbox regression
+exercised the new dual-analyzer finalization path. It produced `PASSED`, five
+path-free records over 59,392 ms, one complete Activity Monitor slice, zero
+capture failures, privacy `PASS`, both analyzer exit statuses 0, `0600` report
+files, and no residual App or launchd job. This qualifies the new runner
+plumbing only and does not replace any endurance or release matrix row.
 
 ## Current-host smoke evidence
 

@@ -31,7 +31,9 @@ package-background-lifecycle-qualification:
 package-background-soak-qualification:
 	swift test --package-path "$(PACKAGE_PATH)" --filter StorageHistorySoakDiagnosticsTests
 	swift test --package-path "$(PACKAGE_PATH)" --filter BoundedStorageHistorySoakLogWriterTests
+	swift test --package-path "$(PACKAGE_PATH)" --filter InstrumentsActivityMonitorReportTests
 	swift build --package-path "$(PACKAGE_PATH)" --product SpaceTraceSoakAnalyzer
+	swift build --package-path "$(PACKAGE_PATH)" --product SpaceTraceInstrumentsAnalyzer
 
 package-apfs-image-qualification:
 	SPACETRACE_RUN_APFS_IMAGE_TESTS=1 swift test --package-path "$(PACKAGE_PATH)" --filter APFSDiskImageLifecycleIntegrationTests

@@ -111,19 +111,19 @@ Commit: `实现分类输入的纯词法规范化`
 - `DeterministicAttributionClassifier.classify(_:)` returns `.classified`, `.unknown(.noMatchingRule)`, or `.unknown(.ambiguous(ruleIDs:))`.
 - Resolution order is priority descending, specificity descending, then rule ID ascending only for stable ordering. Equal-winning rules from different categories produce ambiguity rather than a guessed category.
 
-- [ ] **Step 1: Write failing rule-validation and precedence tests**
+- [x] **Step 1: Write failing rule-validation and precedence tests**
 
 Cover exact component matching, more-specific-over-generic behavior, stable ordering, duplicate IDs, empty patterns, no match, same-category tie, and cross-category ambiguity.
 
-- [ ] **Step 2: Run focused tests and confirm failure**
+- [x] **Step 2: Run focused tests and confirm failure**
 
 Run: `swift test --package-path Packages/SpaceTraceKit --filter AttributionRuleTests` and `swift test --package-path Packages/SpaceTraceKit --filter DeterministicAttributionClassifierTests`.
 
-- [ ] **Step 3: Implement validated rules and fail-closed resolution**
+- [x] **Step 3: Implement validated rules and fail-closed resolution**
 
 Keep all matching pure and bounded. Successful output copies the exact rule identity, version, confidence, and path-free evidence code into `StorageAttribution`.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run focused tests, strict concurrency, `make verify`, and `git diff --check`.
 

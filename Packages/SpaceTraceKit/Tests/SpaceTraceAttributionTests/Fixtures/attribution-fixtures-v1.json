@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "catalogVersion": 1,
+  "cases": [
+    {"id":"developer-derived-data","absolutePath":"/Users/alex/Library/Developer/Xcode/DerivedData/App-a","homeDirectory":"/Users/alex","expectedCategory":"developer_tools"},
+    {"id":"developer-renamed-home","absolutePath":"/Users/renamed-account/Library/Developer/CoreSimulator/Devices/id/data","homeDirectory":"/Users/renamed-account","expectedCategory":"developer_tools"},
+    {"id":"developer-xcode-cache","absolutePath":"/Users/alex/Library/Caches/com.apple.dt.Xcode/index","homeDirectory":"/Users/alex","expectedCategory":"developer_tools"},
+
+    {"id":"virtualization-docker-container","absolutePath":"/Users/alex/Library/Containers/com.docker.docker/Data/vms/0/data","homeDirectory":"/Users/alex","expectedCategory":"virtualization"},
+    {"id":"virtualization-docker-group","absolutePath":"/Users/alex/Library/Group Containers/group.com.docker/settings","homeDirectory":"/Users/alex","expectedCategory":"virtualization"},
+    {"id":"virtualization-utm","absolutePath":"/Users/alex/Library/Application Support/UTM/Data/Linux.utm","homeDirectory":"/Users/alex","expectedCategory":"virtualization"},
+
+    {"id":"ai-ollama","absolutePath":"/Users/alex/.ollama/models/blobs/item","homeDirectory":"/Users/alex","expectedCategory":"ai_models_and_caches"},
+    {"id":"ai-huggingface","absolutePath":"/Users/alex/.cache/huggingface/hub/model","homeDirectory":"/Users/alex","expectedCategory":"ai_models_and_caches"},
+    {"id":"ai-lm-studio","absolutePath":"/Users/alex/Library/Application Support/LM Studio/models/model","homeDirectory":"/Users/alex","expectedCategory":"ai_models_and_caches"},
+
+    {"id":"creative-adobe-cache","absolutePath":"/Users/alex/Library/Caches/Adobe/Premiere Pro/item","homeDirectory":"/Users/alex","expectedCategory":"creative_caches_and_render_data"},
+    {"id":"creative-adobe-media-cache","absolutePath":"/Users/alex/Library/Application Support/Adobe/Common/Media Cache Files/item","homeDirectory":"/Users/alex","expectedCategory":"creative_caches_and_render_data"},
+    {"id":"creative-davinci-cache","absolutePath":"/Users/alex/Library/Application Support/Blackmagic Design/DaVinci Resolve/CacheClip/item","homeDirectory":"/Users/alex","expectedCategory":"creative_caches_and_render_data"},
+
+    {"id":"games-steam","absolutePath":"/Users/alex/Library/Application Support/Steam/steamapps/common/Game","homeDirectory":"/Users/alex","expectedCategory":"games"},
+    {"id":"games-epic","absolutePath":"/Users/alex/Library/Application Support/Epic/UnrealEngine/Common","homeDirectory":"/Users/alex","expectedCategory":"games"},
+    {"id":"games-blizzard","absolutePath":"/Users/alex/Library/Application Support/Blizzard/Battle.net/Cache","homeDirectory":"/Users/alex","expectedCategory":"games"},
+
+    {"id":"generic-user-cache","absolutePath":"/Users/alex/Library/Caches/com.example.app/data","homeDirectory":"/Users/alex","expectedCategory":"logs_and_caches"},
+    {"id":"generic-user-logs","absolutePath":"/Users/alex/Library/Logs/Example/log.txt","homeDirectory":"/Users/alex","expectedCategory":"logs_and_caches"},
+    {"id":"generic-system-cache","absolutePath":"/Library/Caches/com.example.service/data","expectedCategory":"logs_and_caches"},
+
+    {"id":"cloud-mobile-documents","absolutePath":"/Users/alex/Library/Mobile Documents/com~apple~CloudDocs/item","homeDirectory":"/Users/alex","expectedCategory":"cloud_local_data"},
+    {"id":"cloud-storage-provider","absolutePath":"/Users/alex/Library/CloudStorage/Provider/item","homeDirectory":"/Users/alex","expectedCategory":"cloud_local_data"},
+    {"id":"cloud-docs-state","absolutePath":"/Users/alex/Library/Application Support/CloudDocs/session","homeDirectory":"/Users/alex","expectedCategory":"cloud_local_data"},
+
+    {"id":"snapshot-apfs-one","absolutePath":"/System/Volumes/Data/private/var","snapshotFactorObservation":"local_apfs_snapshot","expectedCategory":"snapshot_factors"},
+    {"id":"snapshot-apfs-two","absolutePath":"/Users/alex/Documents","homeDirectory":"/Users/alex","snapshotFactorObservation":"local_apfs_snapshot","expectedCategory":"snapshot_factors"},
+    {"id":"snapshot-time-machine","absolutePath":"/System/Volumes/Data","snapshotFactorObservation":"time_machine_local_snapshot","expectedCategory":"snapshot_factors"},
+
+    {"id":"unknown-cache-word","absolutePath":"/Users/alex/Documents/Cache Notes","homeDirectory":"/Users/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-cache-near-miss","absolutePath":"/Users/alex/Library/CachesBackup/item","homeDirectory":"/Users/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-docker-near-miss","absolutePath":"/Users/alex/Library/Containers/com.docker.helper/Data","homeDirectory":"/Users/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-ollama-non-model","absolutePath":"/Users/alex/.ollama/history","homeDirectory":"/Users/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-steam-name","absolutePath":"/Users/alex/Documents/Steam Projects/item","homeDirectory":"/Users/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-cloud-name","absolutePath":"/Users/alex/Documents/CloudStorage Notes/item","homeDirectory":"/Users/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-snapshot-name-only","absolutePath":"/Users/alex/Snapshots/local","homeDirectory":"/Users/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-unrelated","absolutePath":"/Users/alex/Documents/Research/data","homeDirectory":"/Users/alex","expectedUnknown":"no_matching_rule"}
+  ]
+}

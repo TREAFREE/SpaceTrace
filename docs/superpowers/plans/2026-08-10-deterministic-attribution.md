@@ -142,19 +142,19 @@ Commit: `实现版本化分类规则与冲突降级`
 - Built-in catalog version `1` covers exact evidence for Xcode/Simulator, Docker/local VM, AI model/cache, creative cache/render, games, generic logs/caches, local cloud data, and explicit snapshot-factor context.
 - Fixture evaluator reports known precision overall/per category and ambiguity-to-Unknown accuracy. It fails closed on malformed fixtures and never logs input paths.
 
-- [ ] **Step 1: Add a failing versioned fixture suite**
+- [x] **Step 1: Add a failing versioned fixture suite**
 
 Commit independent expected outputs for positives, near-miss negatives, overlapping specific/generic paths, renamed-home paths, cloud placeholders, and explicit/no-explicit snapshot evidence.
 
-- [ ] **Step 2: Confirm built-in rules and evaluator are missing**
+- [x] **Step 2: Confirm built-in rules and evaluator are missing**
 
 Run: `swift test --package-path Packages/SpaceTraceKit --filter AttributionFixtureCorpusTests`.
 
-- [ ] **Step 3: Implement reviewed built-in rules and metrics**
+- [x] **Step 3: Implement reviewed built-in rules and metrics**
 
 Generic rules use lower priority than product-specific rules. Snapshot rules match context only. The evaluator exposes counts and ratios; release gating thresholds remain documented and explicit.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run the complete attribution suite, `make verify`, and `git diff --check`.
 

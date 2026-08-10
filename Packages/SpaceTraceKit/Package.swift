@@ -106,7 +106,8 @@ let package = Package(
             dependencies: [
                 "SpaceTraceAttribution",
                 "SpaceTraceDomain",
-            ]
+            ],
+            resources: [.copy("Fixtures")]
         ),
         .testTarget(
             name: "SpaceTraceApplicationTests",

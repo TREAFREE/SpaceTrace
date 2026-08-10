@@ -2,17 +2,22 @@
 
 set -euo pipefail
 
-readonly domain_directory="Packages/SpaceTraceKit/Sources/SpaceTraceDomain"
 readonly forbidden_imports='^(import|@_exported import)[[:space:]]+(AppKit|CoreServices|DiskArbitration|GRDB|SQLite3|SwiftUI)([[:space:]]|$)'
+readonly core_directories=(
+    "Packages/SpaceTraceKit/Sources/SpaceTraceDomain"
+    "Packages/SpaceTraceKit/Sources/SpaceTraceAttribution"
+)
 
-if [[ ! -d "${domain_directory}" ]]; then
-    print -u2 "Missing domain source directory: ${domain_directory}"
-    exit 1
-fi
+for core_directory in "${core_directories[@]}"; do
+    if [[ ! -d "${core_directory}" ]]; then
+        print -u2 "Missing core source directory: ${core_directory}"
+        exit 1
+    fi
 
-if rg --line-number "${forbidden_imports}" "${domain_directory}"; then
-    print -u2 "SpaceTraceDomain contains a forbidden platform or persistence import."
-    exit 1
-fi
+    if rg --line-number "${forbidden_imports}" "${core_directory}"; then
+        print -u2 "Core module contains a forbidden platform or persistence import: ${core_directory}"
+        exit 1
+    fi
+done
 
 print "Architecture boundaries are valid."

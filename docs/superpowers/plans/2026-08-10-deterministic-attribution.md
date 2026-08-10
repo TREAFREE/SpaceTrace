@@ -39,7 +39,6 @@
 ### Task 1: Establish Durable Attribution Contracts
 
 **Files:**
-- Modify: `Packages/SpaceTraceKit/Package.swift`
 - Create: `Packages/SpaceTraceKit/Sources/SpaceTraceDomain/Attribution.swift`
 - Create: `Packages/SpaceTraceKit/Tests/SpaceTraceDomainTests/AttributionTests.swift`
 
@@ -71,6 +70,7 @@ Commit: `建立确定性分类领域契约`
 
 **Files:**
 - Modify: `Packages/SpaceTraceKit/Package.swift`
+- Modify: `Scripts/check-architecture.sh`
 - Create: `Packages/SpaceTraceKit/Sources/SpaceTraceAttribution/AttributionInput.swift`
 - Create: `Packages/SpaceTraceKit/Tests/SpaceTraceAttributionTests/AttributionInputTests.swift`
 
@@ -78,21 +78,21 @@ Commit: `建立确定性分类领域契约`
 - `AttributionInput.init(absolutePath:homeDirectory:bundleIdentifier:volumeContext:)` validates and lexically decomposes paths.
 - Produces absolute components plus optional home-relative components; repeated separators and `.` are normalized, while `..`, relative paths, and invalid home containment are rejected.
 
-- [ ] **Step 1: Write failing normalization tests**
+- [x] **Step 1: Write failing normalization tests**
 
 Cover root paths, repeated separators, component-boundary home matching, renamed home directories, Unicode preservation, relative paths, and traversal rejection.
 
-- [ ] **Step 2: Run the focused tests and confirm the target/API is missing**
+- [x] **Step 2: Run the focused tests and confirm the target/API is missing**
 
 Run: `swift test --package-path Packages/SpaceTraceKit --filter AttributionInputTests`
 
 Expected: FAIL because `SpaceTraceAttribution` and `AttributionInput` do not exist.
 
-- [ ] **Step 3: Implement lexical normalization and explicit context**
+- [x] **Step 3: Implement lexical normalization and explicit context**
 
 Add `AttributionVolumeContext` with an explicit snapshot-factor observation flag. Do not resolve symlinks, access the filesystem, or infer a volume from a path.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run focused tests, architecture checks, `make verify`, and `git diff --check`.
 

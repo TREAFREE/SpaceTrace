@@ -12,6 +12,7 @@ let package = Package(
             name: "SpaceTraceKit",
             targets: [
                 "SpaceTraceDomain",
+                "SpaceTraceAttribution",
                 "SpaceTraceApplication",
                 "SpaceTraceFileSystem",
                 "SpaceTracePersistence",
@@ -34,6 +35,10 @@ let package = Package(
     ],
     targets: [
         .target(name: "SpaceTraceDomain"),
+        .target(
+            name: "SpaceTraceAttribution",
+            dependencies: ["SpaceTraceDomain"]
+        ),
         .target(
             name: "SpaceTraceApplication",
             dependencies: ["SpaceTraceDomain"]
@@ -95,6 +100,13 @@ let package = Package(
         .testTarget(
             name: "SpaceTraceDomainTests",
             dependencies: ["SpaceTraceDomain"]
+        ),
+        .testTarget(
+            name: "SpaceTraceAttributionTests",
+            dependencies: [
+                "SpaceTraceAttribution",
+                "SpaceTraceDomain",
+            ]
         ),
         .testTarget(
             name: "SpaceTraceApplicationTests",

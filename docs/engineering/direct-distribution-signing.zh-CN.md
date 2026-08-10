@@ -2,13 +2,15 @@
 
 状态：**发布前策略；尚未完成公开分发资格验证**
 
-最近更新：2026-07-20
+最近更新：2026-08-10
 
 英文事实源：[direct-distribution-signing.md](direct-distribution-signing.md)。本文是便于中文阅读的对应译文；如两者存在差异，以英文文档为工程事实源，并应在同一次变更中修正译文。
 
 ## 当前决定
 
 在维护者尚未购买 Apple Developer Program 会员期间，SpaceTrace 可以向人数较少、明确互相信任的测试者提供 ad-hoc 签名 DMG。它属于测试渠道，不是已经获得 Gatekeeper 信任的公开发行版。
+
+可执行的打包契约与安装/替换矩阵记录在 [ad-hoc Release Candidate 检查清单](release-candidate-checklist.zh-CN.md) 中。生成这些产物本身并不等于获得创建 GitHub Release 的授权。
 
 把文件放到 GitHub 并不会让 macOS 识别开发者。用户尝试打开 App 后，通常可以进入**系统设置 > 隐私与安全性 > 仍要打开**，手动绕过“未知开发者/未公证”警告。Apple 明确提醒这种绕过会失去一层重要保护，因此 SpaceTrace 不能把它描述成普通“验证”，更不能说它等同于 notarization（公证）。
 

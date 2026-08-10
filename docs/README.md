@@ -32,9 +32,10 @@ This directory is the durable source of truth for product, architecture, enginee
 16. [Directory History Application Layer and Overview](engineering/directory-history-overview.md) · [中文](engineering/directory-history-overview.zh-CN.md)
 17. [Startup Volume History and Storage Reconciliation](engineering/startup-volume-history-and-reconciliation.md) · [中文](engineering/startup-volume-history-and-reconciliation.zh-CN.md)
 18. [Direct DMG Distribution and Code Signing](engineering/direct-distribution-signing.md) · [中文](engineering/direct-distribution-signing.zh-CN.md)
-19. [Background Storage Sampling Lifecycle and Menu Bar](engineering/background-storage-sampling-lifecycle.md) · [中文](engineering/background-storage-sampling-lifecycle.zh-CN.md)
-20. [Background Soak Qualification](engineering/background-soak-qualification.md) · [中文](engineering/background-soak-qualification.zh-CN.md)
-21. [Contributing](../CONTRIBUTING.md)
+19. [Ad-hoc Release Candidate Checklist](engineering/release-candidate-checklist.md) · [中文](engineering/release-candidate-checklist.zh-CN.md)
+20. [Background Storage Sampling Lifecycle and Menu Bar](engineering/background-storage-sampling-lifecycle.md) · [中文](engineering/background-storage-sampling-lifecycle.zh-CN.md)
+21. [Background Soak Qualification](engineering/background-soak-qualification.md) · [中文](engineering/background-soak-qualification.zh-CN.md)
+22. [Contributing](../CONTRIBUTING.md)
 
 ### Product evidence
 

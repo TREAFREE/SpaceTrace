@@ -35,6 +35,7 @@ The MVP does **not** promise exact process attribution, reproduce Apple's System
 | Startup-volume history and reconciliation | [Engineering contract](docs/engineering/startup-volume-history-and-reconciliation.md) · [中文](docs/engineering/startup-volume-history-and-reconciliation.zh-CN.md) |
 | Background sampling lifecycle and menu bar | [Engineering contract](docs/engineering/background-storage-sampling-lifecycle.md) · [中文](docs/engineering/background-storage-sampling-lifecycle.zh-CN.md) |
 | Background 24-hour soak qualification | [Qualification protocol](docs/engineering/background-soak-qualification.md) · [中文](docs/engineering/background-soak-qualification.zh-CN.md) |
+| Ad-hoc release candidate packaging | [Checklist](docs/engineering/release-candidate-checklist.md) · [中文](docs/engineering/release-candidate-checklist.zh-CN.md) |
 | FSEvents continuity qualification | [Protocol](docs/engineering/fsevents-continuity-qualification.md) · [中文](docs/engineering/fsevents-continuity-qualification.zh-CN.md) |
 | Scan scheduling lifecycle | [Engineering contract](docs/engineering/scan-scheduling-lifecycle.md) · [中文](docs/engineering/scan-scheduling-lifecycle.zh-CN.md) |
 | Privacy and threat model | [Privacy and Security](docs/security/privacy-and-security.md) |

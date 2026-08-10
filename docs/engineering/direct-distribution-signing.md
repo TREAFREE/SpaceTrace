@@ -2,13 +2,15 @@
 
 Status: **Pre-release policy; public distribution is not yet qualified**
 
-Last updated: 2026-07-20
+Last updated: 2026-08-10
 
 Chinese companion translation: [direct-distribution-signing.zh-CN.md](direct-distribution-signing.zh-CN.md). This English document remains the engineering source of truth.
 
 ## Current decision
 
 SpaceTrace may use an ad-hoc-signed DMG for a small, explicitly trusted tester group while the maintainer has no paid Apple Developer Program membership. This is a testing channel, not a Gatekeeper-trusted public release.
+
+The executable packaging contract and install/replacement matrix are maintained in the [ad-hoc release candidate checklist](release-candidate-checklist.md). Creating those artifacts does not itself authorize a GitHub Release.
 
 GitHub hosting does not identify the developer to macOS. A user can usually override the unidentified/not-notarized warning after attempting to open the app by using **System Settings > Privacy & Security > Open Anyway**. Apple warns that this bypass removes an important protection, so SpaceTrace must never describe the flow as normal verification or as equivalent to notarization.
 

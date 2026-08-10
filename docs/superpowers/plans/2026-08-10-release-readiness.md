@@ -150,9 +150,12 @@ Commit: `补齐界面与无障碍资格验证`
 
 **Files:**
 - Create: `Scripts/package-release-candidate.sh`
+- Create: `Scripts/test-release-candidate-packaging.sh`
+- Create: `Scripts/qualify-release-candidate.sh`
 - Create: `docs/engineering/release-candidate-checklist.md`
 - Create: `docs/engineering/release-candidate-checklist.zh-CN.md`
 - Modify: `Makefile`
+- Modify: `SpaceTrace.xcodeproj/project.pbxproj`
 - Modify: `README.md`
 - Modify: `docs/README.md`
 - Modify: `docs/engineering/direct-distribution-signing.md`

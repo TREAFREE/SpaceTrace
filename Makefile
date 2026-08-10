@@ -6,7 +6,7 @@ DESTINATION := platform=macOS,arch=arm64
 PACKAGE_PATH := Packages/SpaceTraceKit
 DERIVED_DATA_ROOT := build/DerivedData
 
-.PHONY: verify hygiene architecture-check package-test package-concurrency-audit package-background-lifecycle-qualification package-background-soak-qualification package-apfs-image-qualification persistence-benchmark xcode-list app-build-debug app-test-unit app-test-ui app-build-release
+.PHONY: verify hygiene architecture-check package-test package-concurrency-audit package-background-lifecycle-qualification package-background-soak-qualification package-apfs-image-qualification persistence-benchmark package-release-candidate package-release-candidate-test qualify-release-candidate xcode-list app-build-debug app-test-unit app-test-ui app-build-release
 
 verify: hygiene architecture-check package-test package-concurrency-audit xcode-list app-build-debug app-test-unit app-build-release
 
@@ -41,6 +41,20 @@ package-apfs-image-qualification:
 persistence-benchmark:
 	swift run --package-path "$(PACKAGE_PATH)" -c release SpaceTracePersistenceBenchmark 500000
 	swift run --package-path "$(PACKAGE_PATH)" -c release SpaceTracePersistenceBenchmark 1000000
+
+package-release-candidate:
+	@test -n "$(VERSION)" || (echo "VERSION is required" >&2; exit 64)
+	@test -n "$(OUTPUT)" || (echo "OUTPUT is required" >&2; exit 64)
+	./Scripts/package-release-candidate.sh --version "$(VERSION)" --output "$(OUTPUT)"
+
+package-release-candidate-test:
+	@test -n "$(VERSION)" || (echo "VERSION is required" >&2; exit 64)
+	./Scripts/test-release-candidate-packaging.sh "$(VERSION)"
+
+qualify-release-candidate:
+	@test -n "$(PRIMARY_APP)" || (echo "PRIMARY_APP is required" >&2; exit 64)
+	@test -n "$(REPLACEMENT_APP)" || (echo "REPLACEMENT_APP is required" >&2; exit 64)
+	./Scripts/qualify-release-candidate.sh --primary "$(PRIMARY_APP)" --replacement "$(REPLACEMENT_APP)"
 
 xcode-list:
 	xcodebuild -list -project "$(PROJECT)" -clonedSourcePackagesDirPath "$(DERIVED_DATA_ROOT)/SourcePackages"

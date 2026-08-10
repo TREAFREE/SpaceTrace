@@ -487,7 +487,12 @@ The UI must let users switch metric or clearly label it; metrics are never added
 
 - A cursor advances only with durable dirty work covering every event in that batch.
 - A `completed` scan has a terminal coverage report and no unfinalized stage rows.
-- Observations are comparable only when scope identity, metric, path semantics, classifier schema, and required coverage match.
+- Observations are comparable only when scope identity, persistent volume,
+  mount generation, coverage epoch, metric, path semantics, measurement
+  semantics, subject identity, and required coverage match, and their durable
+  commit sequences are strictly ordered. Classifier catalog/rule versions do
+  not change byte-measurement compatibility; classification is frozen only
+  after a compatible change exists.
 - Missing nodes become deleted only under complete parent coverage for the same mount generation.
 - `allocatedDelta`, `logicalDelta`, and `volumeAvailableDelta` are different value types and cannot be added accidentally.
 - Startup-volume samples are ordered by a database-generated monotonic
@@ -495,8 +500,15 @@ The UI must let users switch metric or clearly label it; metrics are never added
 - Startup-volume loss is reconciled only against allocated-size net growth
   from topmost authorized roots on the same known volume. Missing directory
   evidence remains unknown rather than becoming zero.
-- A finding references source observation IDs and classifier version; recomputation cannot silently rewrite historical wording.
+- A finding references immutable source observation IDs, finding/ranking
+  algorithm versions, and frozen catalog/rule evidence. Reconciliation or
+  explicit recomputation appends a superseding record; it cannot silently
+  update historical wording.
 - Confidence can decrease as new gaps are discovered; it cannot increase without new evidence.
+
+The complete endpoint, explicit-absence, move-proof, exclusive-contribution,
+stable-ordering, supersession, and schema-v11 obligations are specified in
+[ADR-006](decisions/ADR-006-immutable-observations-and-findings.md).
 
 ### 12.3 Attribution confidence
 

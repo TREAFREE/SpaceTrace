@@ -29,4 +29,19 @@ struct ObservationIdentityTests {
 
         #expect(instant.millisecondsSince1970 == value)
     }
+
+    @Test("Opaque scope and subject identities use exact UTF-8 bytes")
+    func identitiesDoNotFoldCanonicalUnicodeEquivalents() throws {
+        let composed = "\u{00E9}"
+        let decomposed = "e\u{0301}"
+        let composedScope = try ScopeID(composed)
+        let decomposedScope = try ScopeID(decomposed)
+        let composedSubject = try SubjectID(composed)
+        let decomposedSubject = try SubjectID(decomposed)
+
+        #expect(composedScope != decomposedScope)
+        #expect(Set([composedScope, decomposedScope]).count == 2)
+        #expect(composedSubject != decomposedSubject)
+        #expect(Set([composedSubject, decomposedSubject]).count == 2)
+    }
 }

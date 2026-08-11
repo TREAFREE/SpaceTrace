@@ -6,7 +6,17 @@ public struct ObservationEndpointID: Sendable, Equatable, Hashable, Codable, Com
         self.rawValue = rawValue
     }
 
-    public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        observationEvidenceBytesEqual(lhs.rawValue, rhs.rawValue)
+    }
+
+    public static func < (lhs: Self, rhs: Self) -> Bool {
+        observationEvidenceBytesPrecede(lhs.rawValue, rhs.rawValue)
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hashObservationEvidenceBytes(rawValue, into: &hasher)
+    }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -34,7 +44,17 @@ public struct ObservationVolumeID: Sendable, Equatable, Hashable, Codable, Compa
         self.rawValue = rawValue
     }
 
-    public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        observationEvidenceBytesEqual(lhs.rawValue, rhs.rawValue)
+    }
+
+    public static func < (lhs: Self, rhs: Self) -> Bool {
+        observationEvidenceBytesPrecede(lhs.rawValue, rhs.rawValue)
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hashObservationEvidenceBytes(rawValue, into: &hasher)
+    }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -62,7 +82,17 @@ public struct ObservationMountGenerationID: Sendable, Equatable, Hashable, Codab
         self.rawValue = rawValue
     }
 
-    public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        observationEvidenceBytesEqual(lhs.rawValue, rhs.rawValue)
+    }
+
+    public static func < (lhs: Self, rhs: Self) -> Bool {
+        observationEvidenceBytesPrecede(lhs.rawValue, rhs.rawValue)
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hashObservationEvidenceBytes(rawValue, into: &hasher)
+    }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -90,7 +120,17 @@ public struct ObservationCoverageEpochID: Sendable, Equatable, Hashable, Codable
         self.rawValue = rawValue
     }
 
-    public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        observationEvidenceBytesEqual(lhs.rawValue, rhs.rawValue)
+    }
+
+    public static func < (lhs: Self, rhs: Self) -> Bool {
+        observationEvidenceBytesPrecede(lhs.rawValue, rhs.rawValue)
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hashObservationEvidenceBytes(rawValue, into: &hasher)
+    }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -118,7 +158,17 @@ public struct ObservationLocationID: Sendable, Equatable, Hashable, Codable, Com
         self.rawValue = rawValue
     }
 
-    public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        observationEvidenceBytesEqual(lhs.rawValue, rhs.rawValue)
+    }
+
+    public static func < (lhs: Self, rhs: Self) -> Bool {
+        observationEvidenceBytesPrecede(lhs.rawValue, rhs.rawValue)
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hashObservationEvidenceBytes(rawValue, into: &hasher)
+    }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -217,6 +267,27 @@ public struct ParentAbsenceReference: Sendable, Equatable, Hashable, Codable {
         self.parentEndpointID = parentEndpointID
         self.parentSubjectID = parentSubjectID
     }
+
+    public init(from decoder: any Decoder) throws {
+        try rejectUnknownObservationEndpointKeys(
+            in: decoder,
+            allowed: ["parentEndpointID", "parentSubjectID"],
+            typeName: "ParentAbsenceReference"
+        )
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            parentEndpointID: try container.decode(
+                ObservationEndpointID.self,
+                forKey: .parentEndpointID
+            ),
+            parentSubjectID: try container.decode(SubjectID.self, forKey: .parentSubjectID)
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case parentEndpointID
+        case parentSubjectID
+    }
 }
 
 public enum ObservationUnavailabilityReason: String, Sendable, Equatable, Hashable, Codable {
@@ -232,6 +303,106 @@ public enum ObservationEndpointState: Sendable, Equatable, Hashable, Codable {
     case present(bytes: ByteCount, coverage: ObservationCoverage)
     case absent(ParentAbsenceReference)
     case unknown(ObservationUnavailabilityReason)
+
+    public init(from decoder: any Decoder) throws {
+        try rejectUnknownObservationEndpointKeys(
+            in: decoder,
+            allowed: ["kind", "bytes", "coverage", "parent", "reason"],
+            typeName: "ObservationEndpointState"
+        )
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(Kind.self, forKey: .kind) {
+        case .present:
+            guard container.contains(.parent) == false,
+                  container.contains(.reason) == false
+            else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .kind,
+                    in: container,
+                    debugDescription: "A present endpoint state cannot contain absence or unknown evidence."
+                )
+            }
+            let coverage = try container.decode(ObservationCoverage.self, forKey: .coverage)
+            guard coverage != .unknown else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .coverage,
+                    in: container,
+                    debugDescription: "A present endpoint state cannot use unknown coverage."
+                )
+            }
+            self = .present(
+                bytes: try container.decode(ByteCount.self, forKey: .bytes),
+                coverage: coverage
+            )
+        case .absent:
+            guard container.contains(.bytes) == false,
+                  container.contains(.coverage) == false,
+                  container.contains(.reason) == false
+            else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .kind,
+                    in: container,
+                    debugDescription: "An absent endpoint state can contain only parent evidence."
+                )
+            }
+            self = .absent(
+                try container.decode(ParentAbsenceReference.self, forKey: .parent)
+            )
+        case .unknown:
+            guard container.contains(.bytes) == false,
+                  container.contains(.coverage) == false,
+                  container.contains(.parent) == false
+            else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .kind,
+                    in: container,
+                    debugDescription: "An unknown endpoint state can contain only an unavailability reason."
+                )
+            }
+            self = .unknown(
+                try container.decode(ObservationUnavailabilityReason.self, forKey: .reason)
+            )
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case let .present(bytes, coverage):
+            guard coverage != .unknown else {
+                throw EncodingError.invalidValue(
+                    self,
+                    EncodingError.Context(
+                        codingPath: encoder.codingPath,
+                        debugDescription: "A present endpoint state cannot use unknown coverage."
+                    )
+                )
+            }
+            try container.encode(Kind.present, forKey: .kind)
+            try container.encode(bytes, forKey: .bytes)
+            try container.encode(coverage, forKey: .coverage)
+        case .absent(let parent):
+            try container.encode(Kind.absent, forKey: .kind)
+            try container.encode(parent, forKey: .parent)
+        case .unknown(let reason):
+            try container.encode(Kind.unknown, forKey: .kind)
+            try container.encode(reason, forKey: .reason)
+        }
+    }
+
+    private enum Kind: String, Codable {
+        case present
+        case absent
+        case unknown
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case bytes
+        case coverage
+        case parent
+        case reason
+    }
 }
 
 /// One immutable, append-only endpoint used as source evidence for a storage
@@ -293,6 +464,26 @@ public struct ObservationEndpoint: Sendable, Equatable, Hashable, Codable {
     }
 
     public init(from decoder: any Decoder) throws {
+        try rejectUnknownObservationEndpointKeys(
+            in: decoder,
+            allowed: [
+                "id",
+                "scopeID",
+                "volumeID",
+                "mountGenerationID",
+                "coverageEpochID",
+                "subjectID",
+                "identityBasis",
+                "locationID",
+                "metric",
+                "pathSemanticsVersion",
+                "measurementSemanticsVersion",
+                "sequence",
+                "observedAt",
+                "state",
+            ],
+            typeName: "ObservationEndpoint"
+        )
         let container = try decoder.container(keyedBy: CodingKeys.self)
         do {
             try self.init(
@@ -320,6 +511,24 @@ public struct ObservationEndpoint: Sendable, Equatable, Hashable, Codable {
                 debugDescription: "Observation endpoint state is inconsistent."
             )
         }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(scopeID, forKey: .scopeID)
+        try container.encode(volumeID, forKey: .volumeID)
+        try container.encode(mountGenerationID, forKey: .mountGenerationID)
+        try container.encode(coverageEpochID, forKey: .coverageEpochID)
+        try container.encode(subjectID, forKey: .subjectID)
+        try container.encode(identityBasis, forKey: .identityBasis)
+        try container.encode(locationID, forKey: .locationID)
+        try container.encode(metric, forKey: .metric)
+        try container.encode(pathSemanticsVersion, forKey: .pathSemanticsVersion)
+        try container.encode(measurementSemanticsVersion, forKey: .measurementSemanticsVersion)
+        try container.encode(sequence, forKey: .sequence)
+        try container.encode(observedAt, forKey: .observedAt)
+        try container.encode(state, forKey: .state)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -358,4 +567,54 @@ private func isValidObservationEvidenceKey(_ value: String) -> Bool {
         && value.utf8.contains(0) == false
         && value.first?.isWhitespace == false
         && value.last?.isWhitespace == false
+}
+
+private func observationEvidenceBytesEqual(_ lhs: String, _ rhs: String) -> Bool {
+    lhs.utf8.elementsEqual(rhs.utf8)
+}
+
+private func observationEvidenceBytesPrecede(_ lhs: String, _ rhs: String) -> Bool {
+    lhs.utf8.lexicographicallyPrecedes(rhs.utf8)
+}
+
+private func hashObservationEvidenceBytes(_ value: String, into hasher: inout Hasher) {
+    hasher.combine(value.utf8.count)
+    for byte in value.utf8 {
+        hasher.combine(byte)
+    }
+}
+
+private func rejectUnknownObservationEndpointKeys(
+    in decoder: any Decoder,
+    allowed: Set<String>,
+    typeName: String
+) throws {
+    let container = try decoder.container(keyedBy: ObservationEndpointDynamicCodingKey.self)
+    guard let unknownKey = container.allKeys.first(
+        where: { allowed.contains($0.stringValue) == false }
+    ) else {
+        return
+    }
+
+    throw DecodingError.dataCorrupted(
+        DecodingError.Context(
+            codingPath: decoder.codingPath + [unknownKey],
+            debugDescription: "\(typeName) contains an unknown durable field."
+        )
+    )
+}
+
+private struct ObservationEndpointDynamicCodingKey: CodingKey {
+    let stringValue: String
+    let intValue: Int?
+
+    init?(stringValue: String) {
+        self.stringValue = stringValue
+        intValue = nil
+    }
+
+    init?(intValue: Int) {
+        stringValue = String(intValue)
+        self.intValue = intValue
+    }
 }

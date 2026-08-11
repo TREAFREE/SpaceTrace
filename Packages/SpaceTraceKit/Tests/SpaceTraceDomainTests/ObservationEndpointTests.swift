@@ -63,6 +63,29 @@ struct ObservationEndpointTests {
         }
     }
 
+    @Test("Opaque endpoint evidence keys use exact UTF-8 identity and ordering")
+    func evidenceKeysDoNotFoldCanonicalUnicodeEquivalents() throws {
+        let composed = "\u{00E9}"
+        let decomposed = "e\u{0301}"
+
+        let composedEndpoint = try ObservationEndpointID(composed)
+        let decomposedEndpoint = try ObservationEndpointID(decomposed)
+        #expect(composedEndpoint != decomposedEndpoint)
+        #expect(Set([composedEndpoint, decomposedEndpoint]).count == 2)
+        #expect(decomposedEndpoint < composedEndpoint)
+
+        #expect(try ObservationVolumeID(composed) != ObservationVolumeID(decomposed))
+        #expect(
+            try ObservationMountGenerationID(composed)
+                != ObservationMountGenerationID(decomposed)
+        )
+        #expect(
+            try ObservationCoverageEpochID(composed)
+                != ObservationCoverageEpochID(decomposed)
+        )
+        #expect(try ObservationLocationID(composed) != ObservationLocationID(decomposed))
+    }
+
     @Test("Commit sequences and semantics versions are strictly positive")
     func rejectsNonPositiveCounters() {
         for value in [Int64.min, -1, 0] {
@@ -144,6 +167,90 @@ struct ObservationEndpointTests {
             )
         }
     }
+
+    @Test("Endpoint state uses an exact discriminated wire format")
+    func endpointStateWireFormatIsExact() throws {
+        let present = ObservationEndpointState.present(
+            bytes: try ByteCount(8_192),
+            coverage: .complete
+        )
+        let absent = ObservationEndpointState.absent(
+            ParentAbsenceReference(
+                parentEndpointID: try ObservationEndpointID("parent-endpoint"),
+                parentSubjectID: try SubjectID("parent-subject")
+            )
+        )
+        let unknown = ObservationEndpointState.unknown(.continuityGap)
+
+        try expectEquivalentJSON(
+            JSONEncoder().encode(present),
+            #"{"kind":"present","bytes":8192,"coverage":"complete"}"#
+        )
+        try expectEquivalentJSON(
+            JSONEncoder().encode(absent),
+            #"{"kind":"absent","parent":{"parentEndpointID":"parent-endpoint","parentSubjectID":"parent-subject"}}"#
+        )
+        try expectEquivalentJSON(
+            JSONEncoder().encode(unknown),
+            #"{"kind":"unknown","reason":"continuity_gap"}"#
+        )
+
+        for state in [present, absent, unknown] {
+            #expect(
+                try JSONDecoder().decode(
+                    ObservationEndpointState.self,
+                    from: JSONEncoder().encode(state)
+                ) == state
+            )
+        }
+    }
+
+    @Test("Endpoint evidence rejects unknown and contradictory durable fields")
+    func endpointEvidenceRejectsUnknownAndContradictoryFields() throws {
+        let endpoint = try makeEndpoint(
+            state: .present(bytes: ByteCount(8_192), coverage: .complete)
+        )
+        let encodedEndpoint = try JSONEncoder().encode(endpoint)
+        var endpointObject = try #require(
+            JSONSerialization.jsonObject(with: encodedEndpoint) as? [String: Any]
+        )
+        endpointObject["future"] = true
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(
+                ObservationEndpoint.self,
+                from: JSONSerialization.data(withJSONObject: endpointObject)
+            )
+        }
+
+        let maliciousStates = [
+            #"{"kind":"present","bytes":1,"coverage":"complete","reason":"permission_denied"}"#,
+            #"{"kind":"absent","parent":{"parentEndpointID":"parent","parentSubjectID":"parent-subject"},"bytes":1}"#,
+            #"{"kind":"unknown","reason":"continuity_gap","coverage":"complete"}"#,
+            #"{"kind":"unknown","reason":"continuity_gap","future":true}"#,
+        ]
+        for payload in maliciousStates {
+            #expect(throws: DecodingError.self) {
+                try JSONDecoder().decode(
+                    ObservationEndpointState.self,
+                    from: Data(payload.utf8)
+                )
+            }
+        }
+
+        let parentWithUnknownField = #"{"parentEndpointID":"parent","parentSubjectID":"parent-subject","future":true}"#
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(
+                ParentAbsenceReference.self,
+                from: Data(parentWithUnknownField.utf8)
+            )
+        }
+    }
+}
+
+private func expectEquivalentJSON(_ actual: Data, _ expected: String) throws {
+    let actualObject = try JSONSerialization.jsonObject(with: actual) as? NSDictionary
+    let expectedObject = try JSONSerialization.jsonObject(with: Data(expected.utf8)) as? NSDictionary
+    #expect(actualObject == expectedObject)
 }
 
 private func makeEndpoint(

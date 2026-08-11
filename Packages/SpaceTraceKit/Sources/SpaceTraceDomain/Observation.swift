@@ -188,6 +188,38 @@ public enum StorageDelta: Sendable, Equatable, Hashable, Codable {
         }
     }
 
+    public init(from decoder: any Decoder) throws {
+        try rejectUnknownStorageDeltaKeys(in: decoder)
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let bytes = try container.decode(Int64.self, forKey: .bytes)
+
+        switch try container.decode(Kind.self, forKey: .kind) {
+        case .logical:
+            self = .logical(bytes: bytes)
+        case .allocated:
+            self = .allocated(bytes: bytes)
+        case .volumeAvailable:
+            self = .volumeAvailable(bytes: bytes)
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(bytes, forKey: .bytes)
+    }
+
+    private var kind: Kind {
+        switch self {
+        case .logical:
+            .logical
+        case .allocated:
+            .allocated
+        case .volumeAvailable:
+            .volumeAvailable
+        }
+    }
+
     init(metric: StorageMetric, bytes: Int64) {
         switch metric {
         case .logical:
@@ -197,5 +229,48 @@ public enum StorageDelta: Sendable, Equatable, Hashable, Codable {
         case .volumeAvailable:
             self = .volumeAvailable(bytes: bytes)
         }
+    }
+
+    private enum Kind: String, Codable {
+        case logical
+        case allocated
+        case volumeAvailable = "volume_available"
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case bytes
+    }
+}
+
+private func rejectUnknownStorageDeltaKeys(in decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: StorageDeltaDynamicCodingKey.self)
+    let allowedKeys: Set<String> = ["kind", "bytes"]
+    guard let unknownKey = container.allKeys.first(
+        where: { allowedKeys.contains($0.stringValue) == false }
+    ) else {
+        return
+    }
+
+    throw DecodingError.dataCorrupted(
+        DecodingError.Context(
+            codingPath: decoder.codingPath + [unknownKey],
+            debugDescription: "StorageDelta contains an unknown durable field."
+        )
+    )
+}
+
+private struct StorageDeltaDynamicCodingKey: CodingKey {
+    let stringValue: String
+    let intValue: Int?
+
+    init?(stringValue: String) {
+        self.stringValue = stringValue
+        intValue = nil
+    }
+
+    init?(intValue: Int) {
+        stringValue = String(intValue)
+        self.intValue = intValue
     }
 }

@@ -1,7 +1,84 @@
+import Foundation
 import Testing
 @testable import SpaceTraceDomain
 
 struct ObservationTests {
+    @Test(
+        "Storage deltas use a stable discriminated wire format",
+        arguments: [
+            StorageDeltaWireCase(
+                value: .logical(bytes: 42),
+                expectedJSON: #"{"bytes":42,"kind":"logical"}"#
+            ),
+            StorageDeltaWireCase(
+                value: .allocated(bytes: -7),
+                expectedJSON: #"{"bytes":-7,"kind":"allocated"}"#
+            ),
+            StorageDeltaWireCase(
+                value: .volumeAvailable(bytes: 0),
+                expectedJSON: #"{"bytes":0,"kind":"volume_available"}"#
+            ),
+        ]
+    )
+    func storageDeltaWireFormatIsStable(testCase: StorageDeltaWireCase) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+
+        let encoded = try encoder.encode(testCase.value)
+
+        #expect(String(decoding: encoded, as: UTF8.self) == testCase.expectedJSON)
+    }
+
+    @Test(
+        "All storage delta cases round trip through the durable wire format",
+        arguments: [
+            StorageDelta.logical(bytes: .max),
+            .allocated(bytes: .min),
+            .volumeAvailable(bytes: 0),
+        ]
+    )
+    func storageDeltaCasesRoundTrip(value: StorageDelta) throws {
+        let encoded = try JSONEncoder().encode(value)
+
+        let decoded = try JSONDecoder().decode(StorageDelta.self, from: encoded)
+
+        #expect(decoded == value)
+    }
+
+    @Test(
+        "Storage deltas reject unknown and contradictory durable fields",
+        arguments: [
+            #"{"kind":"logical","bytes":1,"future":true}"#,
+            #"{"kind":"logical","bytes":1,"allocated":{"bytes":1}}"#,
+            #"{"kind":"allocated","bytes":1,"metric":"logical"}"#,
+            #"{"kind":"volume_available","bytes":1,"volumeAvailable":{"bytes":1}}"#,
+        ]
+    )
+    func storageDeltaRejectsUnknownAndContradictoryFields(payload: String) {
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(StorageDelta.self, from: Data(payload.utf8))
+        }
+    }
+
+    @Test(
+        "Storage deltas reject missing fields, unknown kinds, and legacy enum payloads",
+        arguments: [
+            #"{"bytes":1}"#,
+            #"{"kind":"logical"}"#,
+            #"{}"#,
+            #"{"kind":"future_metric","bytes":1}"#,
+            #"{"kind":"volumeAvailable","bytes":1}"#,
+            #"{"kind":"logical","bytes":null}"#,
+            #"{"kind":"logical","bytes":1.5}"#,
+            #"{"logical":{"bytes":1}}"#,
+        ]
+    )
+    func storageDeltaRejectsMalformedPayloads(payload: String) {
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(StorageDelta.self, from: Data(payload.utf8))
+        }
+    }
+
     @Test("Calculates a metric-preserving signed delta", arguments: [
         DeltaCase(metric: .logical, baseline: 10, comparison: 42, expected: 32),
         DeltaCase(metric: .allocated, baseline: 42, comparison: 10, expected: -32),
@@ -150,6 +227,15 @@ struct ObservationTests {
         #expect(throws: ObservationDeltaError.comparisonPredatesBaseline) {
             try comparison.delta(from: baseline)
         }
+    }
+}
+
+struct StorageDeltaWireCase: Sendable, CustomTestStringConvertible {
+    let value: StorageDelta
+    let expectedJSON: String
+
+    var testDescription: String {
+        expectedJSON
     }
 }
 

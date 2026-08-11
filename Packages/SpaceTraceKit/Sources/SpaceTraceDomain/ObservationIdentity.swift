@@ -9,6 +9,14 @@ public struct ScopeID: Sendable, Equatable, Hashable, Codable {
         self.rawValue = rawValue
     }
 
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        observationIdentityBytesEqual(lhs.rawValue, rhs.rawValue)
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hashObservationIdentityBytes(rawValue, into: &hasher)
+    }
+
     public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
         let rawValue = try container.decode(String.self)
@@ -38,6 +46,14 @@ public struct SubjectID: Sendable, Equatable, Hashable, Codable {
         }
 
         self.rawValue = rawValue
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        observationIdentityBytesEqual(lhs.rawValue, rhs.rawValue)
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hashObservationIdentityBytes(rawValue, into: &hasher)
     }
 
     public init(from decoder: any Decoder) throws {
@@ -104,4 +120,15 @@ public struct ObservationInstant: Sendable, Equatable, Hashable, Comparable, Cod
 
 public enum ObservationInstantError: Error, Sendable, Equatable {
     case beforeUnixEpoch(Int64)
+}
+
+private func observationIdentityBytesEqual(_ lhs: String, _ rhs: String) -> Bool {
+    lhs.utf8.elementsEqual(rhs.utf8)
+}
+
+private func hashObservationIdentityBytes(_ value: String, into hasher: inout Hasher) {
+    hasher.combine(value.utf8.count)
+    for byte in value.utf8 {
+        hasher.combine(byte)
+    }
 }

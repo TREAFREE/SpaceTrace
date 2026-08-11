@@ -41,7 +41,10 @@ let package = Package(
         ),
         .target(
             name: "SpaceTraceApplication",
-            dependencies: ["SpaceTraceDomain"]
+            dependencies: [
+                "SpaceTraceAttribution",
+                "SpaceTraceDomain",
+            ]
         ),
         .target(
             name: "SpaceTraceFileSystem",
@@ -113,6 +116,7 @@ let package = Package(
             name: "SpaceTraceApplicationTests",
             dependencies: [
                 "SpaceTraceApplication",
+                "SpaceTraceAttribution",
                 "SpaceTraceDomain",
             ]
         ),

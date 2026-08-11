@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — the pure endpoint and projection contracts may be implemented and tested, but persistence and release work must continue to treat this decision as unaccepted until the schema-v11 migration, crash recovery, retention, privacy, benchmark, and macOS 15.6 gates pass.
+Proposed — the pure endpoint and projection contracts are implemented and testable, but persistence and release work must continue to treat this decision as unaccepted until the schema-v11 migration, crash recovery, retention, privacy, benchmark, and macOS 15.6 gates pass.
 
 Date: 2026-08-11
 
@@ -10,13 +10,15 @@ Owners: SpaceTrace maintainers
 
 Related requirements: FR-004, FR-005, FR-006, FR-007, FR-008, FR-012, FR-013, NFR-001, NFR-003, NFR-006
 
+Implementation guide: [Immutable, Coverage-Aware Historical Findings](../../engineering/immutable-historical-findings.md)
+
 Supersedes: none
 
 Superseded by: none
 
 ## Context
 
-SpaceTrace already publishes current directory aggregates and lossy hourly/daily history, and it has a pure deterministic path classifier. Those surfaces are not an audit-grade finding source. The history read model does not retain immutable per-node endpoint IDs, stable directory-object identity, complete-parent absence evidence, mount generation, or every deleted endpoint. The current classifier is not connected to historical results.
+SpaceTrace already exposes current directory aggregates and lossy hourly/daily history internally, and it has a pure deterministic path classifier. Those surfaces are not an audit-grade finding source. The history read model does not retain immutable per-node endpoint IDs, stable directory-object identity, complete-parent absence evidence, mount generation, or every disappeared endpoint. The classifier can now freeze versioned decisions into the pure historical-finding projection, but that projection is not yet persisted or connected to the Overview.
 
 FSEvents reports lossy, coalesced invalidation hints. A rename flag contains neither a trusted source/destination pair nor a durable object identity. The scanner observes `st_dev` and `st_ino` only to avoid allocated-byte double counting for hard links during one scan; it does not persist that identity for directories. Therefore name, size, timestamp proximity, opposite deltas, or an FSEvents rename flag cannot establish a move.
 
@@ -100,11 +102,13 @@ The endpoint comparator may emit `relocationCandidate` after endpoint-level comp
 2. both belong to the same persistent volume and mount generation;
 3. both use the same unique stable filesystem-object identity;
 4. source and destination location IDs differ;
-5. the source and destination frames have complete relevant parent coverage;
+5. all four logical parent corners (source/destination parent × baseline/comparison frame, allowing coincident parents) have complete compatible endpoint and direct-child coverage;
 6. the identity is unique in both frames and is not hard-link/link-set ambiguous;
 7. the platform identity includes an inode-reuse guard, such as an available generation token or birth time plus node kind.
 
 Cross-volume changes are never moves. If stable identity or reuse protection is unavailable, SpaceTrace may report path appearance/disappearance or suppress the claim, but cannot pair the paths as a move. Content hashing is not introduced because it reads beyond required metadata and cannot distinguish copy from move.
+
+The watched root has no parent inside its frame, so this projection cannot satisfy the parent-coverage proof for a root relocation. Root-path replacement, remount, and volume return are handled by the watched-scope and mount-generation lifecycle; they establish a new compatible baseline or an evidence gap, not a root move finding.
 
 ### 5. Parent/child contribution and ranking
 
@@ -120,7 +124,7 @@ childFlowDelta(node)
 exclusiveDelta(node) = inclusiveDelta(node) - childFlowDelta(node)
 ```
 
-Only a positive `exclusiveDelta` is eligible for the positive-growth ranking. A top-level explicit appearance with no comparable child endpoints uses its inclusive delta once. A confirmed move, zero contribution, decrease, or disappearance is excluded from positive-growth Top 10 and may appear in a separate finding group.
+Only a `growth` draft or a top-level explicit `appearance` draft with a positive ranking contribution is eligible for the positive-growth ranking. Here, “top-level” means that the appearance is not already covered by an ancestor appearance in the same frame comparison. Growth uses a positive `exclusiveDelta`; a top-level appearance uses its positive inclusive delta exactly once while its unmatched descendants are collapsed under it. A confirmed move, zero or negative contribution, `decrease`, or `disappearance` is excluded from positive-growth Top 10 and may appear in a separate finding group. In particular, a decrease remains ineligible even if subtracting a larger negative child flow makes its computed `exclusiveDelta` positive.
 
 If a branch lacks the complete immediate-child frame needed for exclusive calculation, it is ranking-incomparable. SpaceTrace does not subtract a partial child set. Confirmed ancestor moves consume implicit descendant moves that preserve the same parent relationship; independently reparented descendants remain separate moves.
 
@@ -144,15 +148,15 @@ Every frozen decision contains the catalog version and one of:
 - `noMatchingRule`;
 - `ambiguous`: stable ordered competing rule IDs.
 
-Durable decisions use an explicit discriminated object format. Until a
-schema-versioned compatibility policy is approved, decoders reject unknown or
-contradictory fields instead of silently discarding immutable evidence.
+Durable decisions and finding-projection payloads use explicit discriminated or structurally validated formats. Version-1 decoders fail closed on unknown fields, explicit-null/non-canonical optionals, contradictory state, invalid keys, inconsistent versions or sequences, duplicate/non-canonical ordering, and ranked keys that cannot be derived from the retained drafts. Until a schema-versioned compatibility policy is approved, decoders must not silently discard or normalize immutable evidence.
 
 A rule/catalog upgrade does not rewrite an earlier finding. Explicit recomputation, if later approved, creates another versioned projection or superseding finding.
 
 ### 7. Append-only projection and persistence obligations
 
-Application code owns comparison, classification, hierarchy policy, and finding projection. Persistence stores immutable endpoints, observation frames, pending projection work, findings, and supersession links; it does not decide whether evidence means move or deletion.
+Application code owns comparison, classification, hierarchy policy, and finding projection. Persistence stores immutable endpoints, observation frames, pending projection work, findings, and supersession links; it does not decide whether evidence means move or disappearance.
+
+A finding draft references its authoritative baseline and comparison observations by endpoint ID; copied path, display, timing, coverage, and classification fields are frozen explanation evidence, not a substitute for the immutable frame ledger. The v11 persistence transaction must enforce referential integrity from every finding to both endpoint rows and their owning frames, reject orphan or cross-frame references, and retain referenced evidence for at least as long as the finding that depends on it.
 
 Schema v11 must:
 
@@ -192,6 +196,7 @@ Raw paths, display names, opaque object tokens, normalized location keys, timeli
 - ADR-003 and ADR-004 remain Proposed and require their own acceptance gates.
 - Scanner identity, SQLite v11, projector persistence, Overview/menu-bar UI, corpus expansion, export, and macOS 15.6 qualification remain separate stages.
 - An observed disappearance describes evidence at a path; it never authorizes deletion and is not a reclaimability claim.
+- Every category and finding is an explanation of observed metadata, never a deletion instruction, cleanup recommendation, or safety guarantee.
 
 ## Validation plan
 

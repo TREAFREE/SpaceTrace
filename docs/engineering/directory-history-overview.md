@@ -16,9 +16,10 @@ application-owned read port into the main Overview. The UI supports 24-hour,
 gaps, per-root logical-size series, and the ten largest positive logical-size
 changes available in the selected window.
 
-This slice deliberately does not claim full FR-005/FR-006 completion. Volume
-free-space history, classification, move/deletion findings, and menu-bar
-24-hour change remain separate work.
+This slice deliberately does not claim full FR-005/FR-006 completion. Startup-
+volume history and the pure classification/finding contracts have since been
+implemented as separate slices, but immutable schema-v11 persistence and
+Overview/menu-bar finding presentation remain open.
 
 ## Dependency and privacy boundary
 
@@ -111,12 +112,13 @@ partial observations without relying on color alone.
 
 1. Keep the completed startup-volume comparison aligned with this directory
    query contract; see [Startup Volume History and Storage Reconciliation](startup-volume-history-and-reconciliation.md).
-2. Add deterministic classification/evidence so growth rows can move beyond
-   the current explicit “Unclassified” state.
-3. Model determinable moves/deletions and a non-overlapping finding policy;
-   do not infer either from incomplete parent coverage.
-4. Feed the qualified 24-hour result into the menu-bar state with an
-   uncertainty indicator.
+2. Persist the already-versioned classification decisions with immutable v11
+   endpoints and project them into this Overview without recomputation.
+3. Connect the pure, coverage-aware move/disappearance and non-overlapping
+   ranking projection described in [Immutable Historical Findings](immutable-historical-findings.md);
+   a missing row must never become disappearance evidence.
+4. Extend the already-qualified 24-hour menu-bar state with v11 finding and
+   coverage status without turning incomplete evidence into a headline delta.
 5. Add user-confirmed history reset and retention/storage-size settings.
 6. Repeat UI, performance, and accessibility qualification on macOS 15.6
    before ADR-004 acceptance or Beta claims.

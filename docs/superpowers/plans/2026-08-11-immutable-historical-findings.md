@@ -13,12 +13,12 @@
 - The minimum deployment target remains macOS 15.6.
 - FSEvents is only an invalidation hint and can never create a byte finding by itself.
 - The first baseline is descriptive; a causal finding requires two immutable endpoints with strictly increasing commit sequences.
-- Unknown and partial evidence are not zero. They produce a typed incomparable/suppressed result, never a fabricated delta or deletion.
+- Unknown and partial evidence are not zero. They produce a typed incomparable/suppressed result, never a fabricated delta or disappearance.
 - Measurement compatibility includes scope, persistent volume identity, mount generation, coverage epoch, metric, path semantics, measurement semantics, subject identity, and monotonic ordering. It does not depend on the classifier catalog version.
-- Absence is explicit evidence tied to a complete parent endpoint. A missing row alone is not deletion evidence.
-- A move requires a stable filesystem-object identity, the same volume and mount generation, two present endpoints, different locations, and complete source/destination frames. Name, size, time proximity, and FSEvents rename flags are insufficient.
-- Parent/child ranking uses exclusive contribution: parent inclusive delta minus the change in its immediate directory children. Confirmed moves and non-positive contributions never enter positive-growth Top 10.
-- Finding drafts freeze source endpoint IDs, algorithm/ranking versions, catalog version, classified or Unknown state, exact rule ID/version/confidence/evidence, metric, coverage, and observation endpoint times.
+- Absence is explicit evidence tied to a complete present direct-parent endpoint and complete direct-child enumeration in the same frame. A missing row alone is not disappearance evidence.
+- A move requires a stable filesystem-object identity, the same volume and mount generation, two complete present endpoints, different locations, and complete endpoint/direct-child coverage at all four relevant source/destination parent corners. Unrelated branches may remain partial. Name, size, time proximity, and FSEvents rename flags are insufficient.
+- Parent/child ranking uses exclusive contribution: parent inclusive delta minus the change in its immediate directory children. Confirmed moves, non-positive contributions, and every `decrease`—even one whose exclusive contribution is positive—never enter positive-growth Top 10.
+- Finding drafts freeze source endpoint IDs, algorithm/ranking versions, metric, coverage, and observation endpoint times. Classified decisions freeze category, confidence, rule ID/version, and path-free evidence code; no-match and ambiguous decisions freeze their exact state, with ambiguous competitor IDs in stable order.
 - Raw paths, display names, opaque object identities, path keys, and finding timelines are Sensitive local data. They must not enter Release logs, evidence codes, or default diagnostics.
 - Historical correction is append-only through a later `supersedesFindingID` persistence contract; this stage does not update or silently reinterpret an earlier finding.
 - Current Public Beta and GitHub Release status remains NO-GO until persistence, UI, corpus, export, macOS 15.6, accessibility, signing/notarization or explicit risk acceptance, and packaging gates close.
@@ -174,10 +174,18 @@ Commit: `冻结历史分类决策及目录版本`
 
 **Files:**
 - Modify: `Packages/SpaceTraceKit/Package.swift`
+- Modify: `Packages/SpaceTraceKit/Sources/SpaceTraceDomain/Observation.swift`
+- Modify: `Packages/SpaceTraceKit/Sources/SpaceTraceDomain/ObservationEndpoint.swift`
+- Modify: `Packages/SpaceTraceKit/Sources/SpaceTraceDomain/ObservationIdentity.swift`
 - Create: `Packages/SpaceTraceKit/Sources/SpaceTraceApplication/History/HistoricalFinding.swift`
 - Create: `Packages/SpaceTraceKit/Sources/SpaceTraceApplication/History/HistoricalFindingGenerator.swift`
+- Modify: `Packages/SpaceTraceKit/Tests/SpaceTraceDomainTests/ObservationTests.swift`
+- Modify: `Packages/SpaceTraceKit/Tests/SpaceTraceDomainTests/ObservationEndpointTests.swift`
+- Modify: `Packages/SpaceTraceKit/Tests/SpaceTraceDomainTests/ObservationIdentityTests.swift`
 - Create: `Packages/SpaceTraceKit/Tests/SpaceTraceApplicationTests/HistoricalFindingModelTests.swift`
 - Create: `Packages/SpaceTraceKit/Tests/SpaceTraceApplicationTests/HistoricalFindingGeneratorTests.swift`
+- Create: `Packages/SpaceTraceKit/Tests/SpaceTraceApplicationTests/HistoricalFindingDurabilityRegressionTests.swift`
+- Create: `Packages/SpaceTraceKit/Tests/SpaceTraceApplicationTests/HistoricalFindingSchedulerTests.swift`
 
 **Interfaces:**
 - `SpaceTraceApplication` gains the one-way dependency on `SpaceTraceAttribution` already described by the architecture.
@@ -195,15 +203,15 @@ public struct HistoricalFindingGenerator: Sendable {
 }
 ```
 
-- [ ] **Step 1: Write failing frame/model validation tests**
+- [x] **Step 1: Write failing frame/model validation tests**
 
 Reject empty frames, duplicate subject/endpoint/location identities, nodes outside the root, missing/cyclic parents, inconsistent scope/sequence context, present nodes without classification, absent nodes whose proof does not reference a complete parent in the same frame, invalid display names, and limits outside `1...100`.
 
-- [ ] **Step 2: Implement only the validated public models**
+- [x] **Step 2: Implement only the validated public models**
 
 Paths and display names stay in Application. Domain remains path-text independent. Finding evidence stores both endpoint IDs, both catalog decisions when present, algorithm version `1`, ranking policy version `1`, and complete coverage.
 
-- [ ] **Step 3: Add red-green vertical slices for each finding behavior**
+- [x] **Step 3: Add red-green vertical slices for each finding behavior**
 
 Add and pass, in order:
 
@@ -216,7 +224,7 @@ Add and pass, in order:
 7. more than ten positives return ten by bytes descending, comparison sequence descending, scope ID binary ascending, reporting location ID binary ascending, then deterministic finding key;
 8. rule/catalog upgrades do not make measurements incomparable, while each draft freezes the exact endpoint classification decision.
 
-- [ ] **Step 4: Add adversarial/property-style cases**
+- [x] **Step 4: Add adversarial/property-style cases**
 
 Cover opposite parent/child deltas, child reparenting, integer boundaries, duplicate stable identity, Unicode/case-distinct paths, wall-clock rollback, missing child frame evidence, and input-order permutations producing byte-for-byte equal output.
 
@@ -252,15 +260,15 @@ Commit: `实现覆盖感知的历史发现与非重叠排名`
 - Documents exact finding semantics, time/metric wording, move proof, Unknown behavior, exclusive ranking, sensitive fields, and stable tie order.
 - Records that production endpoint persistence, scanner directory identity, append-only supersession, SQLite v11 golden fixtures, retention, Overview/menu-bar UI, corpus expansion, export, and real macOS 15.6 qualification remain release blocking.
 
-- [ ] **Step 1: Write matching English and Chinese engineering guides**
+- [x] **Step 1: Write matching English and Chinese engineering guides**
 
 Include worked parent/child and move examples. Explicitly state that an observed disappearance is not proof of user deletion and no finding is a cleanup recommendation.
 
-- [ ] **Step 2: Reconcile status without overstating completion**
+- [x] **Step 2: Reconcile status without overstating completion**
 
 Mark only the pure endpoint/finding projection as implemented. Keep current Public Beta/GitHub Release NO-GO and enumerate the next persistence stage: append-only observation frames, opaque stable identity evidence, explicit absence rows, projection checkpoint, immutable finding/supersession tables, schema-v11 migration/golden fixtures, and crash-idempotence.
 
-- [ ] **Step 3: Run final phase verification and privacy review**
+- [x] **Step 3: Run final phase verification and privacy review**
 
 Run:
 
@@ -269,7 +277,25 @@ swift test --package-path Packages/SpaceTraceKit --filter HistoricalFinding
 swift test --package-path Packages/SpaceTraceKit --filter SpaceTraceAttributionTests
 make verify
 git diff --check
-rg -n "/Users/|mayue|2261996970@qq.com" Packages/SpaceTraceKit docs --glob '!docs/research/**'
+task_privacy_user="$(id -un)"
+task_privacy_email="$(git config user.email || true)"
+{ git diff --name-only --diff-filter=ACM; git ls-files --others --exclude-standard; } \
+  | sort -u \
+  | rg -v '^docs/(research|superpowers/plans)/' \
+  | while IFS= read -r task_privacy_file; do
+      if rg -q -F "/Users/${task_privacy_user}/" "${task_privacy_file}"; then
+        echo "private home path found in ${task_privacy_file}" >&2
+        exit 1
+      fi
+      if [ -n "${task_privacy_email}" ] && rg -q -F "${task_privacy_email}" "${task_privacy_file}"; then
+        echo "private Git email found in ${task_privacy_file}" >&2
+        exit 1
+      fi
+      if rg -q '(BEGIN (RSA |OPENSSH )?PRIVATE KEY)|(ghp_[[:alnum:]]+)' "${task_privacy_file}"; then
+        echo "secret-like text found in ${task_privacy_file}" >&2
+        exit 1
+      fi
+    done
 ```
 
 Review every changed requirement/status statement and every fixture for real paths, usernames, secrets, or release claims.
@@ -278,7 +304,7 @@ Commit: `完成不可变历史发现文档与阶段收口`
 
 ## Self-Review
 
-- Spec coverage: two-endpoint causality, explicit absence, Unknown-not-zero, complete-parent deletion, stable-identity move, non-overlapping Top 10, deterministic ties, metric/coverage/time fields, source endpoint references, versioned classification, and historical immutability each have an owned task.
+- Spec coverage: two-endpoint causality, explicit absence, Unknown-not-zero, complete-parent disappearance proof, stable-identity move, non-overlapping Top 10, deterministic ties, metric/coverage/time fields, source endpoint references, versioned classification, and historical immutability each have an owned task.
 - Placeholder audit: every source, test, document, public seam, focused command, commit boundary, and follow-on boundary is named; no step asks an implementer to invent an unspecified error policy.
 - Type consistency: Domain comparison is classifier-independent; Application drafts freeze `VersionedAttributionDecision`; raw path/display text never enters Domain evidence or attribution evidence codes.
 - Correction consistency: this stage creates immutable drafts only. The next SQLite plan must assign durable IDs and append `supersedesFindingID`; it must never UPDATE historical wording.

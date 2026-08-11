@@ -13,7 +13,7 @@
 
 This roadmap is a sequencing and evidence plan, not a promise that every proposed feature will ship. Product scope and acceptance criteria remain authoritative in the PRD. A phase exits only when its evidence gate passes; reaching a calendar date is not sufficient.
 
-## Current Release Decision — 2026-08-10
+## Current Release Decision — NO-GO retained; evidence refreshed 2026-08-11
 
 **Public Beta and GitHub Release: NO-GO. Local engineering RC generation: CONDITIONAL GO.** No tag, GitHub Release, or artifact upload was created by this decision. The local RC channel exists only to continue controlled qualification with the [ad-hoc release candidate checklist](../engineering/release-candidate-checklist.md).
 
@@ -22,9 +22,9 @@ This roadmap is a sequencing and evidence plan, not a promise that every propose
 | Current-stable-macOS endurance and process-resource evidence | Passed for current-host ad-hoc scope | Corrected 25-hour run and deterministic Instruments analysis are recorded in the [background soak protocol](../engineering/background-soak-qualification.md); this is not watt/joule, Apple-identity, or minimum-OS evidence |
 | Current-host controlled UI/accessibility tree | Passed for automated fixture scope | Eight authorization/history scenarios passed; manual VoiceOver, Full Keyboard Access, contrast/motion/larger-text review remains open in the [visual design system](./visual-design-system.md) |
 | Ad-hoc RC artifact contract | Passed | Two independent `0.1.0-rc.1` builds from `f2119be` passed checksums, strict code signing, entitlement, architecture, deployment-target, DMG, and manifest checks; Gatekeeper rejected them as expected |
-| Complete P0 product workflow | Open — release blocking | The pure deterministic classifier and initial 24-known/8-Unknown corpus are implemented, but finding/persistence/UI integration, the at-least-60-known corpus gate, move/deletion findings, true in-enumerator continuation, and user-controlled export remain open; diagnostic export redaction cannot pass |
+| Complete P0 product workflow | Open — release blocking | The pure deterministic classifier and immutable coverage-aware finding projection are implemented, including frozen decisions, proven move/disappearance drafts, and non-overlapping ranking. Production schema-v11 persistence/supersession/UI integration, scanner stable-identity qualification, the at-least-60-known corpus gate, true in-enumerator continuation, and user-controlled redacted export remain open |
 | macOS 15.6 Apple Silicon runtime | Blocked by unavailable qualified host | Compile/link target is 15.6, but no P0 runtime/benchmark evidence exists on that OS |
-| ADR-003 and ADR-004 | Open — release blocking | Both remain Proposed; genuine daemon drop/wrap, permission revocation, minimum-OS behavior, and maintainer review remain incomplete |
+| ADR-003, ADR-004, and ADR-006 | Open — release blocking | All remain Proposed. Genuine daemon drop/wrap, permission revocation, minimum-OS behavior, schema-v11 immutable finding persistence/supersession, production scanner identity, and maintainer review remain incomplete |
 | Developer identity and notarization | Blocked for trusted public distribution | No stable Apple signing identity is installed. Ad-hoc tester risk has documentation but is not equivalent to Developer ID/notarization |
 | Fresh quarantined clean-account install | Open — release blocking | DMG verification passed locally; an actual downloaded/quarantined clean-account flow and per-app Gatekeeper exception have not been qualified |
 | Update/replacement and bookmark continuity | Partial — release blocking | Fresh/same-build/replacement process launch passed under a disposable ID; no bookmark was created, so cross-build restore/reselection behavior remains open |
@@ -184,7 +184,7 @@ Build the complete P0 product behind an internal/pre-release channel and make it
 
 - Implement FR-006 through FR-011: ranked sources, deterministic classification, uncertainty, menu bar, safe actions, and blind spots.
 - Complete at least 60 known-path classification fixtures plus ambiguity/negative cases.
-- Add parent/child aggregation, move/delete treatment, stable sorting, and incomplete-window presentation.
+- Persist and present the implemented parent/child non-overlap, proven move/disappearance, stable sorting, and incomplete-evidence contracts through schema v11.
 - Run first keyboard/VoiceOver review and uncertainty-language review.
 - Conduct three formative usability walkthroughs with current build.
 

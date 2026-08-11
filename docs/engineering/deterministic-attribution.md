@@ -8,7 +8,7 @@ Chinese companion translation: [deterministic-attribution.zh-CN.md](deterministi
 
 `SpaceTraceAttribution` is the pure, offline classifier behind FR-007. It turns lexical path features and explicit volume context into a conservative storage category. It does not access the filesystem, open file contents, inspect processes, use the network, or decide that data is safe to delete.
 
-This slice implements the engine and its initial regression corpus. It does **not** yet connect classification to historical findings, SQLite, the Overview UI, move/deletion semantics, or diagnostic export.
+This slice implements the engine and its initial regression corpus. The pure immutable historical-finding projection now freezes the exact catalog/rule decision at each available endpoint. Production SQLite persistence, the Overview UI, the at-least-60-known corpus gate, and user-controlled diagnostic export remain unimplemented.
 
 ## Result contract
 
@@ -56,7 +56,7 @@ These categories explain observed storage location or context. They are not owne
 
 `attribution-fixtures-v1.json` currently contains 24 known scenarios—three for each P0 category—and eight near-miss/Unknown scenarios. The checked-in suite currently reports 100% precision, 100% recall, and 100% Unknown accuracy on this synthetic reviewed corpus. Separate tests prove that cross-category ties remain ambiguous and that precision, recall, and Unknown accuracy use distinct denominators.
 
-This is regression evidence, not real-user accuracy evidence. It does not satisfy the PRD corpus gate of at least 60 known paths or the stronger per-category review target. Public Beta remains blocked until the corpus is expanded, independently reviewed, and the application layer preserves the exact rule version and evidence for historical findings.
+This is regression evidence, not real-user accuracy evidence. It does not satisfy the PRD corpus gate of at least 60 known paths or the stronger per-category review target. Public Beta remains blocked until the corpus is expanded, independently reviewed, and the frozen finding decisions are persisted and presented without silent reinterpretation.
 
 ## Adding or changing a rule
 
@@ -66,4 +66,4 @@ This is regression evidence, not real-user accuracy evidence. It does not satisf
 4. Run `swift test --package-path Packages/SpaceTraceKit --filter SpaceTraceAttributionTests` and `make verify`.
 5. Increment the rule version when its match or explanation meaning changes. Historical results must retain the old identity; silent reinterpretation is not allowed.
 
-Community rule packs, localized evidence wording, persisted findings, and explicit recomputation are later governed features, not implicit behavior of catalog v1.
+Community rule packs, localized evidence wording, production finding persistence/UI, and explicit recomputation are later governed features, not implicit behavior of catalog v1.

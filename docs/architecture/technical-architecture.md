@@ -4,11 +4,11 @@
 | --- | --- |
 | Status | Proposed for MVP design review |
 | Document version | 0.1 |
-| Last updated | 2026-07-18 |
+| Last updated | 2026-08-11 |
 | Current project target | macOS 15.6, Swift version setting 5.0 |
 | Accepted product baseline | macOS 15.6+, Apple Silicon first; Intel deferred |
 | Architecture owner | SpaceTrace maintainers |
-| Related decisions | [ADR-001](decisions/ADR-001-native-macos-platform.md), [ADR-002](decisions/ADR-002-read-only-optional-full-disk-access.md), [ADR-003](decisions/ADR-003-fsevents-and-calibration-scans.md), [ADR-004](decisions/ADR-004-sqlite-persistence-and-retention.md), [ADR-005](decisions/ADR-005-system-command-adapter.md) |
+| Related decisions | [ADR-001](decisions/ADR-001-native-macos-platform.md), [ADR-002](decisions/ADR-002-read-only-optional-full-disk-access.md), [ADR-003](decisions/ADR-003-fsevents-and-calibration-scans.md), [ADR-004](decisions/ADR-004-sqlite-persistence-and-retention.md), [ADR-005](decisions/ADR-005-system-command-adapter.md), [ADR-006](decisions/ADR-006-immutable-observations-and-findings.md) |
 
 ## 1. Executive summary
 
@@ -89,7 +89,7 @@ The architecture uses precise terms so the UI cannot accidentally overstate what
 | Unattributed volume change | Volume-level change not explained by comparable scanned paths | Automatically “System Data” |
 | Coverage | What was visited, skipped, inaccessible, raced, or unknown during a scan | A permission grant status |
 
-Core invariant: **unknown is not zero**. An inaccessible, unmounted, evicted, or raced path never overwrites the last complete measurement with zero and is never reported as deletion without complete parent coverage.
+Core invariant: **unknown is not zero**. An inaccessible, unmounted, evicted, or raced path never overwrites the last complete measurement with zero. A disappearance requires a later explicit `absent` endpoint plus complete same-frame direct-parent evidence; a missing row is never disappearance evidence.
 
 ## 4. Quality attributes and priorities
 
@@ -170,14 +170,14 @@ Dependencies point inward:
 ```text
 SpaceTraceApp / SpaceTraceUI
               ↓
-SpaceTraceApplication (use cases and orchestration)
-              ↓
-SpaceTraceDomain (entities, policies, ports)
-              ↑
-SpaceTraceFileSystem / SpaceTracePersistence / SpaceTracePlatform
+SpaceTraceApplication (use cases and orchestration) ──→ SpaceTraceAttribution
+              │                                             │
+              └──────────────────→ SpaceTraceDomain ←────────┘
+                                         ↑
+              SpaceTraceFileSystem / SpaceTracePersistence / SpaceTracePlatform
 ```
 
-`SpaceTraceDomain` imports Foundation only where value types require it and never imports SwiftUI, AppKit, CoreServices, DiskArbitration, GRDB, or process APIs. Infrastructure modules implement protocols owned by the domain/application boundary. CI enforces forbidden imports and rejects cycles.
+`SpaceTraceAttribution` depends only on `SpaceTraceDomain`; `SpaceTraceApplication` composes both and neither module imports an adapter. `SpaceTraceDomain` imports Foundation only where value types require it and never imports SwiftUI, AppKit, CoreServices, DiskArbitration, GRDB, or process APIs. Infrastructure modules implement protocols owned by the domain/application boundary. CI enforces forbidden imports and rejects cycles.
 
 ## 6. Module and repository layout
 
@@ -402,7 +402,7 @@ A long scan does not hold a database transaction. Batches are written to `scan_n
 
 1. verifies scope identity and scan state;
 2. merges stage rows into `node_current`;
-3. marks missing nodes deleted only beneath completely covered parents;
+3. in schema v10, updates a current-state tombstone only beneath a completely covered parent; the schema-v11 finalizer must additionally persist an explicit `absent` endpoint backed by a complete present direct parent and complete direct-child enumeration in the same frame, while a missing row remains missing evidence;
 4. writes observations and deltas;
 5. clears eligible dirty work using the leased high-water mark;
 6. marks the run complete.
@@ -493,7 +493,7 @@ The UI must let users switch metric or clearly label it; metrics are never added
   commit sequences are strictly ordered. Classifier catalog/rule versions do
   not change byte-measurement compatibility; classification is frozen only
   after a compatible change exists.
-- Missing nodes become deleted only under complete parent coverage for the same mount generation.
+- Only an explicit `absent` endpoint resolved to a complete present direct parent with complete direct-child enumeration in the same mount generation may support a disappearance; a missing row never does.
 - `allocatedDelta`, `logicalDelta`, and `volumeAvailableDelta` are different value types and cannot be added accidentally.
 - Startup-volume samples are ordered by a database-generated monotonic
   sequence; wall-clock rollback cannot reverse commit order.
@@ -716,7 +716,7 @@ On launch, bookmark resolution uses no UI and does not mount an absent volume. `
 ### 14.3 Degradation behavior
 
 - Permission denial marks a subtree inaccessible and preserves its previous complete value as stale.
-- Revocation during a scan prevents deletion inference under the affected parent.
+- Revocation during a scan prevents disappearance inference under the affected parent.
 - Findings spanning incomplete areas are downgraded or suppressed.
 - The health view identifies categories of unavailable locations without listing sensitive filenames.
 - FDA education is contextual: show expected benefit and exact System Settings steps only after meaningful blind spots are observed.
@@ -730,7 +730,7 @@ All recoverable failures are typed domain errors with a stable code, scope, retr
 
 | Error family | Examples | Default handling |
 | --- | --- | --- |
-| Access | `accessDenied`, `permissionChanged` | Partial coverage; contextual guidance; no zero/deletion |
+| Access | `accessDenied`, `permissionChanged` | Partial coverage; contextual guidance; no zero/disappearance inference |
 | Filesystem race | `itemVanished`, `metadataChanged`, `symlinkCyclePrevented` | Count and retry parent once; usually not user-visible |
 | Volume | `unmounted`, `identityChanged`, `capacityUnavailable` | Pause scope; revalidate; close generation |
 | Event journal | `streamStartFailed`, `historyLost`, `eventsDropped`, `idWrapped` | Durable degraded state and calibration |
@@ -816,7 +816,7 @@ protocol RuleCatalog { /* versioned classification rules */ }
 ### 19.2 Test pyramid
 
 - **Domain unit tests:** comparability, unknown-not-zero, confidence, retention, coalescing, scan budgets, path normalization.
-- **State-machine/property tests:** arbitrary event/scan/crash sequences preserve cursor and deletion invariants.
+- **State-machine/property tests:** arbitrary event/scan/crash sequences preserve cursor and explicit-absence/disappearance invariants.
 - **Persistence tests:** every schema migration from supported fixtures; power-loss simulation around dirty-row/cursor transaction and finalization.
 - **Filesystem integration tests:** temporary trees containing hard links, symlinks, sparse files, Unicode/case variants, packages, permission failures, concurrent rename/delete, and mount boundaries.
 - **FSEvents integration tests:** create/rename/delete storms, replay after process restart, callback overflow, `MustScanSubDirs`, and synthetic flag injection through the fake client.
@@ -831,7 +831,7 @@ protocol RuleCatalog { /* versioned classification rules */ }
 1. Kill the app after dirty rows are committed but before cursor commit; restart replays safely.
 2. Kill after cursor commit but before scan; durable dirty rows remain.
 3. Change a file while its ancestor is scanning; the newer dirty ID survives finalization.
-4. Revoke FDA mid-scan; prior bytes remain stale and no deletion appears.
+4. Revoke FDA mid-scan; prior bytes remain stale and no disappearance finding appears.
 5. Replace a mounted volume with one of the same name but another UUID; old deltas are not applied.
 6. Lose event history; UI becomes stale until calibration, not falsely healthy.
 7. Fill the disk during a database write; enter recovery without deleting the database.
@@ -908,7 +908,7 @@ Release candidates additionally require clean-machine permission testing, oldest
 | Database grows with filesystem cardinality | Medium | Medium | Directory-first persistence, selected files, 30-day retention, 250 MB benchmark gate |
 | Unsandboxed update supply-chain compromise | Low | Critical | Developer ID, notarization, EdDSA updates, protected keys, SBOM |
 | System command output changes across OS versions | Medium | Medium | Optional adapter, structured output, versioned parser, unknown fallback |
-| Permission revocation looks like deletion | Medium | High | Unknown-not-zero and complete-parent deletion invariant |
+| Permission revocation looks like disappearance | Medium | High | Unknown-not-zero plus explicit absence and complete direct-parent evidence |
 | Small team overbuilds abstraction | Medium | Medium | One process/package graph, interfaces only at actual platform/test seams |
 
 ## 25. Open questions for product and engineering review

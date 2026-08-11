@@ -9,7 +9,7 @@ This directory records durable technical, data, permission, distribution, and se
 | [ADR-003](ADR-003-fsevents-and-calibration-scans.md) | FSEvents invalidation journal plus calibration scans | Proposed |
 | [ADR-004](ADR-004-sqlite-persistence-and-retention.md) | SQLite adapter and 30-day bounded retention | Proposed; raw adapter retained; recovery, schema-v10 sleep-aware directory/volume history, reconciliation, and current-host benchmark implemented; oldest-OS gate pending |
 | [ADR-005](ADR-005-system-command-adapter.md) | Optional isolated read-only system-command adapter | Proposed |
-| [ADR-006](ADR-006-immutable-observations-and-findings.md) | Immutable observation endpoints, explicit absence, proven moves, exclusive ranking, and append-only finding projection | Proposed; pure contracts may proceed; schema-v11 and release gates pending |
+| [ADR-006](ADR-006-immutable-observations-and-findings.md) | Immutable observation endpoints, explicit absence, proven moves, exclusive ranking, and append-only finding projection | Proposed; pure Domain/Application contracts implemented; schema-v11, production integration, and release gates pending |
 
 ## Status lifecycle
 

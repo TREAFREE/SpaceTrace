@@ -6,9 +6,9 @@ DESTINATION := platform=macOS,arch=arm64
 PACKAGE_PATH := Packages/SpaceTraceKit
 DERIVED_DATA_ROOT := build/DerivedData
 
-.PHONY: verify hygiene architecture-check package-test package-concurrency-audit package-background-lifecycle-qualification package-background-soak-qualification package-apfs-image-qualification persistence-benchmark package-release-candidate package-release-candidate-test qualify-release-candidate xcode-list app-build-debug app-test-unit app-test-ui app-build-release
+.PHONY: verify hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy package-test package-concurrency-audit package-background-lifecycle-qualification package-background-soak-qualification package-apfs-image-qualification persistence-benchmark package-release-candidate package-release-candidate-test qualify-release-candidate xcode-list app-build-debug app-test-unit app-test-ui app-build-release
 
-verify: hygiene architecture-check package-test package-concurrency-audit xcode-list app-build-debug app-test-unit app-build-release
+verify: hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy package-test package-concurrency-audit xcode-list app-build-debug app-test-unit app-build-release
 
 hygiene:
 	git diff --check
@@ -17,6 +17,12 @@ hygiene:
 
 architecture-check:
 	./Scripts/check-architecture.sh
+
+historical-ledger-privacy-test:
+	bash Scripts/Tests/check-historical-ledger-privacy-tests.sh
+
+historical-ledger-privacy:
+	./Scripts/check-historical-ledger-privacy.sh
 
 package-test:
 	swift test --package-path "$(PACKAGE_PATH)"

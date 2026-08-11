@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — SQLite is selected. The 2026-07-20 evidence review found GRDB 7.10.0 viable, but retains the raw SQLite adapter for phase one pending parity, benchmark, signed/notarized-build, and oldest-OS evidence.
+Proposed — SQLite is selected. The 2026-07-20 evidence review found GRDB 7.10.0 viable, but retains the raw SQLite adapter for phase one pending parity, benchmark, signed/notarized-build, and oldest-OS evidence. The history-off clarification below narrows retention behavior; it does not accept the remaining adapter, schema, or release proposals.
 
 Date: 2026-07-18
 
@@ -50,6 +50,24 @@ The application has no backend, multi-user database, or cross-device synchroniza
     a fresh, gap-bounded, same-volume, monotonic-time evidence window; any
     discontinuity is displayed as incomplete evidence rather than zero or a
     cached prior delta.
+18. Ordinary time- or size-based retention never silently removes the active
+    authorized baseline. An explicit, user-confirmed **History Off** setting is
+    the only retention-policy exception: it removes all authorized baseline
+    snapshots and roots together with the path-bearing history they support,
+    but does not revoke watched-scope authorization, remove monitored files, or
+    stop current-state scanning and publication. Persistence and presentation
+    then expose typed `historyDisabled` and `baselineUnavailable` states;
+    historical comparison remains unavailable until the user turns history on
+    and a fresh authorized baseline is committed.
+19. **Clear History** is a distinct full local-data reset governed by the
+    privacy baseline, not an alias for History Off. After explicit confirmation,
+    it stops related work within five seconds and removes the SQLite database,
+    checkpoints, and derived caches, including persisted authorization and
+    current-state records held in that database, without touching monitored
+    files. The app returns to an unconfigured state and cannot resume current or
+    historical claims until the user authorizes scopes and a fresh scan commits.
+    A new database is not silently created with monitoring or history enabled as
+    part of the reset.
 
 ## Options considered
 
@@ -78,6 +96,8 @@ The application has no backend, multi-user database, or cross-device synchroniza
 - WAL/checkpoint/vacuum need explicit energy and disk-full behavior.
 - Selected-file persistence means deep file detail may require an on-demand rescan.
 - Paths remain readable to other processes running as the same user; SQLCipher is not included in MVP.
+- Confirmed History Off intentionally makes historical comparison unavailable until a fresh authorized baseline is committed, while authorization and current-state operation continue.
+- Confirmed Clear History intentionally removes all database-backed authorization, current state, and history, returning the app to unconfigured state; it is not the retention-policy zero-day mode.
 
 ### Guardrails
 
@@ -86,6 +106,8 @@ The application has no backend, multi-user database, or cross-device synchroniza
 - Byte metrics use checked signed 64-bit values and typed wrappers; overflow becomes an error/unknown value.
 - Migration code cannot silently drop an unknown column/table or recreate the database.
 - Retention is deterministic, observable, and testable against a fixed clock.
+- Ordinary retention preserves the active authorized baseline. History Off's exceptional full-baseline deletion requires explicit user confirmation and cannot revoke authorization or erase current operational state.
+- Clear History follows the separate full-reset boundary in the privacy baseline: it stops work first, deletes the complete local database/checkpoint/cache set, reports failure without claiming success, and never touches monitored files.
 - The 250 MB value is a release gate for the benchmark workload, not permission to erase active state on a larger real scope. Settings exposes actual size and the estimated effect of retention.
 - The app pauses nonessential scans before compaction when its own database growth threatens available disk space.
 - Any persistence-library upgrade receives dependency diff, license, migration, performance, and notarized-build review.
@@ -99,8 +121,17 @@ The application has no backend, multi-user database, or cross-device synchroniza
 5. Migrate golden database fixtures from every released schema and compare semantic checksums.
 6. Corrupt WAL/main database fixtures and verify no silent rebuild or data disclosure.
 7. Prove day-30 retention deletes path-level samples, findings, expired deleted nodes, and aged dirty paths while preserving only the active baseline and a path-free calibration/gap requirement.
-8. Prove “Clear History” removes database/checkpoint/derived cache state without touching monitored files and reports deletion failure.
-9. Confirm permissions are `0700` for the directory and `0600` for database/export-temporary files.
+8. Prove explicit, confirmed History Off removes historical baseline snapshots,
+   roots, checkpoints, findings, and derived historical caches while preserving
+   watched-scope authorization and current-state operation; expose typed
+   `historyDisabled` and `baselineUnavailable`, require a fresh authorized
+   baseline after re-enabling history, and report deletion failure without
+   claiming success.
+9. Separately prove Clear History stops related work within five seconds,
+   removes the SQLite database, checkpoints, caches, persisted authorization,
+   current state, and history, never touches monitored files, does not silently
+   recreate an active store, and reports any incomplete reset.
+10. Confirm permissions are `0700` for the directory and `0600` for database/export-temporary files.
 
 ## Revisit triggers
 

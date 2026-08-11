@@ -501,14 +501,23 @@ The UI must let users switch metric or clearly label it; metrics are never added
   from topmost authorized roots on the same known volume. Missing directory
   evidence remains unknown rather than becoming zero.
 - A finding references immutable source observation IDs, finding/ranking
-  algorithm versions, and frozen catalog/rule evidence. Reconciliation or
-  explicit recomputation appends a superseding record; it cannot silently
-  update historical wording.
+  algorithm versions, and frozen catalog/rule evidence. A typed integrity
+  reconciliation may append an independent `evidence_invalidated` retraction
+  that removes the finding from the current-effective view without changing the
+  original audit record. Schema v11 has no corrected successor or replacement
+  surface; explicit recomputation/replacement requires a later approved model
+  and migration and can never silently update historical wording.
 - Confidence can decrease as new gaps are discovered; it cannot increase without new evidence.
 
 The complete endpoint, explicit-absence, move-proof, exclusive-contribution,
-stable-ordering, supersession, and schema-v11 obligations are specified in
+stable-ordering, evidence-invalidated retraction, future replacement, and
+schema-v11 obligations are specified in
 [ADR-006](decisions/ADR-006-immutable-observations-and-findings.md).
+The public history repository has no retraction mutation. Only an
+Application-internal typed integrity authorizer can create an evidence-
+invalidation capability from the stored audit record, and Persistence accepts
+that non-`Codable` capability through a package-scoped reconciliation port while
+revalidating its finding ID and draft digest transactionally.
 
 ### 12.3 Attribution confidence
 
@@ -681,7 +690,7 @@ CREATE INDEX finding_window
 
 Default rolling policy:
 
-- `node_current`: the minimum active baseline needed to compare currently watched directories, plus explicitly required selected files. It is current state rather than an historical event log and is deleted when the scope/history is removed.
+- `node_current`: the minimum active state needed to compare currently watched directories, plus explicitly required selected files. It is current state rather than an historical event log. Removing a watched scope or performing the separately confirmed Clear History full reset deletes it; History Off preserves live current state while removing historical baselines and comparisons.
 - Hourly path-level samples: 7 days.
 - Daily path-level samples, path-bearing findings, and deleted-node history: through day 30, then transactionally deleted.
 - Path-free startup-volume capacity samples: through day 30. Missing API values

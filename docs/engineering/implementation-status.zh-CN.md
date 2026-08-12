@@ -69,7 +69,7 @@
 - 两轮相互独立的签名沙盒 smoke 证明加固后的 runner：受控提前退出会生成受保护、带类型原因的 `FAILED` 证据并移除 supervisor；不受干扰的 60 秒运行则生成 `PASSED`，采集失败为 0、隐私扫描为空、分析器状态为 0、单一 session 的 4 条记录覆盖 59,737 ms，且 launchd job 无残留；
 - 修正后的 2026-07-30 当前主机 ad-hoc Release/App Sandbox 长跑自动生成 `PASSED`：单一 session 的 794 条无路径记录覆盖 90,529,656 ms，retention 成功且最终容量为 qualified；最大清醒间隔 62,097 ms、最大唤醒恢复 1 ms、最大 RSS 139,984,896 字节、最大数据库 613,696 字节、平均 CPU 0.011710%、p95 CPU 0.039200%。五段 Activity Monitor/thermal 导出全部完成且采集失败为 0；确定性后分析得到采集区间 CPU 0.401045252 秒、Idle Wake Ups 959 次、写入/读取 811,008/352,256 字节、最大 footprint 99,271,664 字节、未阻止睡眠、温度状态均为 Nominal。受保护的 Instruments 汇总不含路径并固定 SHA-256；这只关闭当前主机 ad-hoc 24 小时门禁。2026-08-10 又以独立 bundle identity 完成 60 秒 smoke，新的双分析器最终化在采集失败为 0、两个分析器退出码为 0、报告受保护以及 App/launchd 无残留的条件下通过；
 - 2026-07-31 使用独立 bundle identity 的临时签名 App，在 1080 × 720 下完成概览层级和图表布局的视觉检查；16–1024 px 图标资产完成 Alpha 校验；App 单元测试及 `make verify` 通过。同日 UI runner 无法初始化，因此该次尝试继续保留为历史阻塞证据，不报告为通过；
-- 使用本机测试签名运行真实 Xcode macOS UI runner：2026-08-10 在 macOS 26.5.2 上通过 8 个受控权限/不伪造历史场景，2026-08-13 又在 macOS 26.6.1 上通过 12 个授权/历史/finding 场景。测试会断言主要/更换/移除操作具有稳定名称且可点击，current 与证据失效 finding 分离，冻结分类/时间证据可见，History Off/baseline-unavailable 保持类型化，破坏性操作需要确认，并确认“只读、不删除文件”隐私边界进入可访问性树。每次启动都会明确忽略 macOS 持久化窗口状态，确保测试拥有可见的全新窗口。这些确定性 fixture 不覆盖真实 Powerbox、bookmark 与重启行为；`security find-identity -v -p codesigning` 仍报告 0 个稳定 Apple 签名身份，人工 VoiceOver/键盘/显示辅助检查也仍未完成；
+- 使用本机测试签名运行真实 Xcode macOS UI runner：2026-08-10 在 macOS 26.5.2 上通过 8 个受控权限/不伪造历史场景，2026-08-13 又在 macOS 26.6.1 上通过 14 个授权/历史/finding/导出场景。测试会断言主要/更换/移除操作具有稳定名称且可点击，current 与证据失效 finding 分离，冻结分类/时间证据可见，History Off/baseline-unavailable 保持类型化，破坏性操作需要确认，并确认“只读、不删除文件”隐私边界进入可访问性树。签名沙盒诊断场景会操作真实 `NSSavePanel`、从磁盘读取脱敏 JSON，并额外连续聚焦运行 3 次通过。每次启动都会明确忽略 macOS 持久化窗口状态，确保测试拥有可见的全新窗口。这些确定性 fixture 不覆盖真实 bookmark 替换连续性，人工 VoiceOver/键盘/显示辅助检查也仍未完成；
 - 已实现 fail-closed 的 ad-hoc Release Candidate 打包器：要求明确 SemVer 与干净 commit provenance，检查 arm64/15.6/Bundle ID、精确三项沙盒 entitlement，以 Hardened Runtime 重签，固定四项产物契约，生成只读压缩 DMG、带 checksum 的 JSON 事实 manifest，并覆盖参数缺失/非法、脏源码和已有输出的反向测试。entitlement 契约现在把用户选择位置读写能力只用于精确 `NSSavePanel` 诊断目标，而监控 bookmark 仍显式只读。早期 `0.1.0-rc.1` 产物早于此变更，不能验证新边界，必须重新执行打包矩阵；
 - 早期当前主机 ad-hoc 签名 smoke App 的严格签名校验确认了旧的用户选择只读 entitlement 与 `LSMinimumSystemVersion = 15.6`；该证据只作为历史记录保留。新的“读写仅用于保存” entitlement 需要重新完成签名沙盒与 macOS 15.6 资格验证；
 - 当前主机签名沙盒 smoke 已证明精确 Powerbox 选择、正常退出后同一 bundle 无选择器恢复、App 内 bookmark 移除不删除夹具、一次性 APFS 镜像缺席时显示不可用，以及同一 Volume UUID 返回后自动恢复授权；
@@ -83,7 +83,7 @@
 
 ## 明确不作出的声明
 
-- 面向用户的多目录权限列表、批量基线、启动卷容量历史、版本/Schema 元数据、重启恢复、电源/温度/睡眠感知、schema v10 概览/菜单栏历史、不可变 finding 概览、schema v11 持久化、完整扫描 paired finalization、完整父级消失对账、合格 APFS 稳定移动、有界即时/启动投影、FR-007/KPI-03 仓库语料门禁，以及用户控制的脱敏诊断导出均已实现。生产扫描会在同一次遍历中冻结仅目录 logical/allocated 证据、直接子级覆盖、分类与 APFS 对象/复用证据；真实 Foundation 增长/重命名/删除与受控 APFS 镜像测试均已通过。概览直接读取持久化的 current-effective 与失效审计记录，不重新分类，并展示类型化 History Off/baseline-unavailable 状态。未经证明的缺失行和不受支持的文件系统仍会被抑制；replacement/supersession 仍未完成。APFS 唯一块核算和真正枚举器内存中点续扫也仍未完成。新的导出 entitlement 与 UI 仍需真实签名沙盒、辅助技术和打包 DMG 资格验证。
+- 面向用户的多目录权限列表、批量基线、启动卷容量历史、版本/Schema 元数据、重启恢复、电源/温度/睡眠感知、schema v10 概览/菜单栏历史、不可变 finding 概览、schema v11 持久化、完整扫描 paired finalization、完整父级消失对账、合格 APFS 稳定移动、有界即时/启动投影、FR-007/KPI-03 仓库语料门禁，以及用户控制的脱敏诊断导出均已实现。生产扫描会在同一次遍历中冻结仅目录 logical/allocated 证据、直接子级覆盖、分类与 APFS 对象/复用证据；真实 Foundation 增长/重命名/删除与受控 APFS 镜像测试均已通过。概览直接读取持久化的 current-effective 与失效审计记录，不重新分类，并展示类型化 History Off/baseline-unavailable 状态。未经证明的缺失行和不受支持的文件系统仍会被抑制；replacement/supersession 仍未完成。APFS 唯一块核算和真正枚举器内存中点续扫也仍未完成。导出 entitlement 与真实签名沙盒保存流程现已通过当前主机资格；人工辅助技术、干净账户 Gatekeeper 例外、打包 bookmark 连续性和 macOS 15.6 资格仍未完成。
 - 修正后的当前主机运行关闭了提交 `ed0d660` 的 ad-hoc 24 小时进程/耐久门禁。Activity Monitor 的 CPU、唤醒、内存、I/O 与 thermal 区间仍只是能耗相关证据，不是直接瓦特/焦耳测量；该结果也不能证明普遍的系统调度到达保证、签名状态项交互矩阵、Apple 身份分发、Release Candidate 替换或 macOS 15.6 运行资格。
 - 用户主动基线调度会响应休眠、低电量模式、严重/危急温度，并观察当前供电来源。后台速率预算、系统负载调度以及架构中的 token bucket 尚未实现。硬链接去重受条目预算限制，但每次扫描运行期间仍保存在内存中。
 - 真实 sandbox Powerbox 展示以及 stale/身份失败的重新授权 UI 已实现；当前主机上的持久选择、同一 bundle 重启、明确 App 内移除和同镜像外置卷返回已经通过。真实 stale 证据、UI 流程中的不同 UUID 换卷子项、Apple 身份签名以及 macOS 15.6 运行矩阵仍未完成，或受到当前环境阻塞。
@@ -112,5 +112,5 @@
 
 - **本地工程 RC 生成：CONDITIONAL GO（有条件继续）。** 可以使用 fail-closed ad-hoc 打包器，为明确互相信任的维护者/测试者生成带 provenance 的受控测试产物。
 - **GitHub Release 与 Public Beta：NO-GO（暂不发布）。** 本次没有创建 tag、Release 或上传产物。
-- 阻塞门禁包括：未来获批的 replacement/supersession 模型；已实现导出及新 entitlement 的真实签名沙盒/打包资格验证；macOS 15.6 运行；人工辅助功能/可用性和真实权限/换卷矩阵；ADR-003/004/006 接受；Developer ID/公证，或明确接受未签名风险并完成干净 quarantine 安装；打包升级/回滚；正式许可、第三方 notices 与 SBOM。自动化 finding/History-Off 概览、FR-007 语料和 FR-014 导出实现门禁已经关闭，但人工辅助技术与最低系统资格验证尚未完成。
+- 阻塞门禁包括：未来获批的 replacement/supersession 模型；macOS 15.6 运行；人工辅助功能/可用性和真实 bookmark/权限/换卷矩阵；ADR-003/004/006 接受；Developer ID/公证，或明确接受未签名风险并完成干净账户 Gatekeeper 例外启动；打包升级/回滚；正式许可、第三方 notices 与 SBOM。自动化 finding/History-Off 概览、FR-007 语料和 FR-014 实现/当前主机真实签名沙盒导出门禁已经关闭，但人工辅助技术与最低系统资格验证尚未完成。
 - 逐行门禁表和未发布的测试者说明见[产品路线图](../product/product-roadmap.md)与 [Changelog](../../CHANGELOG.md)。

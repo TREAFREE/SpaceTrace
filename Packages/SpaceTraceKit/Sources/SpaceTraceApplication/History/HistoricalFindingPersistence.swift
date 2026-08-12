@@ -425,6 +425,34 @@ public struct HistoricalFindingEvidenceInvalidationCommand: Sendable, Equatable 
     }
 }
 
+/// Evidence invalidation is deliberately narrower than a user action or a
+/// classifier decision. Only an integrity workflow can provide one of these
+/// typed failures, and neither case carries paths or mutable UI input.
+enum HistoricalFindingIntegrityFailure: Sendable, Equatable {
+    case ledgerIntegrityViolation
+    case projectionIntegrityViolation
+}
+
+/// The sole Application-layer constructor for a retraction command. The
+/// command copies immutable identity and digest evidence from the audit read;
+/// callers cannot supply either field independently.
+enum HistoricalFindingIntegrityReconciliationAuthorizer {
+    static func authorizeEvidenceInvalidation(
+        requestID: HistoricalRetractionRequestID,
+        failure: HistoricalFindingIntegrityFailure,
+        storedAuditRecord: HistoricalFindingAuditRecord
+    ) throws(HistoricalFindingPersistenceModelError) -> HistoricalFindingEvidenceInvalidationCommand {
+        _ = failure
+        guard storedAuditRecord.retraction == nil else {
+            throw .findingAlreadyRetracted
+        }
+        return HistoricalFindingEvidenceInvalidationCommand(
+            requestID: requestID,
+            storedAuditRecord: storedAuditRecord
+        )
+    }
+}
+
 public struct EffectiveHistoricalFinding: Sendable, Equatable {
     public let recordID: HistoricalFindingRecordID
     public let projectionID: HistoricalProjectionRecordID
@@ -522,6 +550,11 @@ public protocol HistoricalFindingPersistenceRepository: EventJournalRepository {
     ) async throws
 }
 
+/// Package-only mutation surface for current-validity invalidation. v1 does
+/// not model a replacement, correction projection, same-pair reprojection,
+/// or an as-of correction view. Those require a versioned generator registry,
+/// frozen correction input and work request, a schema migration, crash and
+/// retention benchmarks, and an approved ADR-006 amendment.
 package protocol HistoricalFindingIntegrityReconciliationRepository: Sendable {
     func commitEvidenceInvalidation(
         _ command: HistoricalFindingEvidenceInvalidationCommand
@@ -554,6 +587,7 @@ public enum HistoricalFindingPersistenceModelError: Error, Sendable, Equatable {
     case invalidPositiveRank(Int)
     case findingComparisonSequenceMismatch
     case retractionTargetMismatch
+    case findingAlreadyRetracted
 }
 
 package struct HistoricalStoreGeneration: Sendable, Equatable {

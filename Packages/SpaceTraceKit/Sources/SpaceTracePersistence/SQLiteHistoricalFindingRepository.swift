@@ -93,6 +93,177 @@ extension SQLiteEventJournalRepository {
         }
     }
 
+    public func historicalFindingAuditRecord(
+        id: HistoricalFindingRecordID
+    ) throws -> HistoricalFindingAuditRecord? {
+        guard let finding = try rehydratedHistoricalFinding(id: id) else {
+            return nil
+        }
+        let storedRetraction = try readHistoricalStoredRetraction(findingID: id)
+        if let storedRetraction,
+           storedRetraction.expectedDraftDigest != finding.draftDigest {
+            throw SQLiteEventJournalError.historicalProjectionImmutableConflict
+        }
+        return try HistoricalFindingAuditRecord(
+            finding: finding.effective,
+            draftSHA256: try HistoricalEvidenceDigest(bytes: Array(finding.draftDigest)),
+            retraction: storedRetraction?.record
+        )
+    }
+
+    public func effectiveHistoricalFindings(
+        for scopeID: ScopeID,
+        through comparisonSequence: ObservationCommitSequence,
+        limit: HistoricalFindingQueryLimit
+    ) throws -> [EffectiveHistoricalFinding] {
+        let scopeBytes = try SQLiteHistoricalFindingCodec.encodeUTF8(
+            scopeID.rawValue,
+            field: "scope_id",
+            maximumBytes: 4_096
+        )
+        let candidates = try historicalRows(
+            """
+            SELECT f.finding_id,f.projection_id,w.comparison_sequence,r.rank
+            FROM historical_finding AS f
+            JOIN historical_finding_projection AS p ON p.projection_id=f.projection_id
+            JOIN historical_projection_work AS w ON w.work_id=p.work_id
+            JOIN historical_observation_node AS bn ON bn.node_id=f.baseline_node_id
+            JOIN historical_observation_batch AS b ON b.batch_id=bn.batch_id
+            JOIN historical_scope AS s ON s.scope_key=b.scope_key
+            LEFT JOIN historical_finding_positive_rank AS r ON r.finding_id=f.finding_id
+            LEFT JOIN historical_finding_retraction AS x ON x.retracted_finding_id=f.finding_id
+            LEFT JOIN historical_observation_node AS cn ON cn.node_id=f.comparison_node_id
+            LEFT JOIN frozen_attribution_decision AS bd ON bd.decision_id=bn.classification_decision_id
+            LEFT JOIN frozen_attribution_decision AS cd ON cd.decision_id=cn.classification_decision_id
+            WHERE w.comparison_sequence<=?1 AND s.scope_id=?3 AND x.retraction_sequence IS NULL
+            ORDER BY w.comparison_sequence DESC,
+                CASE WHEN r.rank IS NULL THEN 1 ELSE 0 END ASC,
+                r.rank ASC,
+                f.baseline_node_id ASC,f.baseline_metric ASC,
+                f.comparison_node_id ASC,f.comparison_metric ASC,
+                f.kind ASC,
+                COALESCE(bd.catalog_version,0) ASC,
+                COALESCE(cd.catalog_version,0) ASC,
+                f.finding_id ASC
+            LIMIT ?2
+            """,
+            integers: [comparisonSequence.rawValue, Int64(limit.rawValue)],
+            blobs: [scopeBytes]
+        ) { statement in
+            HistoricalEffectiveFindingCandidate(
+                findingID: sqlite3_column_int64(statement, 0),
+                projectionID: sqlite3_column_int64(statement, 1),
+                comparisonSequence: sqlite3_column_int64(statement, 2),
+                positiveRank: try historicalOptionalInteger(statement, 3).map(Int.init)
+            )
+        }
+
+        var projectionCache: [Int64: [Int64: HistoricalRehydratedFinding]] = [:]
+        var result: [EffectiveHistoricalFinding] = []
+        result.reserveCapacity(candidates.count)
+        for candidate in candidates {
+            if projectionCache[candidate.projectionID] == nil {
+                projectionCache[candidate.projectionID] = try rehydratedHistoricalProjection(
+                    id: candidate.projectionID
+                )
+            }
+            let projection = try projectionCache[candidate.projectionID]
+                .unwrap(field: "historical_effective_projection")
+            let finding = try projection[candidate.findingID]
+                .unwrap(field: "historical_effective_finding")
+            guard finding.effective.comparisonSequence.rawValue == candidate.comparisonSequence,
+                  finding.effective.positiveRank == candidate.positiveRank else {
+                throw SQLiteEventJournalError.historicalProjectionImmutableConflict
+            }
+            result.append(finding.effective)
+        }
+        guard result.elementsEqual(result.sorted(by: historicalEffectiveFindingOrder)) else {
+            throw SQLiteEventJournalError.historicalProjectionImmutableConflict
+        }
+        return result
+    }
+
+    package func commitEvidenceInvalidation(
+        _ command: HistoricalFindingEvidenceInvalidationCommand
+    ) throws -> HistoricalRetractionCommitOutcome {
+        let requestDigest = canonicalHistoricalRetractionDigest(command)
+        try execute(
+            "BEGIN IMMEDIATE TRANSACTION",
+            operation: "begin historical finding retraction"
+        )
+        var responseLossAfterCommit = false
+        do {
+            if let existing = try readHistoricalRetraction(requestID: command.requestID) {
+                guard existing.record.findingID == command.findingID,
+                      existing.expectedDraftDigest == Data(command.expectedDraftSHA256.bytes),
+                      existing.canonicalRequestDigest == requestDigest else {
+                    throw SQLiteEventJournalError.historicalRetractionImmutableConflict
+                }
+                try execute(
+                    "COMMIT TRANSACTION",
+                    operation: "commit idempotent historical finding retraction"
+                )
+                return .alreadyCommitted(existing.record)
+            }
+
+            let storedDigest = try historicalRows(
+                "SELECT draft_sha256 FROM historical_finding WHERE finding_id=?",
+                integers: [command.findingID.rawValue]
+            ) { statement in
+                try historicalData(statement, 0, "historical_finding.draft_sha256")
+            }.first
+            guard let storedDigest else {
+                throw SQLiteEventJournalError.historicalRetractionTargetNotFound
+            }
+            guard storedDigest == Data(command.expectedDraftSHA256.bytes) else {
+                throw SQLiteEventJournalError.historicalRetractionExpectedDigestMismatch
+            }
+            guard try historicalOptionalInt(
+                "SELECT retraction_sequence FROM historical_finding_retraction WHERE retracted_finding_id=?",
+                integers: [command.findingID.rawValue]
+            ) == nil else {
+                throw SQLiteEventJournalError.historicalRetractionImmutableConflict
+            }
+
+            try historicalExecuteNullable(
+                "INSERT INTO historical_finding_retraction(request_format_version,request_id,canonical_request_sha256,retracted_finding_id,expected_draft_sha256,reason_code,committed_at_ms) VALUES(1,?,?,?,?,1,CAST((julianday('now')-2440587.5)*86400000 AS INTEGER))",
+                values: [
+                    .blob(Data(command.requestID.bytes)),
+                    .blob(requestDigest),
+                    .integer(command.findingID.rawValue),
+                    .blob(storedDigest),
+                ]
+            )
+            let committed = try readHistoricalRetraction(requestID: command.requestID)
+                .unwrap(field: "historical_finding_retraction")
+            guard committed.record.findingID == command.findingID,
+                  committed.expectedDraftDigest == storedDigest,
+                  committed.canonicalRequestDigest == requestDigest else {
+                throw SQLiteEventJournalError.historicalRetractionImmutableConflict
+            }
+            if injectedFailurePoint == .beforeHistoricalRetractionCommit {
+                injectedFailurePoint = nil
+                throw SQLiteEventJournalError.injectedFailure
+            }
+            try execute(
+                "COMMIT TRANSACTION",
+                operation: "commit historical finding retraction"
+            )
+            if injectedFailurePoint == .afterHistoricalRetractionCommitBeforeReturningReceipt {
+                injectedFailurePoint = nil
+                responseLossAfterCommit = true
+            }
+            if responseLossAfterCommit {
+                throw SQLiteEventJournalError.injectedFailure
+            }
+            return .newlyCommitted(committed.record)
+        } catch SQLiteEventJournalError.injectedFailure where responseLossAfterCommit {
+            throw SQLiteEventJournalError.injectedFailure
+        } catch {
+            try rollback(after: error)
+        }
+    }
+
     public func finalizeCalibrationWithHistoricalFrames(
         _ request: HistoricalCalibrationFinalizationRequest
     ) throws -> HistoricalCalibrationFinalizationOutcome {
@@ -231,6 +402,8 @@ extension SQLiteEventJournalRepository {
         }
     }
 }
+
+extension SQLiteEventJournalRepository: HistoricalFindingIntegrityReconciliationRepository {}
 
 struct HistoricalCalibrationPrimitiveResult {
     let legacyPublished: Bool
@@ -1364,6 +1537,220 @@ private extension SQLiteEventJournalRepository {
         )
     }
 
+    func canonicalHistoricalRetractionDigest(
+        _ command: HistoricalFindingEvidenceInvalidationCommand
+    ) -> Data {
+        canonicalHistoricalRetractionDigestFields(
+            requestID: command.requestID,
+            findingID: command.findingID,
+            expectedDraftDigest: Data(command.expectedDraftSHA256.bytes)
+        )
+    }
+
+    func rehydratedHistoricalFinding(
+        id: HistoricalFindingRecordID
+    ) throws -> HistoricalRehydratedFinding? {
+        guard let projectionID = try historicalOptionalInt(
+            "SELECT projection_id FROM historical_finding WHERE finding_id=?",
+            integers: [id.rawValue]
+        ) else {
+            return nil
+        }
+        return try rehydratedHistoricalProjection(id: projectionID)[id.rawValue]
+            .unwrap(field: "historical_finding")
+    }
+
+    func rehydratedHistoricalProjection(
+        id projectionID: Int64
+    ) throws -> [Int64: HistoricalRehydratedFinding] {
+        let workID = try historicalOptionalInt(
+            "SELECT work_id FROM historical_finding_projection WHERE projection_id=?",
+            integers: [projectionID]
+        ).unwrap(field: "historical_finding_projection")
+        let work = try readHistoricalProjectionWork(
+            id: HistoricalProjectionWorkID(workID)
+        ).unwrap(field: "historical_projection_work")
+        let baseline = try readHistoricalFrame(sequence: work.baselineSequence)
+            .unwrap(field: "historical_projection_baseline")
+        let comparison = try readHistoricalFrame(sequence: work.comparisonSequence)
+            .unwrap(field: "historical_projection_comparison")
+        let result = try HistoricalFindingGenerator().generate(
+            baseline: baseline,
+            comparison: comparison,
+            positiveLimit: work.positiveLimit
+        )
+        try validateStoredHistoricalProjection(
+            projectionID: projectionID,
+            work: work,
+            result: result,
+            resultDigest: try canonicalHistoricalProjectionDigest(result)
+        )
+        let rows = try historicalRows(
+            "SELECT finding_id,ordinal,draft_sha256 FROM historical_finding WHERE projection_id=? ORDER BY ordinal",
+            integers: [projectionID]
+        ) { statement in
+            (
+                sqlite3_column_int64(statement, 0),
+                Int(sqlite3_column_int64(statement, 1)),
+                try historicalData(statement, 2, "finding.draft_digest")
+            )
+        }
+        let ranks = try historicalRows(
+            "SELECT finding_id,rank FROM historical_finding_positive_rank WHERE projection_id=?",
+            integers: [projectionID]
+        ) { statement in
+            (
+                sqlite3_column_int64(statement, 0),
+                Int(sqlite3_column_int64(statement, 1))
+            )
+        }
+        let rankByFindingID = Dictionary(uniqueKeysWithValues: ranks)
+        guard rows.count == result.batch.findings.count else {
+            throw SQLiteEventJournalError.historicalProjectionImmutableConflict
+        }
+        var rehydrated: [Int64: HistoricalRehydratedFinding] = [:]
+        for row in rows {
+            guard result.batch.findings.indices.contains(row.1) else {
+                throw SQLiteEventJournalError.historicalProjectionImmutableConflict
+            }
+            let draft = result.batch.findings[row.1]
+            let draftDigest = try canonicalHistoricalDigest(
+                draft,
+                domain: "SpaceTrace.HistoricalFindingDraft.v1"
+            )
+            guard row.2 == draftDigest else {
+                throw SQLiteEventJournalError.historicalProjectionImmutableConflict
+            }
+            let effective = try EffectiveHistoricalFinding(
+                recordID: HistoricalFindingRecordID(row.0),
+                projectionID: HistoricalProjectionRecordID(projectionID),
+                comparisonSequence: work.comparisonSequence,
+                positiveRank: rankByFindingID[row.0],
+                draft: draft
+            )
+            guard rehydrated.updateValue(
+                HistoricalRehydratedFinding(
+                    effective: effective,
+                    draftDigest: row.2
+                ),
+                forKey: row.0
+            ) == nil else {
+                throw SQLiteEventJournalError.historicalProjectionImmutableConflict
+            }
+        }
+        return rehydrated
+    }
+
+    func readHistoricalStoredRetraction(
+        findingID: HistoricalFindingRecordID
+    ) throws -> HistoricalStoredRetraction? {
+        try readHistoricalRetraction(
+            sql: "SELECT retraction_sequence,request_format_version,request_id,canonical_request_sha256,retracted_finding_id,expected_draft_sha256,reason_code,committed_at_ms FROM historical_finding_retraction WHERE retracted_finding_id=?",
+            integers: [findingID.rawValue],
+            blobs: []
+        )
+    }
+
+    func readHistoricalRetraction(
+        requestID: HistoricalRetractionRequestID
+    ) throws -> HistoricalStoredRetraction? {
+        try readHistoricalRetraction(
+            sql: "SELECT retraction_sequence,request_format_version,request_id,canonical_request_sha256,retracted_finding_id,expected_draft_sha256,reason_code,committed_at_ms FROM historical_finding_retraction WHERE request_id=?",
+            integers: [],
+            blobs: [Data(requestID.bytes)]
+        )
+    }
+
+    func readHistoricalRetraction(
+        sql: String,
+        integers: [Int64],
+        blobs: [Data]
+    ) throws -> HistoricalStoredRetraction? {
+        let rows = try historicalRows(sql, integers: integers, blobs: blobs) { statement in
+            guard sqlite3_column_int64(statement, 1) == 1,
+                  sqlite3_column_int64(statement, 6) == 1,
+                  sqlite3_column_int64(statement, 7) >= 0 else {
+                throw SQLiteEventJournalError.corruptStoredValue(
+                    field: "historical_finding_retraction"
+                )
+            }
+            let request = try HistoricalRetractionRequestID(
+                bytes: Array(try historicalData(statement, 2, "retraction.request_id"))
+            )
+            let canonicalDigest = try historicalData(
+                statement,
+                3,
+                "retraction.canonical_request_sha256"
+            )
+            let expectedDigest = try historicalData(
+                statement,
+                5,
+                "retraction.expected_draft_sha256"
+            )
+            let findingID = try HistoricalFindingRecordID(
+                sqlite3_column_int64(statement, 4)
+            )
+            let commandDigest = canonicalHistoricalRetractionDigestFields(
+                requestID: request,
+                findingID: findingID,
+                expectedDraftDigest: expectedDigest
+            )
+            guard canonicalDigest.count == 32,
+                  expectedDigest.count == 32,
+                  canonicalDigest == commandDigest else {
+                throw SQLiteEventJournalError.corruptStoredValue(
+                    field: "historical_finding_retraction"
+                )
+            }
+            return HistoricalStoredRetraction(
+                record: HistoricalFindingRetractionRecord(
+                    recordID: try HistoricalRetractionRecordID(
+                        sqlite3_column_int64(statement, 0)
+                    ),
+                    requestID: request,
+                    findingID: findingID,
+                    reason: .evidenceInvalidated,
+                    committedAt: try ObservationInstant(
+                        millisecondsSince1970: sqlite3_column_int64(statement, 7)
+                    )
+                ),
+                canonicalRequestDigest: canonicalDigest,
+                expectedDraftDigest: expectedDigest
+            )
+        }
+        guard rows.count <= 1 else {
+            throw SQLiteEventJournalError.corruptStoredValue(
+                field: "historical_finding_retraction"
+            )
+        }
+        return rows.first
+    }
+
+    func canonicalHistoricalRetractionDigestFields(
+        requestID: HistoricalRetractionRequestID,
+        findingID: HistoricalFindingRecordID,
+        expectedDraftDigest: Data
+    ) -> Data {
+        var canonical = Data("SpaceTrace.HistoricalFindingRetractionRequest".utf8)
+        canonical.append(0)
+        appendHistoricalBigEndian(UInt32(1), to: &canonical)
+        canonical.append(contentsOf: requestID.bytes)
+        appendHistoricalBigEndian(UInt64(findingID.rawValue), to: &canonical)
+        canonical.append(expectedDraftDigest)
+        let reason = Data("evidence_invalidated".utf8)
+        appendHistoricalBigEndian(UInt64(reason.count), to: &canonical)
+        canonical.append(reason)
+        return Data(SHA256.hash(data: canonical))
+    }
+
+    func appendHistoricalBigEndian<T: FixedWidthInteger>(
+        _ value: T,
+        to data: inout Data
+    ) {
+        var bigEndian = value.bigEndian
+        withUnsafeBytes(of: &bigEndian) { data.append(contentsOf: $0) }
+    }
+
     func insertHistoricalProjection(
         work: HistoricalProjectionWork,
         result: HistoricalFindingGenerationResult,
@@ -2021,6 +2408,47 @@ private struct HistoricalProjectionStoredReason: Equatable {
     let category: Int64
     let reasonCode: Int64
     let count: Int64
+}
+
+private struct HistoricalEffectiveFindingCandidate {
+    let findingID: Int64
+    let projectionID: Int64
+    let comparisonSequence: Int64
+    let positiveRank: Int?
+}
+
+private struct HistoricalRehydratedFinding {
+    let effective: EffectiveHistoricalFinding
+    let draftDigest: Data
+}
+
+private struct HistoricalStoredRetraction {
+    let record: HistoricalFindingRetractionRecord
+    let canonicalRequestDigest: Data
+    let expectedDraftDigest: Data
+}
+
+private func historicalEffectiveFindingOrder(
+    _ lhs: EffectiveHistoricalFinding,
+    _ rhs: EffectiveHistoricalFinding
+) -> Bool {
+    if lhs.comparisonSequence != rhs.comparisonSequence {
+        return lhs.comparisonSequence > rhs.comparisonSequence
+    }
+    switch (lhs.positiveRank, rhs.positiveRank) {
+    case let (.some(left), .some(right)) where left != right:
+        return left < right
+    case (.some, .none):
+        return true
+    case (.none, .some):
+        return false
+    default:
+        break
+    }
+    if lhs.draft.key != rhs.draft.key {
+        return lhs.draft.key < rhs.draft.key
+    }
+    return lhs.recordID < rhs.recordID
 }
 
 private enum HistoricalProjectionVisitState {

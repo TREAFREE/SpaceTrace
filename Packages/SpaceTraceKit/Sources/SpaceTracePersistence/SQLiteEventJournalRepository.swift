@@ -3778,6 +3778,8 @@ enum SQLiteEventJournalTestFailurePoint: Sendable, Equatable {
     case afterCalibrationCommitBeforeReturningReceipt
     case beforeHistoricalProjectionCheckpoint
     case afterHistoricalProjectionCommitBeforeReturningReceipt
+    case beforeHistoricalRetractionCommit
+    case afterHistoricalRetractionCommitBeforeReturningReceipt
     case forceHistoricalFindingKeyDigestCollision
 }
 
@@ -3806,6 +3808,9 @@ public enum SQLiteEventJournalError: Error, Sendable, Equatable {
     case historicalProjectionWorkMismatch
     case historicalProjectionResultMismatch
     case historicalProjectionImmutableConflict
+    case historicalRetractionTargetNotFound
+    case historicalRetractionExpectedDigestMismatch
+    case historicalRetractionImmutableConflict
     case invalidCursorEncoding(field: String, actualByteCount: Int)
     case corruptStoredValue(field: String)
     case sqliteFailure(operation: String, code: Int32, message: String)

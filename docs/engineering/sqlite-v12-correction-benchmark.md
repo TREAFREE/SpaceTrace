@@ -9,9 +9,12 @@ migrates fresh and v11 stores to `PRAGMA user_version` 12. The layout extends th
 v11 immutable observation ledger with compact reconciliation revisions,
 registered correction input, linear correcting-projection work/checkpoints,
 complete replacement findings/ranks/reasons, and current-effective query
-indexes. It does not claim that revision/correction transactions, recovery,
-retention, UI integration, macOS 15.6 qualification, signing, notarization, or
-release distribution is complete.
+indexes. Complete paired calibration now appends reconciliation revisions in
+the same transaction as current truth, v11 frames, scan completion, the dirty
+compare-and-delete, and the legacy materialized cache. It does not claim that
+registered correcting-projection transactions, status/query UI integration,
+macOS 15.6 qualification, signing, notarization, or release distribution is
+complete.
 
 The prototype reuses immutable v11 observation nodes and their two metric
 endpoints. One compact row represents the hourly and daily revisions for one
@@ -96,5 +99,14 @@ truthfully and are not constrained by that long-lived storage gate.
   observations, four revisions, one committed original projection, and one
   checkpointed empty correcting projection. Its generator, bytes, semantics,
   and schema-object digest are independently revalidated byte-for-byte.
-- Calibration publication and registered correcting-projection transactions
-  remain later gates; installing schema v12 alone does not complete FR-004.
+- Complete calibration publishes only present, completely measured directory
+  revisions. Same-bucket successors retain their predecessor, database-derived
+  order remains authoritative across wall-clock rollback, and ACK-loss retry
+  returns the prior revision identities without allocating duplicates.
+- Dirty-revision loss, superseded/partial/cancelled/failed/history-disabled or
+  already-expired scans append no revision. Retention removes an entire
+  same-bucket chain and any dependent correcting-projection graph atomically
+  before deleting v11 nodes.
+- Registered correcting-projection transactions and the remaining query/status
+  integration gates are still incomplete; this stage alone does not complete
+  FR-004.

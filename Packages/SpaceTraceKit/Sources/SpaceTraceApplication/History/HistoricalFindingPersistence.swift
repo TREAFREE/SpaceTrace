@@ -239,15 +239,20 @@ public struct HistoricalCalibrationCommit: Sendable, Equatable {
     public let disposition: HistoricalCalibrationCommitDisposition
     public let logical: HistoricalObservationFrameCommit
     public let allocated: HistoricalObservationFrameCommit
+    public let reconciliationRevisions: [ReconciliationRevision]
 
     public init(
         disposition: HistoricalCalibrationCommitDisposition,
         logical: HistoricalObservationFrameCommit,
-        allocated: HistoricalObservationFrameCommit
+        allocated: HistoricalObservationFrameCommit,
+        reconciliationRevisions: [ReconciliationRevision] = []
     ) {
         self.disposition = disposition
         self.logical = logical
         self.allocated = allocated
+        self.reconciliationRevisions = reconciliationRevisions.sorted {
+            $0.id < $1.id
+        }
     }
 }
 

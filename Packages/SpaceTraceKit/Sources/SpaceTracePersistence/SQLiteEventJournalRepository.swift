@@ -3430,10 +3430,15 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             operation: "create expired work key set"
         )
         try execute(
+            "CREATE TEMP TABLE IF NOT EXISTS spacetrace_expired_correction_work(work_id INTEGER PRIMARY KEY) WITHOUT ROWID",
+            operation: "create expired correction work key set"
+        )
+        try execute(
             "CREATE TEMP TABLE IF NOT EXISTS spacetrace_rebased_sequence(sequence INTEGER PRIMARY KEY) WITHOUT ROWID",
             operation: "create rebased sequence key set"
         )
         try execute("DELETE FROM spacetrace_rebased_sequence", operation: "clear rebased sequence key set")
+        try execute("DELETE FROM spacetrace_expired_correction_work", operation: "clear expired correction work key set")
         try execute("DELETE FROM spacetrace_expired_work", operation: "clear expired work key set")
         try execute("DELETE FROM spacetrace_expired_batch", operation: "clear expired batch key set")
 
@@ -3445,11 +3450,24 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         }
         try execute(
             """
+            WITH RECURSIVE expired(batch_id) AS (
+                SELECT DISTINCT f.batch_id
+                FROM historical_observation_frame f
+                JOIN historical_observation_frame_commit c ON c.frame_id=f.frame_id
+                WHERE \(expiryPredicate)
+                UNION
+                SELECT successor_node.batch_id
+                FROM expired
+                JOIN historical_observation_node predecessor_node
+                  ON predecessor_node.batch_id=expired.batch_id
+                JOIN historical_reconciliation_revision successor
+                  ON successor.hourly_predecessor_node_id=predecessor_node.node_id
+                  OR successor.daily_predecessor_node_id=predecessor_node.node_id
+                JOIN historical_observation_node successor_node
+                  ON successor_node.node_id=successor.node_id
+            )
             INSERT INTO spacetrace_expired_batch(batch_id)
-            SELECT DISTINCT f.batch_id
-            FROM historical_observation_frame f
-            JOIN historical_observation_frame_commit c ON c.frame_id=f.frame_id
-            WHERE \(expiryPredicate)
+            SELECT batch_id FROM expired
             """,
             operation: "select expired historical batches"
         )
@@ -3466,6 +3484,17 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                OR cf.batch_id IN (SELECT batch_id FROM spacetrace_expired_batch)
             """,
             operation: "select expired historical projection work"
+        )
+        try execute(
+            """
+            INSERT INTO spacetrace_expired_correction_work(work_id)
+            SELECT correction.work_id
+            FROM historical_projection_correction_work correction
+            JOIN historical_finding_projection root
+              ON root.projection_id=correction.root_projection_id
+            WHERE root.work_id IN (SELECT work_id FROM spacetrace_expired_work)
+            """,
+            operation: "select expired historical correction work"
         )
         try execute(
             """
@@ -3502,6 +3531,35 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 at: retentionEventMilliseconds
             )
         }
+
+        try execute(
+            "DELETE FROM historical_corrected_positive_rank WHERE correcting_projection_id IN (SELECT correcting.correcting_projection_id FROM historical_correcting_projection correcting WHERE correcting.work_id IN (SELECT work_id FROM spacetrace_expired_correction_work))",
+            operation: "delete expired corrected ranks"
+        )
+        try execute(
+            "DELETE FROM historical_corrected_reason_count WHERE correcting_projection_id IN (SELECT correcting.correcting_projection_id FROM historical_correcting_projection correcting WHERE correcting.work_id IN (SELECT work_id FROM spacetrace_expired_correction_work))",
+            operation: "delete expired corrected reasons"
+        )
+        try execute(
+            "DELETE FROM historical_corrected_finding WHERE correcting_projection_id IN (SELECT correcting.correcting_projection_id FROM historical_correcting_projection correcting WHERE correcting.work_id IN (SELECT work_id FROM spacetrace_expired_correction_work))",
+            operation: "delete expired corrected findings"
+        )
+        try execute(
+            "DELETE FROM historical_projection_correction_checkpoint WHERE work_id IN (SELECT work_id FROM spacetrace_expired_correction_work)",
+            operation: "delete expired correction checkpoints"
+        )
+        try execute(
+            "DELETE FROM historical_correcting_projection WHERE work_id IN (SELECT work_id FROM spacetrace_expired_correction_work)",
+            operation: "delete expired correcting projections"
+        )
+        try execute(
+            "DELETE FROM historical_projection_correction_work WHERE work_id IN (SELECT work_id FROM spacetrace_expired_correction_work)",
+            operation: "delete expired correction work"
+        )
+        try execute(
+            "DELETE FROM historical_correction_input WHERE NOT EXISTS(SELECT 1 FROM historical_projection_correction_work work WHERE work.algorithm_version=historical_correction_input.algorithm_version AND work.ranking_policy_version=historical_correction_input.ranking_policy_version AND work.correction_input_format_version=historical_correction_input.input_format_version AND work.correction_input_sha256=historical_correction_input.input_sha256)",
+            operation: "delete orphan correction input"
+        )
 
         try execute(
             "DELETE FROM historical_finding_retraction WHERE retracted_finding_id IN (SELECT finding_id FROM historical_finding WHERE projection_id IN (SELECT projection_id FROM historical_finding_projection WHERE work_id IN (SELECT work_id FROM spacetrace_expired_work)))",
@@ -3557,6 +3615,10 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         try execute(
             "DELETE FROM historical_disabled_calibration_receipt WHERE expires_at_ms < \(referenceMilliseconds)",
             operation: "delete expired disabled receipts"
+        )
+        try execute(
+            "DELETE FROM historical_reconciliation_revision WHERE node_id IN (SELECT node_id FROM historical_observation_node WHERE batch_id IN (SELECT batch_id FROM spacetrace_expired_batch))",
+            operation: "delete expired reconciliation revisions"
         )
         try execute(
             "DELETE FROM historical_observation_frame_commit WHERE frame_id IN (SELECT frame_id FROM historical_observation_frame WHERE batch_id IN (SELECT batch_id FROM spacetrace_expired_batch))",
@@ -4324,6 +4386,7 @@ enum SQLiteEventJournalTestFailurePoint: Sendable, Equatable {
     case afterHistoricalNodes
     case afterHistoricalLogicalEndpoints
     case afterHistoricalLogicalMarker
+    case afterHistoricalReconciliationRevisions
     case beforeHistoricalProjectionWork
     case afterCalibrationCommitBeforeReturningReceipt
     case beforeHistoricalProjectionCheckpoint

@@ -565,6 +565,23 @@ extension SQLiteEventJournalRepository {
                 throw SQLiteEventJournalError.dirtyRevisionChangedDuringFinalization
             }
             try finishScanRun(runID, state: "completed", report: report)
+            if let historicalRequest,
+               case let .published(commit)? = historicalOutcome {
+                let revisions = try appendReconciliationRevisions(
+                    for: historicalRequest
+                )
+                historicalOutcome = .published(
+                    HistoricalCalibrationCommit(
+                        disposition: commit.disposition,
+                        logical: commit.logical,
+                        allocated: commit.allocated,
+                        reconciliationRevisions: revisions
+                    )
+                )
+                try failHistoricalFinalizationIfRequested(
+                    .afterHistoricalReconciliationRevisions
+                )
+            }
             try deleteStagedRows(runID)
             try execute("COMMIT TRANSACTION", operation: "commit calibration finalization")
             if historicalRequest != nil,
@@ -931,6 +948,301 @@ private extension SQLiteEventJournalRepository {
                 try historicalText(statement, 3, "scan_node_stage.coverage")
             )
         }
+    }
+}
+
+private extension SQLiteEventJournalRepository {
+    /// Appends one compact v12 row per completely measured directory. The row
+    /// is the shared authority for its hourly and daily public revision IDs.
+    /// This runs only after the dirty compare-and-delete succeeds and the scan
+    /// is terminal, but before staged evidence is removed and before COMMIT.
+    func appendReconciliationRevisions(
+        for request: HistoricalCalibrationFinalizationRequest
+    ) throws -> [ReconciliationRevision] {
+        let rows = try reconciliationSourceRows(runID: request.runID)
+        let expectedPresentCount = request.observation.nodes.reduce(into: 0) { count, node in
+            if case .present = node.state { count += 1 }
+        }
+        guard rows.count == expectedPresentCount else {
+            throw SQLiteEventJournalError.corruptStoredValue(
+                field: "reconciliation_source_count"
+            )
+        }
+
+        for row in rows {
+            let hourlyPredecessor = try terminalReconciliationPredecessor(
+                nodeID: row.nodeID,
+                bucket: .hourly
+            )
+            let dailyPredecessor = try terminalReconciliationPredecessor(
+                nodeID: row.nodeID,
+                bucket: .daily
+            )
+            let digest = reconciliationPayloadDigest(
+                row: row,
+                runID: request.runID,
+                dirtyRevision: request.workItem.revision
+            )
+            try historicalExecuteNullable(
+                "INSERT INTO historical_reconciliation_revision(node_id,hourly_predecessor_node_id,daily_predecessor_node_id,descendant_count,payload_sha256) VALUES(?,?,?,?,?)",
+                values: [
+                    .integer(row.nodeID),
+                    hourlyPredecessor.map(HistoricalSQLValue.integer) ?? .null,
+                    dailyPredecessor.map(HistoricalSQLValue.integer) ?? .null,
+                    .integer(row.descendantCount),
+                    .blob(digest),
+                ]
+            )
+        }
+        return try readReconciliationRevisions(runID: request.runID)
+    }
+
+    func readReconciliationRevisions(
+        runID: CalibrationRunID
+    ) throws -> [ReconciliationRevision] {
+        let context = try readScanRun(runID)
+        let rows = try historicalRows(
+            """
+            SELECT n.node_id,s.subject_id,l.location_id,n.observed_at_ms,
+                   logical.bytes,allocated.bytes,r.descendant_count,
+                   scope.scope_id,b.stream_id_utf8,
+                   r.hourly_predecessor_node_id,r.daily_predecessor_node_id,
+                   r.payload_sha256
+            FROM historical_observation_batch b
+            JOIN historical_scope scope ON scope.scope_key=b.scope_key
+            JOIN historical_observation_node n ON n.batch_id=b.batch_id
+            JOIN historical_subject s ON s.subject_key=n.subject_key
+            JOIN historical_location l ON l.location_key=n.location_key
+            JOIN historical_metric_endpoint logical
+              ON logical.node_id=n.node_id AND logical.metric=1
+            JOIN historical_metric_endpoint allocated
+              ON allocated.node_id=n.node_id AND allocated.metric=2
+            JOIN historical_reconciliation_revision r ON r.node_id=n.node_id
+            WHERE b.scan_run_id=?
+            ORDER BY n.node_id
+            """,
+            text: runID.rawValue
+        ) { statement in
+            try ReconciliationStoredRow(
+                nodeID: sqlite3_column_int64(statement, 0),
+                subjectID: SQLiteHistoricalFindingCodec.decodeUTF8(
+                    try historicalData(statement, 1, "reconciliation.subject_id"),
+                    field: "reconciliation.subject_id",
+                    maximumBytes: 4_096
+                ),
+                locationID: SQLiteHistoricalFindingCodec.decodeUTF8(
+                    try historicalData(statement, 2, "reconciliation.location_id"),
+                    field: "reconciliation.location_id",
+                    maximumBytes: 4_096
+                ),
+                observedAt: sqlite3_column_int64(statement, 3),
+                logicalBytes: sqlite3_column_int64(statement, 4),
+                allocatedBytes: sqlite3_column_int64(statement, 5),
+                descendantCount: sqlite3_column_int64(statement, 6),
+                scopeID: SQLiteHistoricalFindingCodec.decodeUTF8(
+                    try historicalData(statement, 7, "reconciliation.scope_id"),
+                    field: "reconciliation.scope_id",
+                    maximumBytes: 4_096
+                ),
+                streamID: SQLiteHistoricalFindingCodec.decodeUTF8(
+                    try historicalData(statement, 8, "reconciliation.stream_id"),
+                    field: "reconciliation.stream_id",
+                    maximumBytes: 4_096
+                ),
+                hourlyPredecessorNodeID: try historicalOptionalInteger(statement, 9),
+                dailyPredecessorNodeID: try historicalOptionalInteger(statement, 10),
+                payloadDigest: try historicalData(statement, 11, "reconciliation.payload")
+            )
+        }
+
+        var result: [ReconciliationRevision] = []
+        result.reserveCapacity(rows.count * 2)
+        for row in rows {
+            guard row.streamID.utf8.elementsEqual(context.streamID.rawValue.utf8),
+                  reconciliationPayloadDigest(
+                    row: row.source,
+                    runID: runID,
+                    dirtyRevision: context.revision
+                  ) == row.payloadDigest else {
+                throw SQLiteEventJournalError.corruptStoredValue(
+                    field: "reconciliation_payload"
+                )
+            }
+            for bucket in [DirectoryHistoryBucket.hourly, .daily] {
+                let duration = bucket.durationMilliseconds
+                let bucketStart = row.observedAt - row.observedAt % duration
+                let key = try ReconciliationRevisionKey(
+                    scopeID: WatchedScopeID(row.scopeID),
+                    streamID: EventStreamID(row.streamID),
+                    subjectID: SubjectID(row.subjectID),
+                    locationID: ObservationLocationID(row.locationID),
+                    bucket: bucket,
+                    bucketStart: ObservationInstant(millisecondsSince1970: bucketStart)
+                )
+                let publicID = try SQLiteHistoricalCorrectionSchema.materializedRevisionID(
+                    nodeID: row.nodeID,
+                    bucketCode: bucket == .hourly ? 1 : 2
+                )
+                let predecessorNodeID = bucket == .hourly
+                    ? row.hourlyPredecessorNodeID
+                    : row.dailyPredecessorNodeID
+                let predecessor: ReconciliationRevisionReference? = try predecessorNodeID.map {
+                    let predecessorID = try SQLiteHistoricalCorrectionSchema.materializedRevisionID(
+                        nodeID: $0,
+                        bucketCode: bucket == .hourly ? 1 : 2
+                    )
+                    return ReconciliationRevisionReference(
+                        id: try ReconciliationRevisionID(predecessorID),
+                        sequence: try ReconciliationRevisionSequence(predecessorID),
+                        key: key
+                    )
+                }
+                result.append(
+                    try ReconciliationRevision(
+                        id: ReconciliationRevisionID(publicID),
+                        sequence: ReconciliationRevisionSequence(publicID),
+                        key: key,
+                        predecessor: predecessor,
+                        scanRunID: runID,
+                        dirtyRevision: context.revision,
+                        observedAt: ObservationInstant(
+                            millisecondsSince1970: row.observedAt
+                        ),
+                        logicalBytes: ByteCount(row.logicalBytes),
+                        allocatedBytes: ByteCount(row.allocatedBytes),
+                        descendantCount: row.descendantCount,
+                        payloadDigest: ReconciliationRevisionDigest(
+                            bytes: Array(row.payloadDigest)
+                        )
+                    )
+                )
+            }
+        }
+        return result.sorted { $0.id < $1.id }
+    }
+
+    func reconciliationSourceRows(
+        runID: CalibrationRunID
+    ) throws -> [ReconciliationSourceRow] {
+        try historicalRows(
+            """
+            SELECT n.node_id,s.subject_id,l.location_id,n.observed_at_ms,
+                   logical.bytes,allocated.bytes,staged.descendant_count,
+                   scope.scope_id,b.stream_id_utf8
+            FROM historical_observation_batch b
+            JOIN historical_scope scope ON scope.scope_key=b.scope_key
+            JOIN historical_observation_node n ON n.batch_id=b.batch_id
+            JOIN historical_subject s ON s.subject_key=n.subject_key
+            JOIN historical_location l ON l.location_key=n.location_key
+            JOIN historical_metric_endpoint logical
+              ON logical.node_id=n.node_id AND logical.metric=1
+            JOIN historical_metric_endpoint allocated
+              ON allocated.node_id=n.node_id AND allocated.metric=2
+            JOIN scan_node_stage staged
+              ON staged.scan_run_id=b.scan_run_id
+             AND CAST(staged.path AS BLOB)=l.path_utf8
+            WHERE b.scan_run_id=?
+              AND logical.state_kind=1 AND logical.measurement_coverage=1
+              AND allocated.state_kind=1 AND allocated.measurement_coverage=1
+              AND staged.coverage='complete'
+            ORDER BY n.node_id
+            """,
+            text: runID.rawValue
+        ) { statement in
+            ReconciliationSourceRow(
+                nodeID: sqlite3_column_int64(statement, 0),
+                subjectID: try SQLiteHistoricalFindingCodec.decodeUTF8(
+                    try historicalData(statement, 1, "reconciliation.subject_id"),
+                    field: "reconciliation.subject_id",
+                    maximumBytes: 4_096
+                ),
+                locationID: try SQLiteHistoricalFindingCodec.decodeUTF8(
+                    try historicalData(statement, 2, "reconciliation.location_id"),
+                    field: "reconciliation.location_id",
+                    maximumBytes: 4_096
+                ),
+                observedAt: sqlite3_column_int64(statement, 3),
+                logicalBytes: sqlite3_column_int64(statement, 4),
+                allocatedBytes: sqlite3_column_int64(statement, 5),
+                descendantCount: sqlite3_column_int64(statement, 6),
+                scopeID: try SQLiteHistoricalFindingCodec.decodeUTF8(
+                    try historicalData(statement, 7, "reconciliation.scope_id"),
+                    field: "reconciliation.scope_id",
+                    maximumBytes: 4_096
+                ),
+                streamID: try SQLiteHistoricalFindingCodec.decodeUTF8(
+                    try historicalData(statement, 8, "reconciliation.stream_id"),
+                    field: "reconciliation.stream_id",
+                    maximumBytes: 4_096
+                )
+            )
+        }
+    }
+
+    func terminalReconciliationPredecessor(
+        nodeID: Int64,
+        bucket: DirectoryHistoryBucket
+    ) throws -> Int64? {
+        let predecessorColumn = bucket == .hourly
+            ? "hourly_predecessor_node_id"
+            : "daily_predecessor_node_id"
+        let duration = bucket.durationMilliseconds
+        return try historicalOptionalInt(
+            """
+            SELECT prior.node_id
+            FROM historical_observation_node new_node
+            JOIN historical_observation_batch new_batch
+              ON new_batch.batch_id=new_node.batch_id
+            JOIN historical_reconciliation_revision prior
+            JOIN historical_observation_node prior_node
+              ON prior_node.node_id=prior.node_id
+            JOIN historical_observation_batch prior_batch
+              ON prior_batch.batch_id=prior_node.batch_id
+            WHERE new_node.node_id=?
+              AND prior.node_id<new_node.node_id
+              AND prior_batch.scope_key=new_batch.scope_key
+              AND prior_batch.stream_id_utf8=new_batch.stream_id_utf8
+              AND prior_node.subject_key=new_node.subject_key
+              AND prior_node.location_key=new_node.location_key
+              AND prior_node.observed_at_ms/?=new_node.observed_at_ms/?
+              AND NOT EXISTS(
+                  SELECT 1 FROM historical_reconciliation_revision successor
+                  WHERE successor.\(predecessorColumn)=prior.node_id
+              )
+            ORDER BY prior.node_id DESC
+            LIMIT 1
+            """,
+            integers: [nodeID, duration, duration]
+        )
+    }
+
+    func reconciliationPayloadDigest(
+        row: ReconciliationSourceRow,
+        runID: CalibrationRunID,
+        dirtyRevision: DirtyRegionRevision
+    ) -> Data {
+        var payload = Data("SpaceTrace.ReconciliationNodeRevision.v1".utf8)
+        func append(_ data: Data) {
+            var length = UInt64(data.count).bigEndian
+            withUnsafeBytes(of: &length) { payload.append(contentsOf: $0) }
+            payload.append(data)
+        }
+        func append(_ value: Int64) {
+            var bigEndian = value.bigEndian
+            withUnsafeBytes(of: &bigEndian) { payload.append(contentsOf: $0) }
+        }
+        append(row.nodeID)
+        append(Data(row.scopeID.utf8))
+        append(Data(row.streamID.utf8))
+        append(Data(row.subjectID.utf8))
+        append(Data(row.locationID.utf8))
+        append(Data(runID.rawValue.utf8))
+        append(Int64(bitPattern: dirtyRevision.rawValue))
+        append(row.observedAt)
+        append(row.logicalBytes)
+        append(row.allocatedBytes)
+        append(row.descendantCount)
+        return Data(SHA256.hash(data: payload))
     }
 }
 
@@ -1406,6 +1718,9 @@ private extension SQLiteEventJournalRepository {
                         sequence: allocated,
                         rootEndpointID: try allocatedFrame.unwrap(field: "allocated_frame").rootEndpointID,
                         endpointCount: try allocatedFrame.unwrap(field: "allocated_frame").nodes.count
+                    ),
+                    reconciliationRevisions: try readReconciliationRevisions(
+                        runID: request.runID
                     )
                 )
             )
@@ -2636,6 +2951,47 @@ private struct HistoricalFrameHeader {
     let measurementSemantics: Int64
     let metric: Int32
     let batchID: Int64
+}
+
+private struct ReconciliationSourceRow {
+    let nodeID: Int64
+    let subjectID: String
+    let locationID: String
+    let observedAt: Int64
+    let logicalBytes: Int64
+    let allocatedBytes: Int64
+    let descendantCount: Int64
+    let scopeID: String
+    let streamID: String
+}
+
+private struct ReconciliationStoredRow {
+    let nodeID: Int64
+    let subjectID: String
+    let locationID: String
+    let observedAt: Int64
+    let logicalBytes: Int64
+    let allocatedBytes: Int64
+    let descendantCount: Int64
+    let scopeID: String
+    let streamID: String
+    let hourlyPredecessorNodeID: Int64?
+    let dailyPredecessorNodeID: Int64?
+    let payloadDigest: Data
+
+    var source: ReconciliationSourceRow {
+        ReconciliationSourceRow(
+            nodeID: nodeID,
+            subjectID: subjectID,
+            locationID: locationID,
+            observedAt: observedAt,
+            logicalBytes: logicalBytes,
+            allocatedBytes: allocatedBytes,
+            descendantCount: descendantCount,
+            scopeID: scopeID,
+            streamID: streamID
+        )
+    }
 }
 
 private struct HistoricalProjectionExpectedFindingRow {

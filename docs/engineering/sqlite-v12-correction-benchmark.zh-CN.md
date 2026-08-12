@@ -7,8 +7,10 @@
 这份证据冻结 ADR-008 选定的物理结构。生产仓库现在会把新库和 v11 库迁移至
 `PRAGMA user_version` 12。该结构在已发布的 v11 不可变观测账本上增加紧凑的校准
 修订、已注册更正输入、线性更正投影 work/checkpoint、完整替换的
-finding/rank/reason，以及 current-effective 查询索引。它不表示修订/更正事务、
-恢复、保留策略、UI 接入、macOS 15.6 资格、签名、公证或发布分发已经完成。
+finding/rank/reason，以及 current-effective 查询索引。完整的成对校准现在会在
+同一个事务里写入校准修订、当前真值、v11 frame、scan 完成状态、dirty
+compare-and-delete 和旧物化缓存。它仍不表示注册式更正投影事务、状态/查询 UI、
+macOS 15.6 资格、签名、公证或发布分发已经完成。
 
 原型复用 v11 不可变观测节点及其两种度量端点。一条紧凑记录同时表示一次完整
 节点观测的小时与日修订；不同的公开修订 ID 由数据库分配的 node ID 加桶判别码
@@ -79,5 +81,11 @@ WAL 截断后为 0 字节。最大的最终场景为 237,023,232 字节，相对
 - 确定性 released v12 fixture 包含两组完整双指标观测、4 条修订、1 个已提交原始投影
   和 1 个已 checkpoint 的空结果更正投影。门禁会独立逐字节复核 generator、
   fixture、语义与 schema-object digest。
-- 校准发布与注册式更正投影事务仍是后续门禁；仅安装 schema v12 不代表
-  FR-004 已完成。
+- 完整校准只会为 present 且完整测量的目录发布修订。同桶 successor 保留前驱；
+  即使墙钟回拨，也以数据库派生顺序为准；ACK 丢失重试会返回原修订身份，不会
+  重复分配。
+- dirty revision 竞争失败，以及 superseded、partial、cancelled、failed、
+  history-disabled 或已经过期的扫描都不会写入修订。保留事务会先原子删除整个
+  同桶链及其 dependent correcting-projection 图，再删除 v11 节点。
+- 注册式更正投影事务以及剩余查询/状态接入门禁仍未完成；本阶段本身尚未完成
+  FR-004。

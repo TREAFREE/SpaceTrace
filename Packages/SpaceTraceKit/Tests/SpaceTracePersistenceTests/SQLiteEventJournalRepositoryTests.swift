@@ -1847,6 +1847,7 @@ private func createVersionSixFixture(at databaseURL: URL) async throws {
     try createVersionFiveFixture(at: databaseURL)
     let repository = try SQLiteEventJournalRepository(databaseURL: databaseURL)
     try await repository.close()
+    try removeV11SchemaForLegacyMigrationFixture(at: databaseURL)
     try executeFixtureSQL(
         at: databaseURL,
         sql: """
@@ -1865,6 +1866,7 @@ private func createVersionSixFixture(at databaseURL: URL) async throws {
 private func createVersionSevenFixture(at databaseURL: URL) async throws {
     let repository = try SQLiteEventJournalRepository(databaseURL: databaseURL)
     try await repository.close()
+    try removeV11SchemaForLegacyMigrationFixture(at: databaseURL)
     try executeFixtureSQL(
         at: databaseURL,
         sql: """
@@ -1894,6 +1896,7 @@ private func createVersionEightFixture(
         )
     )
     try await repository.close()
+    try removeV11SchemaForLegacyMigrationFixture(at: databaseURL)
     try executeFixtureSQL(
         at: databaseURL,
         sql: """
@@ -1919,6 +1922,7 @@ private func createVersionNineFixture(at databaseURL: URL) async throws {
         source: .lifecycle
     )
     try await repository.close()
+    try removeV11SchemaForLegacyMigrationFixture(at: databaseURL)
     try executeFixtureSQL(
         at: databaseURL,
         sql: """

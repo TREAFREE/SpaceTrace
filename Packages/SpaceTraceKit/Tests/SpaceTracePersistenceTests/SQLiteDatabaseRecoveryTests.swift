@@ -155,6 +155,7 @@ private struct RecoveryDatabaseFixture {
     func makeVersionSixDatabase() async throws {
         let repository = try SQLiteEventJournalRepository(databaseURL: databaseURL)
         try await repository.close()
+        try removeV11SchemaForLegacyMigrationFixture(at: databaseURL)
         try execute(
             at: databaseURL,
             sql: """

@@ -55,9 +55,26 @@ public enum SQLiteHistoricalFindingSchema {
         prototypeTableNames + prototypeIndexNames + prototypeTriggerNames
     )
 
+    /// Exact v11 object manifest. This intentionally includes the supporting
+    /// index added to the existing `node_current` table.
+    static let frozenObjectNames = prototypeObjectNames
+
+    /// SHA-256 over the exact v11 `sqlite_schema` object graph plus the legacy
+    /// schema it extends. The codec defines the canonical byte framing.
+    static let frozenSchemaDigest = Data([
+        0x9A, 0x48, 0x40, 0xB4, 0x0E, 0x7C, 0x73, 0x18,
+        0x37, 0x22, 0x84, 0x7C, 0xF9, 0x86, 0x85, 0x18,
+        0x61, 0x97, 0x8C, 0x59, 0x34, 0x18, 0xD7, 0x91,
+        0x0B, 0x02, 0xB2, 0x05, 0xC7, 0xEF, 0xE9, 0x91,
+    ])
+
     static func installPrototype(on database: OpaquePointer) throws {
         try execute(database, "PRAGMA foreign_keys=ON")
         try execute(database, schemaSQL)
+    }
+
+    static func installFrozenV11(on database: OpaquePointer) throws {
+        try installPrototype(on: database)
     }
 
     /// Runs the checked-in physical prototype without exposing SQL or a
@@ -86,7 +103,12 @@ public enum SQLiteHistoricalFindingSchema {
             database,
             "PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON; PRAGMA cache_size=-8192; PRAGMA temp_store=FILE; PRAGMA mmap_size=0; PRAGMA auto_vacuum=FULL; VACUUM; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;"
         )
-        try installPrototype(on: database)
+        if try querySingleInt(
+            database,
+            "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='historical_store_identity'"
+        ) == 0 {
+            try installPrototype(on: database)
+        }
         let started = ContinuousClock.now
         let counts = try seedPrototype(
             database,
@@ -864,7 +886,7 @@ public enum SQLiteHistoricalFindingSchema {
         do {
             try execute(
                 database,
-                "INSERT INTO historical_store_identity VALUES(1,1,X'00112233445566778899aabbccddeeff')"
+                "INSERT OR IGNORE INTO historical_store_identity VALUES(1,1,X'00112233445566778899aabbccddeeff')"
             )
             try insertPrototypeDecisions(database)
             try insertPrototypeDictionaries(

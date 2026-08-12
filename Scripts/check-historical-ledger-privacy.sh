@@ -631,6 +631,7 @@ validate_swift_parser() {
 reject_swift_diagnostic_sinks() {
     local content_path=$1
     local parse_tree="$temporary_root/swift-parse-tree"
+    local syntax_status=0
     local parse_status=0
     local source_bytes
     local parse_bytes
@@ -641,6 +642,15 @@ reject_swift_diagnostic_sinks() {
     [[ "$source_bytes" == <-> ]] || infrastructure_failure
     (( source_bytes <= maximum_swift_source_bytes )) || \
         report_violation "Swift source exceeds its parser input bound"
+
+    swiftc -frontend -parse - <"$content_path" >/dev/null 2>/dev/null || \
+        syntax_status=$?
+    case "$syntax_status" in
+        0) ;;
+        1) report_violation \
+            "Swift source cannot be parsed for diagnostic-sink validation" ;;
+        *) infrastructure_failure ;;
+    esac
 
     (
         ulimit -f "$parse_file_blocks"
@@ -655,8 +665,7 @@ reject_swift_diagnostic_sinks() {
         report_violation "Swift parse evidence exceeds its scan bound"
     fi
     case "$parse_status" in
-        0) ;;
-        1) report_violation "Swift source cannot be parsed for diagnostic-sink validation" ;;
+        0|1) ;;
         *) infrastructure_failure ;;
     esac
 

@@ -7,7 +7,7 @@ import Synchronization
 /// A dependency-free SQLite prototype for ADR-004. The actor is the sole
 /// owner of the connection and serializes every transaction and query.
 public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGenerationRepository, WatchedScopeBookmarkRepository, AuthorizedBaselineSnapshotRepository, DirectoryHistoryRepository, StartupVolumeCapacityHistoryRepository, StorageHistoryRetentionApplying {
-    public static let currentSchemaVersion = 10
+    public static let currentSchemaVersion = 11
     private static let schemaVersion = Int32(currentSchemaVersion)
 
     /// `Mutex` makes the non-Sendable C handle safe to release from the
@@ -24,7 +24,10 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
     init(
         databaseURL: URL,
         failurePoint: SQLiteEventJournalTestFailurePoint?,
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        historicalStoreGenerationProvider: @escaping @Sendable () throws -> [UInt8] = {
+            Array(try SQLiteHistoricalFindingCodec.randomStoreGeneration())
+        }
     ) throws {
         guard databaseURL.isFileURL, databaseURL.path.isEmpty == false else {
             throw SQLiteEventJournalError.invalidDatabaseLocation
@@ -49,7 +52,8 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             migrationBackupURL = try Self.configureAndMigrate(
                 openedDatabase,
                 databaseURL: databaseURL,
-                failurePoint: failurePoint
+                failurePoint: failurePoint,
+                historicalStoreGenerationProvider: historicalStoreGenerationProvider
             )
         } catch {
             _ = sqlite3_close_v2(openedDatabase)
@@ -1108,6 +1112,10 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         )
     }
 
+    func secureDeleteEnabledForTesting() throws -> Bool {
+        try readInt32Pragma("PRAGMA secure_delete") == 1
+    }
+
     /// Explicitly releases SQLite resources. Calling close repeatedly is safe;
     /// repository operations after closing report `databaseClosed`.
     public func close() throws {
@@ -1132,7 +1140,8 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
     private static func configureAndMigrate(
         _ database: OpaquePointer,
         databaseURL: URL,
-        failurePoint: SQLiteEventJournalTestFailurePoint?
+        failurePoint: SQLiteEventJournalTestFailurePoint?,
+        historicalStoreGenerationProvider: @escaping @Sendable () throws -> [UInt8]
     ) throws -> URL? {
         let timeoutResult = sqlite3_busy_timeout(database, 5_000)
         guard timeoutResult == SQLITE_OK else {
@@ -1158,6 +1167,11 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             migrationBackupURL = nil
         }
 
+        try execute(
+            on: database,
+            "PRAGMA secure_delete = ON",
+            operation: "enable secure deletion"
+        )
         try execute(on: database, "PRAGMA journal_mode = WAL", operation: "enable WAL mode")
         try execute(on: database, "PRAGMA foreign_keys = ON", operation: "enable foreign keys")
         try execute(
@@ -1224,7 +1238,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 try migrateToVersionNine(database, failurePoint: failurePoint)
             case 8:
                 try migrateToVersionNine(database, failurePoint: failurePoint)
-            case 9:
+            case 9, 10:
                 break
             default:
                 throw SQLiteEventJournalError.unsupportedSchemaVersion(currentVersion)
@@ -1235,6 +1249,14 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                     failurePoint: failurePoint
                 )
             }
+            if currentVersion < 11 {
+                try migrateToVersionEleven(
+                    database,
+                    failurePoint: failurePoint,
+                    storeGenerationProvider: historicalStoreGenerationProvider,
+                    requireFrozenSchemaDigest: currentVersion == 0 || currentVersion == 10
+                )
+            }
         } catch SQLiteEventJournalError.injectedFailure {
             guard case let .beforeMigrationCommit(version)? = failurePoint else {
                 throw SQLiteEventJournalError.injectedFailure
@@ -1243,6 +1265,12 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 fromVersion: currentVersion,
                 targetVersion: version
             )
+        }
+
+        do {
+            try SQLiteHistoricalFindingCodec.validateInstalledV11(database: database)
+        } catch {
+            throw SQLiteEventJournalError.databaseCorrupt
         }
 
         // A persisted "active" row describes the previous process's last
@@ -1261,6 +1289,73 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         )
         try recoverInterruptedCalibrationRuns(database)
         return migrationBackupURL
+    }
+
+    private static func migrateToVersionEleven(
+        _ database: OpaquePointer,
+        failurePoint: SQLiteEventJournalTestFailurePoint?,
+        storeGenerationProvider: @escaping @Sendable () throws -> [UInt8],
+        requireFrozenSchemaDigest: Bool
+    ) throws {
+        let storeGeneration = Data(try storeGenerationProvider())
+        try SQLiteHistoricalFindingCodec.validateStoreGeneration(storeGeneration)
+
+        // FULL auto-vacuum must be selected before the v11 tables are created.
+        // The pre-migration online backup has already completed, and VACUUM
+        // changes no logical v10 content or schema version.
+        try execute(
+            on: database,
+            "PRAGMA auto_vacuum = FULL; VACUUM",
+            operation: "configure historical-ledger auto vacuum"
+        )
+        try execute(
+            on: database,
+            "BEGIN IMMEDIATE TRANSACTION",
+            operation: "begin schema migration v11"
+        )
+        do {
+            try SQLiteHistoricalFindingSchema.installFrozenV11(on: database)
+            let generationHex = storeGeneration.map { String(format: "%02x", $0) }.joined()
+            try execute(
+                on: database,
+                "INSERT INTO historical_store_identity(singleton,format_version,store_generation) VALUES(1,1,X'\(generationHex)')",
+                operation: "persist historical store generation"
+            )
+
+            let digest = try SQLiteHistoricalFindingCodec.schemaObjectDigest(database: database)
+            guard requireFrozenSchemaDigest == false
+                    || digest == SQLiteHistoricalFindingSchema.frozenSchemaDigest else {
+                throw SQLiteEventJournalError.corruptStoredValue(
+                    field: "schema_v11_object_digest"
+                )
+            }
+            let digestHex = digest.map { String(format: "%02x", $0) }.joined()
+            try execute(
+                on: database,
+                "INSERT INTO schema_migration(version,applied_at_ms,checksum) VALUES(11,CAST(strftime('%s','now') AS INTEGER)*1000,'\(digestHex)'); PRAGMA user_version=11",
+                operation: "record schema migration version 11"
+            )
+            try failMigrationIfRequested(version: 11, failurePoint: failurePoint)
+            try execute(
+                on: database,
+                "COMMIT TRANSACTION",
+                operation: "commit schema migration v11"
+            )
+        } catch let migrationError {
+            do {
+                try execute(
+                    on: database,
+                    "ROLLBACK TRANSACTION",
+                    operation: "roll back schema migration v11"
+                )
+            } catch let rollbackError {
+                throw SQLiteEventJournalError.rollbackFailed(
+                    original: String(describing: migrationError),
+                    rollback: String(describing: rollbackError)
+                )
+            }
+            throw migrationError
+        }
     }
 
     private static func migrateToVersionEight(

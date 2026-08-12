@@ -889,6 +889,25 @@ write_safe_member_write_probe() {
     printf 'try data.write(to: destinationURL)\n' >"$destination"
 }
 
+write_imported_closure_annotation_probe() {
+    local destination=$1
+
+    printf '%s\n' \
+        'import Foundation' \
+        'struct ClockBox {' \
+        '    let now: @Sendable () -> Date' \
+        '    init(now: @escaping @Sendable () -> Date) {' \
+        '        self.now = now' \
+        '    }' \
+        '}' >"$destination"
+}
+
+write_malformed_swift_probe() {
+    local destination=$1
+
+    printf '%s\n' 'func unfinished(' >"$destination"
+}
+
 write_released_fixture_manifest() {
     local manifest_path=$1
     local schema_version=$2
@@ -1398,6 +1417,23 @@ write_safe_swift_diagnostic_text_probe \
 expect_acceptance "comments and strings are not diagnostic calls" \
     "$safe_swift_text_repository" "$safe_swift_text_base"
 
+create_repository "imported-closure-annotation"
+imported_closure_repository=$current_repository
+write_imported_closure_annotation_probe \
+    "$imported_closure_repository/Sources/ImportedClosure.swift"
+expect_acceptance "valid imported closure annotations survive AST scanning" \
+    "$imported_closure_repository" ""
+
+create_repository "malformed-swift-source"
+malformed_swift_repository=$current_repository
+malformed_swift_base=$current_base
+write_malformed_swift_probe \
+    "$malformed_swift_repository/Sources/Malformed.swift"
+expect_rejection "malformed Swift is rejected before AST sink scanning" \
+    "$malformed_swift_repository" "$malformed_swift_base" \
+    "Sources/Malformed.swift" \
+    "Swift source cannot be parsed for diagnostic-sink validation"
+
 create_repository "print-sink"
 print_repository=$current_repository
 print_base=$current_base
@@ -1630,7 +1666,7 @@ expect_rejection "worktree binary-only digest drift" \
     "Packages/SpaceTraceKit/Tests/SpaceTracePersistenceTests/Fixtures/ReleasedSchemas/v9/SpaceTrace.sqlite" \
     "released-schema fixture digest mismatch"
 
-readonly expected_case_count=113
+readonly expected_case_count=115
 if (( passed_cases + failed_cases != expected_case_count )); then
     record_contract_failure "case inventory" \
         "expected $expected_case_count cases, observed $((passed_cases + failed_cases))"

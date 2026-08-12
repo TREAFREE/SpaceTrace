@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — SQLite is selected. The 2026-07-20 evidence review found GRDB 7.10.0 viable, but retains the raw SQLite adapter for phase one pending parity, benchmark, signed/notarized-build, and oldest-OS evidence. The history-off clarification below narrows retention behavior; it does not accept the remaining adapter, schema, or release proposals.
+Proposed — SQLite is selected. The 2026-07-20 evidence review found GRDB 7.10.0 viable, while phase one retains the raw SQLite adapter. Schema-v11 migration, transactions, retention, recovery fixtures, and current-host benchmarks now pass; GRDB parity, production integration, signed/notarized distribution, oldest-OS evidence, and maintainer acceptance remain open. The History Off clarification below does not accept the remaining release proposals.
 
 Date: 2026-07-18
 
@@ -180,5 +180,14 @@ process-termination gaps remain disqualifying. The table recreation is one
 transaction, preserves explicit commit sequences, has an injected pre-commit
 rollback test, and adds the reviewed schema-v9 SHA-256 golden fixture.
 
+The 2026-08-12 schema-v11 persistence slice added immutable observation
+frames/endpoints, deterministic projection work and checkpoints, frozen
+findings, evidence-invalidated retractions, persisted History Off, ordered
+graph retention, v10/v11 released recovery fixtures, and current-host 500k/1M
+repository benchmarks. All ten scale scenarios passed integrity, foreign-key,
+size, RSS, write-p95, and query-p95 gates. Exact transaction, privacy, recovery,
+benchmark, and non-claim evidence is recorded in
+[SQLite v11 Historical Ledger](../../engineering/sqlite-v11-historical-ledger.md).
+
 ADR acceptance still requires minimum-reference macOS 15.6 performance and
-distribution-signing evidence.
+distribution-signing evidence, production wiring, and maintainer review.

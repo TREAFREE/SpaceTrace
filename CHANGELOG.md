@@ -6,7 +6,8 @@ All notable user-visible changes are recorded in this file.
 
 ### Added
 
-- Add a pure immutable historical-finding projection with exact endpoint states, explicit absence, coverage-aware growth/decrease/appearance/disappearance, four-parent stable-identity move proof, non-overlapping positive ranking, frozen classifier decisions, deterministic UTF-8 ordering, and fail-closed v1 Codable contracts. Production schema-v11 persistence and UI integration remain release blocking.
+- Add the schema-v11 immutable local history ledger: atomic paired observation frames, stable-evidence endpoints, deterministic projection checkpoints/findings, evidence-invalidated retractions, persisted History Off, ordered graph retention, v10/v11 recovery canaries, cumulative privacy enforcement, and passing current-host 500k/1M repository gates. Production scanner/projector/UI integration and public-release gates remain open.
+- Add a pure immutable historical-finding projection with exact endpoint states, explicit absence, coverage-aware growth/decrease/appearance/disappearance, four-parent stable-identity move proof, non-overlapping positive ranking, frozen classifier decisions, deterministic UTF-8 ordering, and fail-closed v1 Codable contracts. Production scanner/projector wiring and finding UI remain release blocking.
 - Add a pure offline deterministic attribution module with validated versioned rules, path-free evidence codes, stable precedence, cross-category ambiguity fallback, eight initial P0 category families, and a versioned precision/recall/Unknown regression corpus.
 - Add fail-closed ad-hoc Release Candidate packaging with clean-commit provenance, exact sandbox-entitlement checks, Hardened Runtime, a read-only compressed DMG, JSON truth manifest, SHA-256 verification, and bilingual install/removal guidance.
 - Add a native macOS application shell with an accessible sidebar, an honest overview readiness state, and the existing directory-permission journey as a dedicated destination.
@@ -18,12 +19,12 @@ All notable user-visible changes are recorded in this file.
 - Allow users to replace or remove a watched-directory grant without deleting monitored files or historical measurements.
 - Add deterministic authorization coordinator, view-model, sandbox entitlement, and UI smoke coverage plus an English/Chinese qualification protocol.
 
-### Release decision — NO-GO retained; evidence refreshed 2026-08-11
+### Release decision — NO-GO retained; evidence refreshed 2026-08-12
 
 - **Public Beta: NO-GO.** No tag, GitHub Release, or artifact upload is authorized by this record.
 - **Local engineering RC generation: CONDITIONAL GO.** Maintainers may generate `0.1.0-rc.1` ad-hoc artifacts to continue controlled testing. They are not Apple-verified, are expected to be rejected by Gatekeeper, and are limited to Apple Silicon with a declared—not runtime-qualified—macOS 15.6 minimum.
 - The current-host 25-hour ad-hoc endurance run and its Activity Monitor/thermal evidence passed. The current-host controlled UI runner passed eight authorization/history scenarios and key accessibility-tree assertions.
-- Public blockers remain: schema-v11 finding persistence/supersession/UI, production stable-identity qualification, classification-corpus expansion, and user-controlled export/redaction; macOS 15.6 runtime qualification; genuine permission and replacement-bookmark matrices; manual assistive-technology review; ADR-003/ADR-004/ADR-006 approval; clean quarantined install and rollback; Developer ID/notarization or explicit unsigned-risk acceptance; approved license, notices, and SBOM; and required usability/release-gate evidence.
+- Public blockers remain: production scanner→paired-v11/projector and finding/History-Off UI integration; a future approved replacement/supersession model; production stable-identity qualification; classification-corpus expansion and user-controlled export/redaction; macOS 15.6 runtime; genuine permission/replacement matrices; manual assistive-technology review; ADR-003/004/006 approval; clean quarantine install/rollback; Developer ID/notarization or explicit unsigned-risk acceptance; approved license/notices/SBOM; and required usability evidence.
 
 ### Draft tester notes — not published
 

@@ -1,10 +1,98 @@
 import Foundation
 import Testing
 import SpaceTraceApplication
+import SpaceTraceDomain
 import SpaceTraceFileSystem
 @testable import SpaceTracePersistence
 
 struct CalibrationPipelineIntegrationTests {
+    @Test("Foundation scans publish paired v11 frames and project current-effective findings")
+    func foundationScannerPublishesHistoricalFrames() async throws {
+        let databaseFixture = try PipelineTemporaryDatabase()
+        let repository = try SQLiteEventJournalRepository(
+            databaseURL: databaseFixture.databaseURL
+        )
+        let watchedRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "SpaceTraceHistoricalPipeline-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        let child = watchedRoot.appendingPathComponent("Child", isDirectory: true)
+        let payload = child.appendingPathComponent("payload.bin", isDirectory: false)
+        try FileManager.default.createDirectory(
+            at: child,
+            withIntermediateDirectories: true
+        )
+        try Data(repeating: 0x11, count: 16).write(to: payload)
+        defer {
+            try? FileManager.default.removeItem(at: watchedRoot)
+            databaseFixture.remove()
+        }
+
+        let root = try DirtyRegionPath(watchedRoot.standardizedFileURL.path)
+        let streamID = try EventStreamID("historical-pipeline-integration")
+        let projector = HistoricalFindingProjector(repository: repository)
+        let pipeline = FileSystemCalibrationPipeline(
+            streamID: streamID,
+            watchRoot: root,
+            repository: repository,
+            scanner: FoundationMetadataCalibrationScanner(),
+            historicalContext: HistoricalCalibrationContext(
+                scopeID: try ScopeID("historical-pipeline-scope"),
+                volumeID: try ObservationVolumeID("historical-pipeline-volume"),
+                mountGenerationID: try ObservationMountGenerationID(
+                    "historical-pipeline-mount"
+                ),
+                coverageEpochID: try ObservationCoverageEpochID(
+                    "historical-pipeline-coverage"
+                ),
+                homeDirectoryPath: nil
+            ),
+            historicalFindingProjector: projector
+        )
+
+        try await pipeline.ingest([
+            try fileInvalidation(path: root.rawValue, cursor: 1, itemKind: .directory),
+        ])
+        #expect(try await pipeline.calibratePending(limit: 1) == 1)
+        #expect(try await repository.nextHistoricalProjectionWork() == nil)
+
+        try Data(repeating: 0x22, count: 48).write(to: payload)
+        try await pipeline.ingest([
+            try fileInvalidation(path: root.rawValue, cursor: 2, itemKind: .directory),
+        ])
+        #expect(try await pipeline.calibratePending(limit: 1) == 1)
+
+        #expect(try await repository.nextHistoricalProjectionWork() == nil)
+        let baseline = try #require(
+            try await repository.historicalObservationFrame(
+                sequence: try ObservationCommitSequence(1)
+            )
+        )
+        let comparison = try #require(
+            try await repository.historicalObservationFrame(
+                sequence: try ObservationCommitSequence(3)
+            )
+        )
+        #expect(baseline.metric == .logical)
+        #expect(comparison.metric == .logical)
+        #expect(baseline.nodes.count == 2)
+        #expect(comparison.nodes.count == 2)
+        #expect(comparison.sequence > baseline.sequence)
+        let findings = try await repository.effectiveHistoricalFindings(
+            for: try ScopeID("historical-pipeline-scope"),
+            through: try ObservationCommitSequence(4),
+            limit: try HistoricalFindingQueryLimit(10)
+        )
+        let containsLogicalGrowth = findings.contains(where: { finding in
+            finding.draft.kind == HistoricalFindingKind.growth
+                && finding.draft.evidence.metric == StorageMetric.logical
+        })
+        #expect(containsLogicalGrowth)
+        #expect(try await repository.dirtyRegions(for: streamID).isEmpty)
+        try await repository.close()
+    }
+
     @Test("Authorized baseline runner publishes the real root aggregate through SQLite")
     func authorizedBaselinePublishesRootAggregate() async throws {
         let fixture = try PipelineTemporaryDatabase()
@@ -131,6 +219,19 @@ struct CalibrationPipelineIntegrationTests {
         #expect(try await repository.dirtyRegions(for: streamID).isEmpty)
         try await repository.close()
     }
+}
+
+private func fileInvalidation(
+    path: String,
+    cursor: UInt64,
+    itemKind: FileSystemItemKind = .file
+) throws -> FileSystemInvalidation {
+    try FileSystemInvalidation(
+        path: path,
+        cursor: EventJournalCursor(cursor),
+        reasons: [.contentModified],
+        itemKind: itemKind
+    )
 }
 
 struct ContinuityLossCase: Sendable, CustomTestStringConvertible {

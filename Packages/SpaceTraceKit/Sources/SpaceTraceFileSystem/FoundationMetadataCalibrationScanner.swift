@@ -3,16 +3,21 @@ import Darwin
 import SpaceTraceApplication
 import SpaceTraceDomain
 
-public struct FoundationMetadataCalibrationScanner: CalibrationScanner {
+public struct FoundationMetadataCalibrationScanner: HistoricalCalibrationScanner {
     private let source: any MetadataTreeSource
     private let excludedPaths: Set<DirtyRegionPath>
     private let monotonicNanoseconds: @Sendable () -> UInt64
+    private let wallClockMilliseconds: @Sendable () -> Int64
 
     public init(excludedPaths: [DirtyRegionPath] = []) {
         self.init(
             source: FoundationMetadataTreeSource(),
             excludedPaths: excludedPaths,
-            monotonicNanoseconds: { DispatchTime.now().uptimeNanoseconds }
+            monotonicNanoseconds: { DispatchTime.now().uptimeNanoseconds },
+            wallClockMilliseconds: {
+                let milliseconds = Date().timeIntervalSince1970 * 1_000
+                return Int64(max(0, min(milliseconds, Double(Int64.max))))
+            }
         )
     }
 
@@ -21,17 +26,29 @@ public struct FoundationMetadataCalibrationScanner: CalibrationScanner {
         excludedPaths: [DirtyRegionPath] = [],
         monotonicNanoseconds: @escaping @Sendable () -> UInt64 = {
             DispatchTime.now().uptimeNanoseconds
+        },
+        wallClockMilliseconds: @escaping @Sendable () -> Int64 = {
+            let milliseconds = Date().timeIntervalSince1970 * 1_000
+            return Int64(max(0, min(milliseconds, Double(Int64.max))))
         }
     ) {
         self.source = source
         self.excludedPaths = Set(excludedPaths)
         self.monotonicNanoseconds = monotonicNanoseconds
+        self.wallClockMilliseconds = wallClockMilliseconds
     }
 
     public func scan(
         _ request: CalibrationRequest,
         stage: @escaping @Sendable ([DirectoryMetadataAggregate]) async throws -> Void
     ) async throws -> CalibrationReport {
+        try await scanHistorical(request, stage: stage).report
+    }
+
+    public func scanHistorical(
+        _ request: CalibrationRequest,
+        stage: @escaping @Sendable ([DirectoryMetadataAggregate]) async throws -> Void
+    ) async throws -> HistoricalCalibrationScanResult {
         let root = request.workItem.region.path
         let budget = request.budget
         let startedAt = monotonicNanoseconds()
@@ -45,8 +62,10 @@ public struct FoundationMetadataCalibrationScanner: CalibrationScanner {
         var parentPaths: [DirtyRegionPath: DirtyRegionPath] = [:]
         var depths: [DirtyRegionPath: Int] = [:]
         var rootVolumeIdentity: String?
+        var rootFileSystem: HistoricalDirectoryFileSystem = .unsupported
         var allocatedFileIdentities: Set<MetadataFileIdentity> = []
         var stagedBatch: [DirectoryMetadataAggregate] = []
+        var historicalDirectories: [HistoricalDirectoryScanObservation] = []
         var gaps: [CalibrationGap] = []
         var entriesVisited: Int64 = 0
         var directoriesStaged: Int64 = 0
@@ -101,14 +120,19 @@ public struct FoundationMetadataCalibrationScanner: CalibrationScanner {
                                 coverage: .partial
                             )
                             try await stage([aggregate])
-                            return try CalibrationReport(
+                            let report = try CalibrationReport(
                                 coverage: .partial,
                                 entriesVisited: entriesVisited,
                                 directoriesStaged: 1,
                                 gaps: [CalibrationGap(path: root, reason: .metadataUnavailable)]
                             )
+                            return try HistoricalCalibrationScanResult(
+                                report: report,
+                                evidence: nil
+                            )
                         }
                         rootVolumeIdentity = volumeIdentity
+                        rootFileSystem = source.fileSystem(at: path)
                     } else if metadata.volumeIdentity == nil
                                 || metadata.volumeIdentity != rootVolumeIdentity {
                         markPartial(parent, in: &accumulators)
@@ -116,7 +140,22 @@ public struct FoundationMetadataCalibrationScanner: CalibrationScanner {
                         continue
                     }
 
-                    accumulators[path] = DirectoryAccumulator()
+                    let objectIdentity = metadata.directoryObjectIdentity.map {
+                        HistoricalDirectoryObjectIdentityObservation(
+                            fileSystem: rootFileSystem,
+                            volumeLocalObjectID: $0.volumeLocalObjectID,
+                            birthTime: $0.birthTime,
+                            // Directory st_nlink is deliberately not used as
+                            // hard-link uniqueness evidence.
+                            linkStatus: .unknown
+                        )
+                    }
+                    accumulators[path] = DirectoryAccumulator(
+                        observedAt: try ObservationInstant(
+                            millisecondsSince1970: wallClockMilliseconds()
+                        ),
+                        objectIdentity: objectIdentity
+                    )
                     depths[path] = depth
                     if let parent { parentPaths[path] = parent }
 
@@ -129,15 +168,21 @@ public struct FoundationMetadataCalibrationScanner: CalibrationScanner {
                         )
                     } catch {
                         record(error, at: path, parent: path, accumulators: &accumulators, gaps: &gaps)
+                        accumulators[path]?.directChildrenCoverage = .partial
                         stack.append(.finish(path: path, parent: parent))
                         continue
                     }
+
+                    accumulators[path]?.directChildrenCoverage = childPage.wasTruncated
+                        ? .partial
+                        : .complete
 
                     var children: [DirtyRegionPath] = []
                     children.reserveCapacity(childPage.entries.count)
                     for child in childPage.entries {
                         guard contains(child, in: path), child != path else {
                             markPartial(path, in: &accumulators)
+                            accumulators[path]?.directChildrenCoverage = .partial
                             gaps.append(CalibrationGap(path: child, reason: .metadataUnavailable))
                             continue
                         }
@@ -174,6 +219,22 @@ public struct FoundationMetadataCalibrationScanner: CalibrationScanner {
                     continue
                 }
                 let aggregate = try accumulator.aggregate(at: path)
+                if aggregate.coverage == .complete,
+                   accumulator.directChildrenCoverage == .complete,
+                   let logicalBytes = aggregate.logicalBytes,
+                   let allocatedBytes = aggregate.allocatedBytes {
+                    historicalDirectories.append(
+                        try HistoricalDirectoryScanObservation(
+                            path: path,
+                            parentPath: parent,
+                            logicalBytes: logicalBytes,
+                            allocatedBytes: allocatedBytes,
+                            directChildrenCoverage: accumulator.directChildrenCoverage,
+                            observedAt: accumulator.observedAt,
+                            objectIdentity: accumulator.objectIdentity
+                        )
+                    )
+                }
                 stagedBatch.append(aggregate)
                 directoriesStaged += 1
                 if let parent {
@@ -208,11 +269,21 @@ public struct FoundationMetadataCalibrationScanner: CalibrationScanner {
             try await stage(stagedBatch)
         }
         let coverage: CalibrationCoverage = gaps.isEmpty ? .complete : .partial
-        return try CalibrationReport(
+        let report = try CalibrationReport(
             coverage: coverage,
             entriesVisited: entriesVisited,
             directoriesStaged: directoriesStaged,
             gaps: gaps
+        )
+        let evidence = coverage == .complete
+            ? try HistoricalCalibrationScanEvidence(
+                rootPath: root,
+                directories: historicalDirectories
+            )
+            : nil
+        return try HistoricalCalibrationScanResult(
+            report: report,
+            evidence: evidence
         )
     }
 
@@ -336,10 +407,13 @@ private enum ScanWork {
 }
 
 private struct DirectoryAccumulator {
+    let observedAt: ObservationInstant
+    let objectIdentity: HistoricalDirectoryObjectIdentityObservation?
     var logicalBytes: Int64? = 0
     var allocatedBytes: Int64? = 0
     var descendantCount: Int64 = 0
     var coverage: CalibrationCoverage = .complete
+    var directChildrenCoverage: ObservationCoverage = .unknown
 
     func aggregate(at path: DirtyRegionPath) throws -> DirectoryMetadataAggregate {
         let logical = try logicalBytes.map(ByteCount.init)
@@ -375,6 +449,28 @@ struct MetadataEntry: Sendable, Equatable {
     let allocatedBytes: Int64?
     let volumeIdentity: String?
     let fileIdentity: MetadataFileIdentity?
+    let directoryObjectIdentity: MetadataDirectoryObjectIdentity?
+
+    init(
+        kind: MetadataEntryKind,
+        logicalBytes: Int64?,
+        allocatedBytes: Int64?,
+        volumeIdentity: String?,
+        fileIdentity: MetadataFileIdentity?,
+        directoryObjectIdentity: MetadataDirectoryObjectIdentity? = nil
+    ) {
+        self.kind = kind
+        self.logicalBytes = logicalBytes
+        self.allocatedBytes = allocatedBytes
+        self.volumeIdentity = volumeIdentity
+        self.fileIdentity = fileIdentity
+        self.directoryObjectIdentity = directoryObjectIdentity
+    }
+}
+
+struct MetadataDirectoryObjectIdentity: Sendable, Equatable {
+    let volumeLocalObjectID: UInt64
+    let birthTime: HistoricalFindingBirthTime?
 }
 
 struct MetadataChildren: Sendable, Equatable {
@@ -391,6 +487,14 @@ enum MetadataTreeSourceError: Error, Sendable, Equatable {
 protocol MetadataTreeSource: Sendable {
     func metadata(at path: DirtyRegionPath) throws -> MetadataEntry
     func children(of directory: DirtyRegionPath, limit: Int) throws -> MetadataChildren
+    func fileSystem(at path: DirtyRegionPath) -> HistoricalDirectoryFileSystem
+}
+
+extension MetadataTreeSource {
+    func fileSystem(at path: DirtyRegionPath) -> HistoricalDirectoryFileSystem {
+        _ = path
+        return .unsupported
+    }
 }
 
 private struct FoundationMetadataTreeSource: MetadataTreeSource {
@@ -420,8 +524,29 @@ private struct FoundationMetadataTreeSource: MetadataTreeSource {
             volumeIdentity: volumeIdentity,
             fileIdentity: kind == .file
                 ? MetadataFileIdentity(volume: volumeIdentity, file: String(status.st_ino))
+                : nil,
+            directoryObjectIdentity: kind == .directory
+                ? MetadataDirectoryObjectIdentity(
+                    volumeLocalObjectID: UInt64(status.st_ino),
+                    birthTime: try? HistoricalFindingBirthTime(
+                        secondsSince1970: Int64(status.st_birthtimespec.tv_sec),
+                        nanoseconds: Int32(status.st_birthtimespec.tv_nsec)
+                    )
+                )
                 : nil
         )
+    }
+
+    func fileSystem(at path: DirtyRegionPath) -> HistoricalDirectoryFileSystem {
+        var status = statfs()
+        let result = path.rawValue.withCString { pointer in
+            statfs(pointer, &status)
+        }
+        guard result == 0 else { return .unsupported }
+        let name = withUnsafeBytes(of: &status.f_fstypename) { bytes in
+            String(decoding: bytes.prefix { $0 != 0 }, as: UTF8.self)
+        }
+        return name.lowercased() == "apfs" ? .apfs : .unsupported
     }
 
     func children(of directory: DirtyRegionPath, limit: Int) throws -> MetadataChildren {

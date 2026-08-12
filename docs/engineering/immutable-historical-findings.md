@@ -1,8 +1,8 @@
 # Immutable, Coverage-Aware Historical Findings
 
-Status: pure Domain/Application contract implemented; SQLite v11 persistence and release qualification not implemented
+Status: production complete-scan → paired SQLite v11 → projector path implemented; release qualification incomplete
 
-Last reviewed: 2026-08-11
+Last reviewed: 2026-08-12
 
 Chinese companion translation: [immutable-historical-findings.zh-CN.md](immutable-historical-findings.zh-CN.md).
 
@@ -12,7 +12,7 @@ Related decision: [ADR-006](../architecture/decisions/ADR-006-immutable-observat
 
 SpaceTrace can now compare two validated immutable directory observation frames and produce deterministic finding drafts for growth, decrease, appearance, disappearance, and a strictly proven move. It can also derive a positive-growth ranking without counting the same parent/child flow twice.
 
-This is a pure, offline projection boundary. It does not make the existing hourly/daily SQLite history audit-grade, does not persist production findings, does not collect production directory object identities, and does not put these findings in the Overview or menu bar. SQLite schema v11, projection recovery, append-only supersession, retention, UI, expansion and independent review of the classification corpus, explicit user-controlled export/redaction evidence, and real macOS 15.6 qualification remain release blockers.
+The pure projection is now backed by a production complete-scan path. The scanner emits directory-only logical/allocated measurements, complete direct-child coverage, conservative object metadata, and frozen versioned classification from the same traversal. When persistent volume and mount-generation context are available, one SQLite transaction publishes current truth plus paired v11 frames and registers projection work; the projector drains after commit and resumes at launch. This does not make the legacy hourly/daily history audit-grade and does not yet put findings in the Overview or menu bar. Explicit absence, qualified directory link-set uniqueness/move evidence, replacement/supersession, UI, classification-corpus expansion and independent review, explicit user-controlled export/redaction evidence, and real macOS 15.6 qualification remain release blockers.
 
 FSEvents remains an invalidation hint. No event flag, filename, timestamp, or pair of opposite byte deltas can create a finding by itself.
 
@@ -181,24 +181,25 @@ The projection remains metadata-only and local. A finding explains two observati
 - a category is not a cleanup recommendation;
 - no finding authorizes deletion, cleanup, quarantine, or any other mutation.
 
-## Follow-on persistence stage: not complete
+## Implemented production boundary and remaining gates
 
-The pure generator returns drafts in memory. The existing schema-v10 hourly/daily read model cannot be retroactively treated as their immutable evidence. The first production v11 frame must be a descriptive baseline.
+The existing schema-v10 hourly/daily read model cannot be retroactively treated as immutable finding evidence. The production pipeline now writes a first descriptive v11 baseline and registers deterministic work only after a later compatible complete frame. SQLite reloads the authoritative frames and regenerates the compact result before committing a projection.
 
-The next SQLite v11 and supersession stage must still implement and verify:
+The implemented boundary includes:
 
-1. append-only frame and endpoint tables, including explicit absence rows, opaque stable identity evidence, parent topology, both coverage dimensions, and immutable commit sequences;
-2. one atomic transaction that finalizes a complete frame and registers pending projection work;
-3. database-enforced and application-validated referential integrity from every draft's two endpoint IDs to the correct baseline/comparison frames, with no orphan, reused, or cross-frame reference;
-4. idempotent projection checkpoints so a crash can resume without duplicating findings;
-5. immutable finding rows and append-only `supersedes_finding_id` links—never an in-place rewrite of earlier evidence or wording;
-6. retention ordering that never removes referenced endpoints before dependent findings, and removes path-bearing data within ADR-004's proposed 30-day boundary after that decision is accepted;
-7. migration from every released golden fixture, atomic pre-migration backup, read-only recovery, main/WAL corruption isolation, disk-full and migration-failure behavior;
-8. updated 500,000/1,000,000-row storage and query benchmarks;
-9. production scanner qualification for directory stable identity/reuse guards across APFS remount/replacement and conservative suppression on unsupported filesystems;
-10. Overview/menu-bar presentation with exact logical/allocated limitations, accessibility, privacy review, signed-sandbox restart/revocation/external-volume tests, and macOS 15.6 qualification;
-11. expansion of the independently reviewed classification corpus to the FR-007 gate of at least 60 known cases, while preserving Unknown/ambiguity evidence;
-12. an explicit user-controlled export flow with preview, cancellation, path/token redaction tests, interruption recovery, and no automatic upload, satisfying FR-014.
+1. append-only paired logical/allocated frames, parent topology, both coverage dimensions, frozen classification, immutable commit sequences, and database-enforced endpoint/frame references;
+2. atomic complete-scan finalization that publishes current truth and registers deterministic projection work, with History Off remaining path-history-free;
+3. idempotent immediate and launch-time projection, evidence-invalidated retraction, ordered retention, released v10/v11 fixtures, typed recovery, and current-host 500,000/1,000,000-row gates.
+
+The remaining finding gates are:
+
+1. persist explicit absent endpoints only from a future reconciliation stage that proves complete direct-parent enumeration; a missing scan row must stay missing evidence;
+2. qualify APFS directory identity and link-set uniqueness under controlled rename, reuse, remount, and replacement tests; the current Foundation adapter records link status as `unknown`, so production moves are intentionally suppressed;
+3. add an approved replacement/supersession model; v11 supports evidence invalidation only and has no successor link;
+4. present current-effective findings, uncertainty, retractions, History Off, and baseline-unavailable states in Overview/menu-bar UI with exact logical/allocated limits and accessibility review;
+5. expand the independently reviewed classification corpus to the FR-007 gate of at least 60 known cases while preserving Unknown/ambiguity evidence;
+6. implement explicit user-controlled export with preview, cancellation, interruption recovery, path/token redaction tests, and no automatic upload, satisfying FR-014;
+7. complete signed-sandbox restart/revocation/external-volume, clean quarantine, macOS 15.6, distribution-trust, and maintainer-acceptance gates.
 
 Until those gates close, ADR-006 remains Proposed and this feature is not a Public Beta or GitHub Release readiness claim.
 
@@ -210,4 +211,4 @@ The focused contract suite is:
 swift test --package-path Packages/SpaceTraceKit --filter HistoricalFinding
 ```
 
-Repository completion still requires strict-concurrency verification, `make verify`, `git diff --check`, and a privacy scan. Those checks verify the pure projection slice only; they do not substitute for the unfinished SQLite v11, signed-sandbox, retention, performance, UI, or release gates above.
+Repository completion still requires strict-concurrency verification, `make verify`, `git diff --check`, and a privacy scan. Those checks cover the production paired-v11 slice but do not substitute for the unfinished explicit-absence, stable-move, signed-sandbox, UI, classification, export, or release gates above.

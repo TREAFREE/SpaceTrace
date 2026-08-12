@@ -25,7 +25,8 @@ public actor NativeVolumeMonitoringRuntime {
         fseventLatency: TimeInterval = 1,
         fseventBufferCapacity: Int = 512,
         fseventRecoveryPolicy: FSEventStreamRecoveryPolicy = .standard,
-        excludeEventsFromThisProcess: Bool = true
+        excludeEventsFromThisProcess: Bool = true,
+        historicalFindingProjector: (any HistoricalFindingProjecting)? = nil
     ) {
         let supervisor = NativeScopeFSEventSupervisor(
             repository: repository,
@@ -33,7 +34,8 @@ public actor NativeVolumeMonitoringRuntime {
             recoveryPolicy: fseventRecoveryPolicy,
             latency: fseventLatency,
             bufferCapacity: fseventBufferCapacity,
-            excludeEventsFromThisProcess: excludeEventsFromThisProcess
+            excludeEventsFromThisProcess: excludeEventsFromThisProcess,
+            historicalFindingProjector: historicalFindingProjector
         )
         self.eventSource = eventSource
         self.supervisor = supervisor
@@ -161,7 +163,7 @@ public actor NativeVolumeMonitoringRuntime {
                 try await Task.sleep(for: .milliseconds(50 * (attempt + 1)))
             }
         }
-        preconditionFailure("The bounded retry loop must return or throw.")
+        throw NativeVolumeMonitoringRuntimeError.mountReadinessRetryExhausted
     }
 
     private nonisolated static func isTransientMountReadinessError(
@@ -191,4 +193,5 @@ public enum NativeVolumeMonitoringRuntimeError: Error, Sendable, Equatable {
     case alreadyRunning
     case invalidEventBufferCapacity
     case eventSourceEnded
+    case mountReadinessRetryExhausted
 }

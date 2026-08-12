@@ -1,4 +1,6 @@
+import Foundation
 import Testing
+import SpaceTraceDomain
 @testable import SpaceTraceApplication
 
 struct FileSystemCalibrationPipelineTests {
@@ -136,6 +138,76 @@ struct FileSystemCalibrationPipelineTests {
         #expect(recovery.reasons.contains(.requiresCalibration))
     }
 
+    @Test("Complete historical evidence uses paired v11 finalization and triggers projection")
+    func publishesPairedHistoricalFrames() async throws {
+        let repository = InMemoryEventJournalRepository()
+        let root = try DirtyRegionPath("/Users/example")
+        let scanner = FakeHistoricalCalibrationScanner(root: root)
+        let projector = ProjectionTriggerRecorder()
+        let pipeline = FileSystemCalibrationPipeline(
+            streamID: try streamID(),
+            watchRoot: root,
+            repository: repository,
+            scanner: scanner,
+            historicalContext: try historicalContext(),
+            historicalFindingProjector: projector
+        )
+
+        try await pipeline.ingest([try fileInvalidation(cursor: 1)])
+        let results = try await pipeline.calibratePendingResults(limit: 1)
+
+        #expect(results.map(\.disposition) == [.published])
+        let request = try #require(await repository.historicalRequests.first)
+        #expect(request.observation.rootPath == root.rawValue)
+        #expect(request.observation.nodes.count == 1)
+        #expect(request.observation.nodes[0].classification != nil)
+        #expect(await projector.requestedLimits == [100])
+    }
+
+    @Test("A deferred projection cannot roll back an already published frame pair")
+    func projectionFailureDoesNotMisreportPublication() async throws {
+        let repository = InMemoryEventJournalRepository()
+        let root = try DirtyRegionPath("/Users/example")
+        let projector = ProjectionTriggerRecorder(shouldFail: true)
+        let pipeline = FileSystemCalibrationPipeline(
+            streamID: try streamID(),
+            watchRoot: root,
+            repository: repository,
+            scanner: FakeHistoricalCalibrationScanner(root: root),
+            historicalContext: try historicalContext(),
+            historicalFindingProjector: projector
+        )
+
+        try await pipeline.ingest([try fileInvalidation(cursor: 1)])
+        let result = try #require(
+            try await pipeline.calibratePendingResults(limit: 1).first
+        )
+
+        #expect(result.disposition == .published)
+        #expect(try await repository.dirtyRegions(for: streamID()).isEmpty)
+        #expect(await repository.historicalRequests.count == 1)
+        #expect(await projector.requestedLimits == [100])
+    }
+
+    @Test("Explicit historical mode fails closed when the scanner lacks evidence")
+    func historicalModeRequiresRichScanner() async throws {
+        let repository = InMemoryEventJournalRepository()
+        let pipeline = try FileSystemCalibrationPipeline(
+            streamID: streamID(),
+            watchRoot: DirtyRegionPath("/Users/example"),
+            repository: repository,
+            scanner: FakeCalibrationScanner(coverage: .complete),
+            historicalContext: historicalContext()
+        )
+
+        try await pipeline.ingest([try fileInvalidation(cursor: 1)])
+        await #expect(throws: CalibrationPipelineError.historicalCapabilityUnavailable) {
+            _ = try await pipeline.calibratePending(limit: 1)
+        }
+        #expect(try await repository.dirtyRegions(for: streamID()).count == 1)
+        #expect(await repository.historicalRequests.isEmpty)
+    }
+
     private func makePipeline(
         repository: InMemoryEventJournalRepository,
         scanner: FakeCalibrationScanner
@@ -159,6 +231,16 @@ struct FileSystemCalibrationPipelineTests {
 
     private func streamID() throws -> EventStreamID {
         try EventStreamID("volume-a:generation-1")
+    }
+
+    private func historicalContext() throws -> HistoricalCalibrationContext {
+        HistoricalCalibrationContext(
+            scopeID: try ScopeID("scope-fixture"),
+            volumeID: try ObservationVolumeID("volume-fixture"),
+            mountGenerationID: try ObservationMountGenerationID("mount-fixture"),
+            coverageEpochID: try ObservationCoverageEpochID("coverage-fixture"),
+            homeDirectoryPath: "/Users/example"
+        )
     }
 }
 
@@ -218,7 +300,74 @@ private actor FakeCalibrationScanner: CalibrationScanner {
     }
 }
 
-private actor InMemoryEventJournalRepository: EventJournalRepository {
+private struct FakeHistoricalCalibrationScanner: HistoricalCalibrationScanner {
+    let root: DirtyRegionPath
+
+    func scan(
+        _ request: CalibrationRequest,
+        stage: @escaping @Sendable ([DirectoryMetadataAggregate]) async throws -> Void
+    ) async throws -> CalibrationReport {
+        try await scanHistorical(request, stage: stage).report
+    }
+
+    func scanHistorical(
+        _ request: CalibrationRequest,
+        stage: @escaping @Sendable ([DirectoryMetadataAggregate]) async throws -> Void
+    ) async throws -> HistoricalCalibrationScanResult {
+        let aggregate = try DirectoryMetadataAggregate(
+            path: root,
+            logicalBytes: try ByteCount(10),
+            allocatedBytes: try ByteCount(16),
+            descendantCount: 0,
+            coverage: .complete
+        )
+        try await stage([aggregate])
+        let report = try CalibrationReport(
+            coverage: .complete,
+            entriesVisited: 1,
+            directoriesStaged: 1,
+            gaps: []
+        )
+        let evidence = try HistoricalCalibrationScanEvidence(
+            rootPath: root,
+            directories: [
+                try HistoricalDirectoryScanObservation(
+                    path: root,
+                    parentPath: nil,
+                    logicalBytes: try ByteCount(10),
+                    allocatedBytes: try ByteCount(16),
+                    directChildrenCoverage: .complete,
+                    observedAt: try ObservationInstant(
+                        millisecondsSince1970: 1_800_000_000_000
+                    ),
+                    objectIdentity: nil
+                ),
+            ]
+        )
+        return try HistoricalCalibrationScanResult(report: report, evidence: evidence)
+    }
+}
+
+private actor ProjectionTriggerRecorder: HistoricalFindingProjecting {
+    enum Failure: Error {
+        case injected
+    }
+
+    private let shouldFail: Bool
+    private(set) var requestedLimits: [Int] = []
+
+    init(shouldFail: Bool = false) {
+        self.shouldFail = shouldFail
+    }
+
+    func projectPending(limit: Int) throws -> HistoricalFindingProjectionRun {
+        requestedLimits.append(limit)
+        if shouldFail { throw Failure.injected }
+        return .empty
+    }
+}
+
+private actor InMemoryEventJournalRepository: HistoricalCalibrationFinalizationRepository {
     private var savedCheckpoint: EventJournalCursor?
     private var work: [DirtyRegionPath: DirtyRegionWorkItem] = [:]
     private var nextRunID = 1
@@ -226,6 +375,7 @@ private actor InMemoryEventJournalRepository: EventJournalRepository {
     private var staged: [CalibrationRunID: [DirectoryMetadataAggregate]] = [:]
     private var current: [DirtyRegionPath: DirectoryMetadataAggregate] = [:]
     private(set) var discardedDispositions: [CalibrationRunDisposition] = []
+    private(set) var historicalRequests: [HistoricalCalibrationFinalizationRequest] = []
 
     func commit(_ batch: EventJournalBatch) throws {
         if let savedCheckpoint, batch.checkpoint < savedCheckpoint {
@@ -277,7 +427,9 @@ private actor InMemoryEventJournalRepository: EventJournalRepository {
     }
 
     func beginCalibration(_ request: CalibrationRequest) throws -> CalibrationRunID {
-        let runID = try CalibrationRunID("run-\(nextRunID)")
+        let runID = try CalibrationRunID(
+            String(format: "00000000-0000-0000-0000-%012d", nextRunID)
+        )
         nextRunID += 1
         runs[runID] = request
         staged[runID] = []
@@ -310,6 +462,36 @@ private actor InMemoryEventJournalRepository: EventJournalRepository {
         staged[runID] = nil
         runs[runID] = nil
         return true
+    }
+
+    func finalizeCalibrationWithHistoricalFrames(
+        _ request: HistoricalCalibrationFinalizationRequest
+    ) throws -> HistoricalCalibrationFinalizationOutcome {
+        historicalRequests.append(request)
+        guard finalizeCalibration(
+            request.runID,
+            report: request.report,
+            workItem: request.workItem,
+            streamID: request.streamID
+        ) else {
+            return .superseded
+        }
+        let ordinal = Int64(historicalRequests.count * 2)
+        return .published(
+            HistoricalCalibrationCommit(
+                disposition: .newlyCommitted,
+                logical: try HistoricalObservationFrameCommit(
+                    sequence: try ObservationCommitSequence(ordinal - 1),
+                    rootEndpointID: try ObservationEndpointID("logical-fixture-\(ordinal)"),
+                    endpointCount: request.observation.nodes.count
+                ),
+                allocated: try HistoricalObservationFrameCommit(
+                    sequence: try ObservationCommitSequence(ordinal),
+                    rootEndpointID: try ObservationEndpointID("allocated-fixture-\(ordinal)"),
+                    endpointCount: request.observation.nodes.count
+                )
+            )
+        )
     }
 
     func discardCalibration(

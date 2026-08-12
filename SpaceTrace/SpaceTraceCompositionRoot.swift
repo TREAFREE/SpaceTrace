@@ -57,13 +57,14 @@ struct SpaceTraceCompositionRoot {
         let scanner = FoundationMetadataCalibrationScanner(
             excludedPaths: [try DirtyRegionPath(applicationSupportRoot.path)]
         )
+        let historicalFindingProjector = HistoricalFindingProjector(
+            repository: repository
+        )
         let runtime = NativeVolumeMonitoringRuntime(
             catalog: catalog,
             repository: repository,
-            scanner: scanner
-        )
-        let historicalFindingProjector = HistoricalFindingProjector(
-            repository: repository
+            scanner: scanner,
+            historicalFindingProjector: historicalFindingProjector
         )
         let lifecycle = NativeMonitoringApplicationLifecycle(
             catalog: catalog,
@@ -85,7 +86,8 @@ struct SpaceTraceCompositionRoot {
             contextProvider: baselineContextProvider,
             calibrationRunner: EventJournalAuthorizedBaselineCalibrationRunner(
                 repository: repository,
-                scanner: scanner
+                scanner: scanner,
+                historicalFindingProjector: historicalFindingProjector
             ),
             snapshotRepository: repository,
             volumeCapacityProvider: volumeCapacityProvider,

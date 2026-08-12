@@ -2,7 +2,7 @@
 
 ## Status
 
-The schema-v11 persistence slice is implemented and verified on the current development host. This closes the schema, migration, repository transaction, retraction, retention, recovery-fixture, current-host scale-benchmark, and bounded launch-time projector-resumption work described here. It does **not** make SpaceTrace release-ready: production scanner capture, replacement of the legacy finalization path, production creation of projector work, finding UI, minimum-OS qualification, accessibility/usability evidence, and distribution trust remain open.
+The schema-v11 persistence slice and production complete-scan integration are implemented and verified on the current development host. This closes the schema, migration, repository transaction, paired logical/allocated finalization, production creation of projector work, bounded immediate/launch projection, retraction, retention, recovery-fixture, and current-host scale-benchmark work described here. It does **not** make SpaceTrace release-ready: explicit-absence capture, qualified stable-move evidence, finding UI, minimum-OS qualification, accessibility/usability evidence, and distribution trust remain open.
 
 ADR-004 and ADR-006 remain **Proposed**. Passing an implementation gate is evidence for review, not maintainer acceptance of an ADR.
 
@@ -73,10 +73,10 @@ The current-host gates pass: complete database below 250,000,000 bytes, peak RSS
 
 ## Exact non-claims and remaining release gates
 
-This slice does not claim that:
+This integrated slice still does not claim that:
 
-- the production scanner captures qualified directory object identity, reuse guards, link ambiguity, explicit absence, complete direct-child coverage, or frozen attribution;
-- the running app uses paired v11 finalization instead of the legacy path and therefore creates authoritative work for the already-connected launch-time projector;
+- the production scanner proves directory link-set uniqueness or emits explicit absence; it captures complete direct-child coverage, frozen attribution, and reuse-guard metadata, but records link status as `unknown`, so missing rows remain missing evidence and production moves are suppressed;
+- every legacy caller uses paired v11 finalization: the running authorized-volume and FSEvents calibration paths use it when persistent volume/mount context and the rich scanner/repository capabilities are available, while deliberately unsupported contexts stay on current-state publication without inventing history;
 - replacement/supersession exists; v11 supports evidence invalidation only;
 - Overview or menu-bar UI presents findings, uncertainty, retractions, History Off, or baseline-unavailable state;
 - the current 24-known/8-Unknown classifier corpus satisfies the independent 60-case gate;

@@ -130,6 +130,7 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
     private let latency: TimeInterval
     private let bufferCapacity: Int
     private let excludeEventsFromThisProcess: Bool
+    private let historicalFindingProjector: (any HistoricalFindingProjecting)?
     private var streams: [WatchedScopeID: ActiveStream] = [:]
     private var recoveries: [WatchedScopeID: RecoveryTask] = [:]
     private var revisions: [WatchedScopeID: UInt64] = [:]
@@ -148,7 +149,8 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
         recoveryPolicy: FSEventStreamRecoveryPolicy = .standard,
         latency: TimeInterval = 1,
         bufferCapacity: Int = 512,
-        excludeEventsFromThisProcess: Bool = true
+        excludeEventsFromThisProcess: Bool = true,
+        historicalFindingProjector: (any HistoricalFindingProjecting)? = nil
     ) {
         self.repository = repository
         self.scanner = scanner
@@ -159,6 +161,7 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
         self.latency = latency
         self.bufferCapacity = bufferCapacity
         self.excludeEventsFromThisProcess = excludeEventsFromThisProcess
+        self.historicalFindingProjector = historicalFindingProjector
     }
 
     public func restart(
@@ -203,11 +206,18 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
             hasStoredCheckpoint: checkpoint != nil,
             revision: revision
         )
+        let historicalContext = try makeHistoricalContext(
+            scope: scope,
+            volumeUUID: activation.current.volumeUUID,
+            generationID: activation.current.generationID
+        )
         let pipeline = FileSystemCalibrationPipeline(
             streamID: streamID,
             watchRoot: scope.root,
             repository: repository,
-            scanner: scanner
+            scanner: scanner,
+            historicalContext: historicalContext,
+            historicalFindingProjector: historicalFindingProjector
         )
 
         do {
@@ -624,11 +634,18 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
                     try ensureRecoveryCurrent(context)
                 }
 
+                let historicalContext = try makeHistoricalContext(
+                    scope: context.scope,
+                    volumeUUID: context.expectedVolumeUUID,
+                    generationID: context.generationID
+                )
                 let pipeline = FileSystemCalibrationPipeline(
                     streamID: streamID,
                     watchRoot: context.scope.root,
                     repository: repository,
-                    scanner: scanner
+                    scanner: scanner,
+                    historicalContext: historicalContext,
+                    historicalFindingProjector: historicalFindingProjector
                 )
                 let opened = try startClient(
                     configuration: configuration(
@@ -664,6 +681,24 @@ public actor NativeScopeFSEventSupervisor: ScopeEventStreamSupervisor {
         }
 
         finishExhaustedRecovery(context: context, lastFailure: lastFailure)
+    }
+
+    private func makeHistoricalContext(
+        scope: WatchedScope,
+        volumeUUID: UUID?,
+        generationID: MountGenerationID
+    ) throws -> HistoricalCalibrationContext? {
+        guard let volumeUUID,
+              repository is any HistoricalCalibrationFinalizationRepository,
+              scanner is any HistoricalCalibrationScanner else {
+            return nil
+        }
+        return try HistoricalCalibrationContext(
+            watchedScopeID: scope.id,
+            volumeUUID: volumeUUID,
+            mountGenerationID: generationID,
+            homeDirectoryPath: NSHomeDirectory()
+        )
     }
 
     private func persistRecoveryWork(

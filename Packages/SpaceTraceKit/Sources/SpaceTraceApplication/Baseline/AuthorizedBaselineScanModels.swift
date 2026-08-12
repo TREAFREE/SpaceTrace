@@ -11,17 +11,23 @@ public struct AuthorizedBaselineScanContext: Sendable, Equatable {
     /// Callers must keep that state unknown rather than inferring a volume
     /// from the path text.
     public let volumeUUID: UUID?
+    /// Active mount generation used only when immutable historical evidence is
+    /// available. Legacy callers may omit it and remain on current-state
+    /// publication.
+    public let mountGenerationID: MountGenerationID?
 
     public init(
         scopeID: WatchedScopeID,
         root: DirtyRegionPath,
         streamID: EventStreamID,
-        volumeUUID: UUID? = nil
+        volumeUUID: UUID? = nil,
+        mountGenerationID: MountGenerationID? = nil
     ) {
         self.scopeID = scopeID
         self.root = root
         self.streamID = streamID
         self.volumeUUID = volumeUUID
+        self.mountGenerationID = mountGenerationID
     }
 }
 

@@ -20,13 +20,16 @@ struct FoundationMetadataCalibrationScannerTests {
         try fileManager.createSymbolicLink(atPath: link.path, withDestinationPath: "nested")
 
         let root = try DirtyRegionPath(fixture.standardizedFileURL.path)
+        let nestedPath = try DirtyRegionPath(nested.standardizedFileURL.path)
         let collector = AggregateCollector()
-        let report = try await FoundationMetadataCalibrationScanner().scan(
+        let result = try await FoundationMetadataCalibrationScanner().scanHistorical(
             try request(root: root)
         ) { batch in
             await collector.append(batch)
         }
 
+        let report = result.report
+        let evidence = try #require(result.evidence)
         let aggregates = await collector.aggregates
         let rootAggregate = try #require(aggregates.first { $0.path == root })
         #expect(report.coverage == .complete)
@@ -38,6 +41,17 @@ struct FoundationMetadataCalibrationScannerTests {
         #expect(rootAggregate.descendantCount == 4)
         #expect(aggregates.contains { $0.path.rawValue.hasSuffix("root.bin") } == false)
         #expect(aggregates.contains { $0.path.rawValue.hasSuffix("nested.bin") } == false)
+        #expect(evidence.rootPath == root)
+        #expect(evidence.directories.count == 2)
+        let rootObservation = try #require(evidence.directories.first { $0.path == root })
+        let nestedObservation = try #require(evidence.directories.first { $0.path == nestedPath })
+        #expect(rootObservation.parentPath == nil)
+        #expect(rootObservation.logicalBytes == rootAggregate.logicalBytes)
+        #expect(rootObservation.allocatedBytes == rootAggregate.allocatedBytes)
+        #expect(rootObservation.directChildrenCoverage == .complete)
+        #expect(rootObservation.objectIdentity != nil)
+        #expect(rootObservation.objectIdentity?.linkStatus == .unknown)
+        #expect(nestedObservation.parentPath == root)
     }
 
     @Test("Directory aggregates contain no leaf paths and deduplicate hard-link allocation")

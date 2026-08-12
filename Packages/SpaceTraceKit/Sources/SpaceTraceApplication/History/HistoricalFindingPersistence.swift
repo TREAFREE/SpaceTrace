@@ -527,16 +527,19 @@ public protocol HistoricalFindingProjectionRepository: Sendable {
     ) async throws -> HistoricalProjectionCommitOutcome
 }
 
-/// Public history persistence boundary. Evidence invalidation is intentionally
-/// absent: ordinary app, UI, classifier, and cleanup callers cannot request it.
-public protocol HistoricalFindingPersistenceRepository:
-    EventJournalRepository,
-    HistoricalFindingProjectionRepository
-{
+/// Narrow atomic publication seam used by the calibration pipeline.
+public protocol HistoricalCalibrationFinalizationRepository: EventJournalRepository {
     func finalizeCalibrationWithHistoricalFrames(
         _ request: HistoricalCalibrationFinalizationRequest
     ) async throws -> HistoricalCalibrationFinalizationOutcome
+}
 
+/// Public history persistence boundary. Evidence invalidation is intentionally
+/// absent: ordinary app, UI, classifier, and cleanup callers cannot request it.
+public protocol HistoricalFindingPersistenceRepository:
+    HistoricalCalibrationFinalizationRepository,
+    HistoricalFindingProjectionRepository
+{
     func historicalFindingAuditRecord(
         id: HistoricalFindingRecordID
     ) async throws -> HistoricalFindingAuditRecord?

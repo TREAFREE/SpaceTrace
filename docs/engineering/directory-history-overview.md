@@ -17,9 +17,9 @@ gaps, per-root logical-size series, and the ten largest positive logical-size
 changes available in the selected window.
 
 This slice deliberately does not claim full FR-005/FR-006 completion. Startup-
-volume history and the pure classification/finding contracts have since been
-implemented as separate slices, but immutable schema-v11 persistence and
-Overview/menu-bar finding presentation remain open.
+volume history, immutable schema-v11 persistence, production complete-scan
+paired finalization, and finding projection have since been implemented as
+separate slices, but Overview/menu-bar finding presentation remains open.
 
 ## Dependency and privacy boundary
 
@@ -112,11 +112,11 @@ partial observations without relying on color alone.
 
 1. Keep the completed startup-volume comparison aligned with this directory
    query contract; see [Startup Volume History and Storage Reconciliation](startup-volume-history-and-reconciliation.md).
-2. Persist the already-versioned classification decisions with immutable v11
-   endpoints and project them into this Overview without recomputation.
-3. Connect the pure, coverage-aware move/disappearance and non-overlapping
-   ranking projection described in [Immutable Historical Findings](immutable-historical-findings.md);
-   a missing row must never become disappearance evidence.
+2. Read the already-frozen schema-v11 classification/finding projection into
+   this Overview without recomputing historical decisions.
+3. Add explicit-absence reconciliation and qualify APFS stable identity before
+   exposing move/disappearance; a missing row must never become disappearance
+   evidence. See [Immutable Historical Findings](immutable-historical-findings.md).
 4. Extend the already-qualified 24-hour menu-bar state with v11 finding and
    coverage status without turning incomplete evidence into a headline delta.
 5. Add user-confirmed history reset and retention/storage-size settings.

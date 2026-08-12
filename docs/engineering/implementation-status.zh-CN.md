@@ -81,7 +81,7 @@
 
 ## 明确不作出的声明
 
-- 面向用户的多目录权限列表、批量基线、启动卷容量历史、版本/Schema 元数据、重启恢复、电源/温度/睡眠感知、schema v10 概览/菜单栏历史、纯分类器/finding 投影、schema v11 持久化切片，以及启动时有界恢复 pending projector work 均已实现。生产扫描器身份/absence/coverage 采集与 paired-v11 finalization 尚未接入，因此生产环境暂时不会创建新的 projector work；replacement/supersession 与 finding/History-Off UI 也仍未完成。24 known/8 Unknown 语料仍低于 PRD 门禁；APFS 唯一块核算、真正枚举器内存中点续扫和用户控制的脱敏导出也仍未完成。
+- 面向用户的多目录权限列表、批量基线、启动卷容量历史、版本/Schema 元数据、重启恢复、电源/温度/睡眠感知、schema v10 概览/菜单栏历史、纯分类器/finding 投影、schema v11 持久化、完整扫描 paired finalization，以及有界即时/启动投影均已实现。生产扫描现在会在同一次遍历中冻结仅目录 logical/allocated 证据、直接子级覆盖、分类与保守对象元数据。显式 absence 与目录 link-set 唯一性尚不能产生，因此缺失行继续只是缺少证据，生产 move finding 会被抑制；replacement/supersession 与 finding/History-Off UI 也仍未完成。24 known/8 Unknown 语料仍低于 PRD 门禁；APFS 唯一块核算、真正枚举器内存中点续扫和用户控制的脱敏导出也仍未完成。
 - 修正后的当前主机运行关闭了提交 `ed0d660` 的 ad-hoc 24 小时进程/耐久门禁。Activity Monitor 的 CPU、唤醒、内存、I/O 与 thermal 区间仍只是能耗相关证据，不是直接瓦特/焦耳测量；该结果也不能证明普遍的系统调度到达保证、签名状态项交互矩阵、Apple 身份分发、Release Candidate 替换或 macOS 15.6 运行资格。
 - 用户主动基线调度会响应休眠、低电量模式、严重/危急温度，并观察当前供电来源。后台速率预算、系统负载调度以及架构中的 token bucket 尚未实现。硬链接去重受条目预算限制，但每次扫描运行期间仍保存在内存中。
 - 真实 sandbox Powerbox 展示以及 stale/身份失败的重新授权 UI 已实现；当前主机上的持久选择、同一 bundle 重启、明确 App 内移除和同镜像外置卷返回已经通过。真实 stale 证据、UI 流程中的不同 UUID 换卷子项、Apple 身份签名以及 macOS 15.6 运行矩阵仍未完成，或受到当前环境阻塞。
@@ -90,7 +90,7 @@
 - 不会依据 FSEvents 推断精确字节差值或进程归因。
 - 原生资格测试已经在开发主机上覆盖受控卸载、重挂和同名卷替换；但最老支持系统的真实运行、守护进程真实 `UserDropped`/`KernelDropped`、事件 ID 回绕、睡眠/唤醒以及权限撤销仍未完成资格验证；允许采用的证据边界记录在 [FSEvents 连续性丢失资格验证](fsevents-continuity-qualification.zh-CN.md) 中。
 - 启动后自动恢复已经有界且经过测试，但守护进程真实 drop/wrap 条件以及最老支持 macOS 上的恢复行为仍未完成资格验证。
-- 原生 SQLite 适配器现已覆盖 schema v11 不可变账本迁移/digest、原子备份/只读恢复、v10/v11 canary fixture、图保留/History Off、撤回/effective 查询、可复现的 50 万/100 万行当前主机 repository benchmark，以及启动时恢复持久化 work 的有界应用 projector。生产 paired finalization 尚未接入，因此当前生命周期只会恢复已有 work，而不会消费生产扫描新生成的 frame。GRDB 等价、额外生产 artifact 恢复资格、公证及最低系统运行/性能仍未完成。
+- 原生 SQLite 适配器现已覆盖 schema v11 不可变账本迁移/digest、原子备份/只读恢复、v10/v11 canary fixture、图保留/History Off、撤回/effective 查询、可复现的 50 万/100 万行当前主机 repository benchmark、生产 paired finalization，以及提交后处理新 work 并在启动时恢复持久化 work 的有界应用 projector。GRDB 等价、额外生产 artifact 恢复资格、公证及最低系统运行/性能仍未完成。
 - 尚未完成 macOS 15.6 真实运行资格验证；在较新主机上按 deployment target 编译不等于运行证据。
 - Full Disk Access、App Sandbox 移除、Developer ID 签名、公证、分发及更新行为均未改变，继续由相应的 Proposed 决策约束。
 
@@ -103,13 +103,13 @@
 5. 使用稳定 Apple 身份在 Apple Silicon macOS 15.6 上重跑签名沙盒协议，并覆盖真实 stale 证据、UI 的不同 UUID 换卷子项和系统菜单栏交互矩阵；不得以已完成的当前主机 ad-hoc smoke 代替该门禁。
 6. 在签名沙盒矩阵中验证活跃扫描期间撤权和多目录列表变更。
 7. 在把相应界面视为 Beta 就绪或具备发布资格之前，为用户可见的基线/历史切片完成 ADR-003 与 ADR-004 维护者评审，并为不可变 finding 完成 ADR-006 维护者评审。
-8. 把生产扫描器取证接入已实现的 paired schema v11 finalization，调度/重启 pending projection work，移除 legacy bypass，并要求每个紧凑结果都从权威帧重新生成。replacement/supersession 仍需未来获批迁移；v11 证据失效不提供该能力。
-9. 把经过独立复核的分类语料从当前 24 个已知场景扩充到 PRD 门禁，再把已经冻结的 finding 决策接入持久化与概览，并禁止静默重算历史文案。
+8. 增加显式 absence 对账，并在受控重命名、inode 复用、重挂与换卷测试中验证 APFS 目录 link-set/稳定身份；缺失行和 unknown link status 必须继续被抑制。在不静默重算历史文案的前提下展示 current-effective finding、撤回、History Off 与 baseline-unavailable 状态。replacement/supersession 仍需未来获批迁移；v11 证据失效不提供该能力。
+9. 把经过独立复核的分类语料从当前 24 个已知场景扩充到 PRD 门禁，再在概览中展示已经冻结并持久化的决策。
 10. 实现由用户明确控制、可预览和取消的导出，覆盖中断恢复与路径/令牌脱敏证据，并且绝不自动上传。
 
 ## 发布决策（继续维持 NO-GO；证据更新于 2026-08-12）
 
 - **本地工程 RC 生成：CONDITIONAL GO（有条件继续）。** 可以使用 fail-closed ad-hoc 打包器，为明确互相信任的维护者/测试者生成带 provenance 的受控测试产物。
 - **GitHub Release 与 Public Beta：NO-GO（暂不发布）。** 本次没有创建 tag、Release 或上传产物。
-- 阻塞门禁包括：生产 scanner→paired-v11/projector 接入与 finding/History-Off UI；未来获批的 replacement/supersession 模型；生产稳定身份资格；分类语料扩充与用户控制导出/脱敏；macOS 15.6 运行；人工辅助功能/可用性和真实权限/换卷矩阵；ADR-003/004/006 接受；Developer ID/公证，或明确接受未签名风险并完成干净 quarantine 安装；打包升级/回滚；正式许可、第三方 notices 与 SBOM。
+- 阻塞门禁包括：显式 absence 对账、生产稳定身份资格与 finding/History-Off UI；未来获批的 replacement/supersession 模型；分类语料扩充与用户控制导出/脱敏；macOS 15.6 运行；人工辅助功能/可用性和真实权限/换卷矩阵；ADR-003/004/006 接受；Developer ID/公证，或明确接受未签名风险并完成干净 quarantine 安装；打包升级/回滚；正式许可、第三方 notices 与 SBOM。
 - 逐行门禁表和未发布的测试者说明见[产品路线图](../product/product-roadmap.md)与 [Changelog](../../CHANGELOG.md)。

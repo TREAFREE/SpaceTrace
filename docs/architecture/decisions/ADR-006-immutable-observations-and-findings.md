@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — the pure contracts and schema-v11 persistence slice now pass migration, transaction, retraction, retention, recovery-fixture, privacy, and current-host 500k/1M benchmark gates. The decision remains unaccepted until production scanner/finalization/projector integration, UI, minimum-OS, maintainer-adoption, and remaining release gates pass.
+Proposed — the pure contracts, schema-v11 persistence, production complete-scan paired finalization, and bounded projector lifecycle are implemented. Migration, transaction, retraction, retention, recovery-fixture, privacy, current-host 500k/1M benchmark, and production-path integration tests pass. The decision remains unaccepted until explicit-absence and stable-identity qualification, UI, minimum-OS, maintainer-adoption, and remaining release gates pass.
 
 Date: 2026-08-11
 
@@ -18,9 +18,9 @@ Superseded by: none
 
 ## Context
 
-SpaceTrace already exposes current directory aggregates and lossy hourly/daily history internally, and it has a pure deterministic path classifier. Those surfaces are not an audit-grade finding source. The legacy production history read model does not retain immutable per-node endpoint IDs, stable directory-object identity, complete-parent absence evidence, mount generation, or every disappeared endpoint. Schema v11 can now persist validated versioned decisions and pure projection results, but the production scanner/finalization/projector path and Overview remain unconnected.
+SpaceTrace already exposes current directory aggregates and lossy hourly/daily history internally, and it has a pure deterministic path classifier. Those surfaces are not an audit-grade finding source. Schema v11 now persists validated versioned decisions and pure projection results. A complete production scan also captures directory-only measurements, direct-child coverage, birth-time-qualified object metadata, and frozen classification from the same traversal; when a persistent volume and mount generation are known, one transaction publishes current truth plus consecutive logical/allocated v11 frames and registers deterministic projection work. The projector drains new work after commit and resumes pending work at launch. The scanner still cannot emit explicit absent endpoints or prove directory link-set uniqueness, so missing rows remain missing evidence and production move findings remain suppressed. Overview presentation is not connected.
 
-FSEvents reports lossy, coalesced invalidation hints. A rename flag contains neither a trusted source/destination pair nor a durable object identity. The scanner observes `st_dev` and `st_ino` only to avoid allocated-byte double counting for hard links during one scan; it does not persist that identity for directories. Therefore name, size, timestamp proximity, opposite deltas, or an FSEvents rename flag cannot establish a move.
+FSEvents reports lossy, coalesced invalidation hints. A rename flag contains neither a trusted source/destination pair nor a durable object identity. The scanner observes file identity to avoid allocated-byte double counting during one scan and records conservative directory object metadata for v11 candidates, but it deliberately records directory link status as `unknown`. Therefore name, inode alone, size, timestamp proximity, opposite deltas, or an FSEvents rename flag cannot establish a move.
 
 The architecture currently says classifier schema participates in observation comparability. Classification does not change measured bytes, and rule upgrades must not sever otherwise compatible measurement history. Classification belongs after measurement comparison and must be frozen into each historical finding.
 
@@ -216,14 +216,14 @@ Raw paths, display names, opaque object tokens, normalized location keys, timeli
 ### Neutral or follow-up
 
 - ADR-003 and ADR-004 remain Proposed and require their own acceptance gates.
-- Scanner identity capture, production v11 finalization/projector scheduling, Overview/menu-bar UI, corpus expansion, export, and macOS 15.6 qualification remain separate stages.
+- Explicit-absence capture, production APFS link-set/stable-identity qualification, Overview/menu-bar UI, corpus expansion, export, and macOS 15.6 qualification remain separate stages.
 - A correction/replacement model, successor schema, and append-only supersession evidence remain a separate adoption gate; v11 retraction does not complete them.
 - An observed disappearance describes evidence at a path; it never authorizes deletion and is not a reclaimability claim.
 - Every category and finding is an explanation of observed metadata, never a deletion instruction, cleanup recommendation, or safety guarantee.
 
 ## Validation plan
 
-Current-host schema-v11 persistence evidence is recorded in [SQLite v11 Historical Ledger](../../engineering/sqlite-v11-historical-ledger.md). It closes the implementation checks for migration, immutable frame/finding commits, idempotent projection, evidence-invalidated retraction, ordered retention, released recovery fixtures, and the 500k/1M current-host persistence gates. It does not close production integration, minimum-OS, UI, classifier-corpus, export, distribution, or maintainer-acceptance gates.
+Current-host schema-v11 persistence and production-path evidence is recorded in [SQLite v11 Historical Ledger](../../engineering/sqlite-v11-historical-ledger.md). It closes migration, immutable frame/finding commits, complete-scan paired publication, idempotent immediate/launch projection, evidence-invalidated retraction, ordered retention, released recovery fixtures, and the 500k/1M current-host persistence gates. It does not close explicit absence, stable move proof, minimum-OS, UI, classifier-corpus, export, distribution, or maintainer-acceptance gates.
 
 1. Domain tests cover every compatibility mismatch, partial/unknown state, explicit absence, strict sequence ordering, wall-clock rollback, checked arithmetic, and Codable revalidation.
 2. Application tests cover growth, decrease, appearance, disappearance, stable move, rename-only rejection, identity ambiguity, ancestor-move collapse, child reparenting, exclusive contribution, input-order permutations, and stable Top 10.

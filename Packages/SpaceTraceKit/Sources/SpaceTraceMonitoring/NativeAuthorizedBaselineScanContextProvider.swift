@@ -27,7 +27,8 @@ public actor NativeAuthorizedBaselineScanContextProvider: AuthorizedBaselineScan
             scopeID: scopeID,
             root: scope.root,
             streamID: active.streamID,
-            volumeUUID: active.persistentIdentity?.volumeUUID
+            volumeUUID: active.persistentIdentity?.volumeUUID,
+            mountGenerationID: active.generationID
         )
     }
 }

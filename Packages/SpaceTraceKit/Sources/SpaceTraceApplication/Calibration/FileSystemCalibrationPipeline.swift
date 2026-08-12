@@ -28,6 +28,17 @@ public protocol CalibrationScanner: Sendable {
     ) async throws -> CalibrationReport
 }
 
+/// Optional richer scanner seam used by the immutable historical pipeline.
+/// Implementations must produce the legacy staged aggregates and historical
+/// evidence from the same traversal so the two atomic-publication inputs
+/// cannot drift.
+public protocol HistoricalCalibrationScanner: CalibrationScanner {
+    func scanHistorical(
+        _ request: CalibrationRequest,
+        stage: @escaping @Sendable ([DirectoryMetadataAggregate]) async throws -> Void
+    ) async throws -> HistoricalCalibrationScanResult
+}
+
 public enum CalibrationPipelineProgress: Sendable, Equatable {
     case scanning(DirtyRegionWorkItem)
     case publishing(DirtyRegionWorkItem, CalibrationReport)
@@ -62,12 +73,17 @@ public actor FileSystemCalibrationPipeline {
     private let scanner: any CalibrationScanner
     private let planner: DirtyRegionPlanner
     private let scanBudget: CalibrationScanBudget
+    private let historicalContext: HistoricalCalibrationContext?
+    private let historicalFindingProjector: (any HistoricalFindingProjecting)?
+    private let historicalCandidateBuilder = HistoricalCalibrationCandidateBuilder()
 
     public init(
         streamID: EventStreamID,
         watchRoot: DirtyRegionPath,
         repository: any EventJournalRepository,
         scanner: any CalibrationScanner,
+        historicalContext: HistoricalCalibrationContext? = nil,
+        historicalFindingProjector: (any HistoricalFindingProjecting)? = nil,
         planner: DirtyRegionPlanner = DirtyRegionPlanner(),
         scanBudget: CalibrationScanBudget = .incremental
     ) {
@@ -75,6 +91,8 @@ public actor FileSystemCalibrationPipeline {
         self.watchRoot = watchRoot
         self.repository = repository
         self.scanner = scanner
+        self.historicalContext = historicalContext
+        self.historicalFindingProjector = historicalFindingProjector
         self.planner = planner
         self.scanBudget = scanBudget
     }
@@ -144,8 +162,23 @@ public actor FileSystemCalibrationPipeline {
             )
             let runID = try await repository.beginCalibration(request)
             do {
-                let report = try await scanner.scan(request) { [repository] batch in
+                let stage: @Sendable ([DirectoryMetadataAggregate]) async throws -> Void = {
+                    [repository] batch in
                     try await repository.stageCalibration(batch, in: runID)
+                }
+                let report: CalibrationReport
+                let historicalEvidence: HistoricalCalibrationScanEvidence?
+                if historicalContext != nil {
+                    guard let scanner = scanner as? any HistoricalCalibrationScanner,
+                          repository is any HistoricalCalibrationFinalizationRepository else {
+                        throw CalibrationPipelineError.historicalCapabilityUnavailable
+                    }
+                    let result = try await scanner.scanHistorical(request, stage: stage)
+                    report = result.report
+                    historicalEvidence = result.evidence
+                } else {
+                    report = try await scanner.scan(request, stage: stage)
+                    historicalEvidence = nil
                 }
                 guard report.coverage == .complete else {
                     try await repository.discardCalibration(
@@ -163,12 +196,45 @@ public actor FileSystemCalibrationPipeline {
                     continue
                 }
                 await onProgress(.publishing(workItem, report))
-                let didPublish = try await repository.finalizeCalibration(
-                    runID,
-                    report: report,
-                    workItem: workItem,
-                    streamID: streamID
-                )
+                let didPublish: Bool
+                var shouldTriggerProjection = false
+                if let historicalContext {
+                    guard let historicalRepository = repository
+                        as? any HistoricalCalibrationFinalizationRepository,
+                          let historicalEvidence else {
+                        throw CalibrationPipelineError.historicalEvidenceMissing
+                    }
+                    let observation = try historicalCandidateBuilder.build(
+                        historicalEvidence,
+                        context: historicalContext
+                    )
+                    let outcome = try await historicalRepository
+                        .finalizeCalibrationWithHistoricalFrames(
+                            try HistoricalCalibrationFinalizationRequest(
+                                runID: runID,
+                                report: report,
+                                workItem: workItem,
+                                streamID: streamID,
+                                observation: observation
+                            )
+                        )
+                    switch outcome {
+                    case .published:
+                        didPublish = true
+                        shouldTriggerProjection = true
+                    case .historyDisabled:
+                        didPublish = true
+                    case .superseded:
+                        didPublish = false
+                    }
+                } else {
+                    didPublish = try await repository.finalizeCalibration(
+                        runID,
+                        report: report,
+                        workItem: workItem,
+                        streamID: streamID
+                    )
+                }
                 results.append(
                     CalibrationAttemptResult(
                         workItem: workItem,
@@ -176,6 +242,13 @@ public actor FileSystemCalibrationPipeline {
                         disposition: didPublish ? .published : .superseded
                     )
                 )
+                if shouldTriggerProjection,
+                   let historicalFindingProjector {
+                    // The paired commit is already durable. Projection work is
+                    // idempotent and recovered at launch, so a transient drain
+                    // failure must not misreport the calibration as unpublished.
+                    _ = try? await historicalFindingProjector.projectPending(limit: 100)
+                }
             } catch is CancellationError {
                 try? await repository.discardCalibration(
                     runID,
@@ -194,4 +267,9 @@ public actor FileSystemCalibrationPipeline {
         }
         return results
     }
+}
+
+public enum CalibrationPipelineError: Error, Sendable, Equatable {
+    case historicalCapabilityUnavailable
+    case historicalEvidenceMissing
 }

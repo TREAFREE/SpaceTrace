@@ -1551,9 +1551,38 @@ expect_rejection "worktree fixture symlink" \
     "Packages/SpaceTraceKit/Tests/SpaceTracePersistenceTests/Fixtures/ReleasedSchemas/v9/SpaceTrace.sqlite" \
     "released-schema artifact is not a regular file"
 
-# Until Task 8 lands an independent SQLite verifier and byte-for-byte
-# deterministic regeneration, even a plausibly shaped v2 manifest must fail
-# closed. A self-authored generator and self-asserted digests are not proof.
+create_repository_with_legacy_v1_fixture "staged-fixture-symlink"
+staged_symlink_repository=$current_repository
+staged_symlink_path="$staged_symlink_repository/Packages/SpaceTraceKit/Tests/SpaceTracePersistenceTests/Fixtures/ReleasedSchemas/v9/SpaceTrace.sqlite"
+rm "$staged_symlink_path"
+ln -s "not-a-database" "$staged_symlink_path"
+git -C "$staged_symlink_repository" add \
+    Packages/SpaceTraceKit/Tests/SpaceTracePersistenceTests/Fixtures/ReleasedSchemas/v9/SpaceTrace.sqlite
+expect_rejection "staged fixture symlink" \
+    "$staged_symlink_repository" "" \
+    "Packages/SpaceTraceKit/Tests/SpaceTracePersistenceTests/Fixtures/ReleasedSchemas/v9/SpaceTrace.sqlite" \
+    "released-schema artifact is not a regular file"
+
+for view in committed staged worktree; do
+    create_repository_with_legacy_v1_fixture "${view}-manifest-symlink"
+    manifest_symlink_repository=$current_repository
+    manifest_symlink_path="$manifest_symlink_repository/Packages/SpaceTraceKit/Tests/SpaceTracePersistenceTests/Fixtures/ReleasedSchemas/manifest.json"
+    rm "$manifest_symlink_path"
+    ln -s "not-a-manifest" "$manifest_symlink_path"
+    case "$view" in
+        committed) commit_all "$manifest_symlink_repository" "replace manifest with symlink" ;;
+        staged) git -C "$manifest_symlink_repository" add \
+            Packages/SpaceTraceKit/Tests/SpaceTracePersistenceTests/Fixtures/ReleasedSchemas/manifest.json ;;
+        worktree) ;;
+    esac
+    expect_rejection "$view manifest symlink" \
+        "$manifest_symlink_repository" "" \
+        "Packages/SpaceTraceKit/Tests/SpaceTracePersistenceTests/Fixtures/ReleasedSchemas/manifest.json" \
+        "released-schema artifact is not a regular file"
+done
+
+# A plausibly shaped v2 manifest still fails when it omits the independent
+# verifier. A self-authored generator and self-asserted digests are not proof.
 create_repository "manifest-v2-routing"
 v2_repository=$current_repository
 v2_base=$current_base
@@ -1571,10 +1600,75 @@ write_v2_released_fixture_manifest "$v2_root/manifest.json" 11 \
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
     "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 commit_all "$v2_repository" "add manifest-v2 routed fixture"
-expect_rejection "manifest-v2 remains blocked before Task 8" \
+expect_rejection "manifest-v2 requires the independent verifier" \
     "$v2_repository" "$v2_base" \
     "Packages/SpaceTraceKit/Tests/SpaceTracePersistenceTests/Fixtures/ReleasedSchemas/v11/SpaceTrace.sqlite" \
-    "new released-schema manifest formats require the Task 8 verifier"
+    "format-2 fixture verifier is absent"
+
+# The exact reviewed v2 closure is accepted only when its verifier, generators,
+# source inputs and all six frozen fixtures are present in the same repository.
+create_repository "reviewed-manifest-v2"
+reviewed_v2_repository=$current_repository
+reviewed_v2_base=$current_base
+mkdir -p \
+    "$reviewed_v2_repository/Packages/SpaceTraceKit/Tests/SpaceTracePersistenceTests/Fixtures" \
+    "$reviewed_v2_repository/Packages/SpaceTraceKit/Sources/SpaceTracePersistence" \
+    "$reviewed_v2_repository/Scripts/Fixtures"
+cp -R "$repository_root/Packages/SpaceTraceKit/Tests/SpaceTracePersistenceTests/Fixtures/ReleasedSchemas" \
+    "$reviewed_v2_repository/Packages/SpaceTraceKit/Tests/SpaceTracePersistenceTests/Fixtures/"
+cp "$repository_root/Packages/SpaceTraceKit/Sources/SpaceTracePersistence/SQLiteEventJournalRepository.swift" \
+    "$repository_root/Packages/SpaceTraceKit/Sources/SpaceTracePersistence/SQLiteHistoricalFindingSchema.swift" \
+    "$reviewed_v2_repository/Packages/SpaceTraceKit/Sources/SpaceTracePersistence/"
+cp "$repository_root/Scripts/Fixtures/generate-released-schema-v10-fixture.sh" \
+    "$repository_root/Scripts/Fixtures/generate-released-schema-v11-fixture.sh" \
+    "$reviewed_v2_repository/Scripts/Fixtures/"
+cp "$repository_root/Scripts/verify-released-schema-fixtures.sh" \
+    "$reviewed_v2_repository/Scripts/"
+chmod 0755 "$reviewed_v2_repository/Scripts/Fixtures/"*.sh \
+    "$reviewed_v2_repository/Scripts/verify-released-schema-fixtures.sh"
+commit_all "$reviewed_v2_repository" "add independently reviewed v2 fixtures"
+expect_acceptance "reviewed manifest-v2 closure" \
+    "$reviewed_v2_repository" "$reviewed_v2_base"
+
+for view in committed staged worktree; do
+    generator_symlink_repository="$temporary_root/${view}-generator-symlink"
+    cp -R "$reviewed_v2_repository" "$generator_symlink_repository"
+    generator_symlink_path="$generator_symlink_repository/Scripts/Fixtures/generate-released-schema-v11-fixture.sh"
+    rm "$generator_symlink_path"
+    ln -s "not-a-generator" "$generator_symlink_path"
+    case "$view" in
+        committed) commit_all "$generator_symlink_repository" "replace generator with symlink" ;;
+        staged) git -C "$generator_symlink_repository" add \
+            Scripts/Fixtures/generate-released-schema-v11-fixture.sh ;;
+        worktree) ;;
+    esac
+    expect_rejection "$view generator symlink" \
+        "$generator_symlink_repository" "$reviewed_v2_base" \
+        "Scripts/Fixtures/generate-released-schema-v11-fixture.sh" \
+        "format-2 fixture verifier rejected the current closure"
+done
+
+for payload in text opaque; do
+    invalid_fixture_repository="$temporary_root/${payload}-sqlite-fixture"
+    cp -R "$reviewed_v2_repository" "$invalid_fixture_repository"
+    invalid_fixture_path="$invalid_fixture_repository/Packages/SpaceTraceKit/Tests/SpaceTracePersistenceTests/Fixtures/ReleasedSchemas/v11/SpaceTrace.sqlite"
+    if [[ "$payload" == text ]]; then
+        printf 'this is not a SQLite database\n' >"$invalid_fixture_path"
+    else
+        printf '\001\002\003\004opaque-binary\000' >"$invalid_fixture_path"
+    fi
+    expect_rejection "$payload sqlite fixture" \
+        "$invalid_fixture_repository" "$reviewed_v2_base" \
+        "Packages/SpaceTraceKit/Tests/SpaceTracePersistenceTests/Fixtures/ReleasedSchemas/v11/SpaceTrace.sqlite" \
+        "format-2 fixture verifier rejected the current closure"
+done
+
+printf '\n# generator drift\n' >> \
+    "$reviewed_v2_repository/Scripts/Fixtures/generate-released-schema-v11-fixture.sh"
+expect_rejection "manifest-v2 rejects generator drift" \
+    "$reviewed_v2_repository" "$reviewed_v2_base" \
+    "Scripts/Fixtures/generate-released-schema-v11-fixture.sh" \
+    "format-2 fixture verifier rejected the current closure"
 
 # The only accepted binary layout is exactly v<digits>/SpaceTrace.sqlite.
 # A broad glob must not admit an extra nested path even if a manifest lists it.
@@ -1666,7 +1760,7 @@ expect_rejection "worktree binary-only digest drift" \
     "Packages/SpaceTraceKit/Tests/SpaceTracePersistenceTests/Fixtures/ReleasedSchemas/v9/SpaceTrace.sqlite" \
     "released-schema fixture digest mismatch"
 
-readonly expected_case_count=115
+readonly expected_case_count=126
 if (( passed_cases + failed_cases != expected_case_count )); then
     record_contract_failure "case inventory" \
         "expected $expected_case_count cases, observed $((passed_cases + failed_cases))"

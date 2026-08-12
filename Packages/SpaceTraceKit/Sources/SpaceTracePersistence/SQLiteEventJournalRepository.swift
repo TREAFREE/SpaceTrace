@@ -67,6 +67,9 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         if let migrationBackupURL {
             try? FileManager.default.removeItem(at: migrationBackupURL)
         }
+        try SQLiteSensitiveArtifactInventory.scrubAfterSuccessfulStartup(
+            databaseURL: databaseURL
+        )
     }
 
     deinit {
@@ -1121,8 +1124,18 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         } catch {
             try rollback(after: error)
         }
-        try checkpointHistoricalScrub()
-        historicalStartupMaintenancePending = false
+        if injectedFailurePoint == .afterHistoricalRetentionCommitBeforeCheckpoint {
+            injectedFailurePoint = nil
+            historicalStartupMaintenancePending = true
+            throw SQLiteEventJournalError.injectedFailure
+        }
+        do {
+            try checkpointHistoricalScrub()
+            historicalStartupMaintenancePending = false
+        } catch {
+            historicalStartupMaintenancePending = true
+            throw error
+        }
         return report
     }
 
@@ -1215,6 +1228,9 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         // Read before any persistent pragma so an invalid/corrupt main file is
         // classified without attempting to replace or rewrite it.
         let currentVersion = try readSchemaVersion(from: database)
+        guard currentVersion >= 0, currentVersion <= Self.schemaVersion else {
+            throw SQLiteEventJournalError.unsupportedSchemaVersion(currentVersion)
+        }
 
         let migrationBackupURL: URL?
         if currentVersion > 0, currentVersion < Self.schemaVersion {
@@ -1329,6 +1345,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
 
         do {
             try SQLiteHistoricalFindingCodec.validateInstalledV11(database: database)
+            try SQLiteArtifactValidator.validateOpenedDatabase(database)
         } catch {
             throw SQLiteEventJournalError.databaseCorrupt
         }
@@ -4251,6 +4268,7 @@ enum SQLiteEventJournalTestFailurePoint: Sendable, Equatable {
     case afterHistoricalRetractionCommitBeforeReturningReceipt
     case afterHistoricalRetentionFindingsBeforeFrames
     case afterHistoricalRetentionFramesBeforeDictionaries
+    case afterHistoricalRetentionCommitBeforeCheckpoint
     case forceHistoricalRetentionSQLiteFull
     case forceHistoricalFindingKeyDigestCollision
 }

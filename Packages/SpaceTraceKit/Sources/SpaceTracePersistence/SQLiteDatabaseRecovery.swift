@@ -17,11 +17,18 @@ public enum SQLiteRecoverySource: String, Sendable, Equatable, Codable {
     case unavailable
 }
 
+public enum SQLiteRecoveryEvidenceCompleteness: String, Sendable, Equatable, Codable {
+    case complete
+    case incomplete
+    case unavailable
+}
+
 public struct SQLiteReadOnlyRecoveryOverview: Sendable, Equatable {
     public let reason: SQLiteRecoveryReason
     public let source: SQLiteRecoverySource
     public let schemaVersion: Int32?
     public let isReadable: Bool
+    public let evidenceCompleteness: SQLiteRecoveryEvidenceCompleteness
     public let incidentDirectoryName: String?
 
     public init(
@@ -29,12 +36,14 @@ public struct SQLiteReadOnlyRecoveryOverview: Sendable, Equatable {
         source: SQLiteRecoverySource,
         schemaVersion: Int32?,
         isReadable: Bool,
+        evidenceCompleteness: SQLiteRecoveryEvidenceCompleteness,
         incidentDirectoryName: String?
     ) {
         self.reason = reason
         self.source = source
         self.schemaVersion = schemaVersion
         self.isReadable = isReadable
+        self.evidenceCompleteness = evidenceCompleteness
         self.incidentDirectoryName = incidentDirectoryName
     }
 }
@@ -104,6 +113,7 @@ public final class SQLiteReadOnlyRecoverySession: @unchecked Sendable {
         var selectedDatabase: OpaquePointer?
         var selectedSource = SQLiteRecoverySource.unavailable
         var selectedVersion: Int32?
+        var selectedCompleteness = SQLiteRecoveryEvidenceCompleteness.unavailable
 
         for (url, source) in candidates {
             var database: OpaquePointer?
@@ -121,13 +131,18 @@ public final class SQLiteReadOnlyRecoverySession: @unchecked Sendable {
                 continue
             }
             guard Self.enableQueryOnly(database),
-                  let version = Self.readSchemaVersion(database) else {
+                  let version = Self.readSchemaVersion(database),
+                  (try? SQLiteArtifactValidator.validateRecoveryDatabase(
+                    database,
+                    schemaVersion: version
+                  )) != nil else {
                 _ = sqlite3_close_v2(database)
                 continue
             }
             selectedDatabase = database
             selectedSource = source
             selectedVersion = version
+            selectedCompleteness = source == .migrationBackup ? .complete : .incomplete
             break
         }
 
@@ -138,6 +153,7 @@ public final class SQLiteReadOnlyRecoverySession: @unchecked Sendable {
             source: selectedSource,
             schemaVersion: selectedVersion,
             isReadable: isReadable,
+            evidenceCompleteness: selectedCompleteness,
             incidentDirectoryName: isolated?.directoryURL.lastPathComponent
         )
     }
@@ -287,8 +303,27 @@ struct SQLiteMigrationBackup {
             at: directory,
             includingPropertiesForKeys: nil
         ))?
-            .filter { $0.lastPathComponent.hasPrefix(prefix) && $0.pathExtension == "sqlite" }
-            .sorted { $0.lastPathComponent > $1.lastPathComponent } ?? []
+            .compactMap { url -> (url: URL, version: Int32)? in
+                guard url.lastPathComponent.hasPrefix(prefix),
+                      url.pathExtension == "sqlite",
+                      let version = backupVersion(url, prefix: prefix) else { return nil }
+                return (url, version)
+            }
+            .sorted {
+                $0.version == $1.version
+                    ? $0.url.lastPathComponent < $1.url.lastPathComponent
+                    : $0.version > $1.version
+            }
+            .map(\.url) ?? []
+    }
+
+    private static func backupVersion(_ url: URL, prefix: String) -> Int32? {
+        let name = url.deletingPathExtension().lastPathComponent
+        guard name.hasPrefix(prefix) else { return nil }
+        let suffix = name.dropFirst(prefix.count)
+        guard suffix.isEmpty == false, suffix.allSatisfy(\.isNumber),
+              let version = Int32(suffix), String(version) == suffix else { return nil }
+        return version
     }
 
     private static func atomicReplace(
@@ -357,6 +392,118 @@ struct SQLiteArtifactValidator {
               pageSize.nonzeroBitCount == 1,
               (byteCount - 32).isMultiple(of: pageSize + 24) else {
             throw SQLiteEventJournalError.databaseCorrupt
+        }
+    }
+
+    static func validateOpenedDatabase(_ database: OpaquePointer) throws {
+        try validateRecoveryDatabase(
+            database,
+            schemaVersion: Int32(SQLiteEventJournalRepository.currentSchemaVersion)
+        )
+    }
+
+    static func validateRecoveryDatabase(
+        _ database: OpaquePointer,
+        schemaVersion: Int32
+    ) throws {
+        guard schemaVersion >= 1,
+              schemaVersion <= Int32(SQLiteEventJournalRepository.currentSchemaVersion),
+              try singleText(database, sql: "PRAGMA quick_check") == "ok",
+              try hasRow(database, sql: "PRAGMA foreign_key_check") == false,
+              try singleInteger(
+                database,
+                sql: "SELECT count(*) FROM sqlite_schema WHERE type IN ('table','index','trigger')"
+              ) <= 512,
+              try singleInteger(
+                database,
+                sql: "SELECT coalesce(sum(length(sql)),0) FROM sqlite_schema"
+              ) <= 2 * 1_024 * 1_024 else {
+            throw SQLiteEventJournalError.databaseCorrupt
+        }
+        let expectedVersions = Array(1...Int(schemaVersion)).map(Int64.init)
+        let versions = try integerRows(
+            database,
+            sql: "SELECT version FROM schema_migration ORDER BY version"
+        )
+        guard versions == expectedVersions else { throw SQLiteEventJournalError.databaseCorrupt }
+        if schemaVersion == Int32(SQLiteEventJournalRepository.currentSchemaVersion) {
+            try SQLiteHistoricalFindingCodec.validateInstalledV11(database: database)
+            guard try singleInteger(
+                database,
+                sql: "SELECT count(*) FROM frozen_attribution_decision WHERE length(canonical_payload)>65536"
+            ) == 0,
+                  try singleInteger(
+                    database,
+                    sql: "SELECT count(*) FROM (SELECT batch_id,count(*) AS n FROM historical_observation_node GROUP BY batch_id HAVING n>50000)"
+                  ) == 0 else {
+                throw SQLiteEventJournalError.databaseCorrupt
+            }
+        }
+    }
+
+    private static func singleText(_ database: OpaquePointer, sql: String) throws -> String {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
+              let statement else { throw SQLiteEventJournalError.databaseCorrupt }
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_step(statement) == SQLITE_ROW,
+              sqlite3_column_type(statement, 0) == SQLITE_TEXT,
+              let bytes = sqlite3_column_text(statement, 0) else {
+            throw SQLiteEventJournalError.databaseCorrupt
+        }
+        let value = String(cString: bytes)
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw SQLiteEventJournalError.databaseCorrupt
+        }
+        return value
+    }
+
+    private static func hasRow(_ database: OpaquePointer, sql: String) throws -> Bool {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
+              let statement else { throw SQLiteEventJournalError.databaseCorrupt }
+        defer { sqlite3_finalize(statement) }
+        switch sqlite3_step(statement) {
+        case SQLITE_ROW: return true
+        case SQLITE_DONE: return false
+        default: throw SQLiteEventJournalError.databaseCorrupt
+        }
+    }
+
+    private static func singleInteger(_ database: OpaquePointer, sql: String) throws -> Int64 {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
+              let statement else { throw SQLiteEventJournalError.databaseCorrupt }
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_step(statement) == SQLITE_ROW,
+              sqlite3_column_type(statement, 0) == SQLITE_INTEGER else {
+            throw SQLiteEventJournalError.databaseCorrupt
+        }
+        let value = sqlite3_column_int64(statement, 0)
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+            throw SQLiteEventJournalError.databaseCorrupt
+        }
+        return value
+    }
+
+    private static func integerRows(_ database: OpaquePointer, sql: String) throws -> [Int64] {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
+              let statement else { throw SQLiteEventJournalError.databaseCorrupt }
+        defer { sqlite3_finalize(statement) }
+        var values: [Int64] = []
+        while true {
+            switch sqlite3_step(statement) {
+            case SQLITE_ROW:
+                guard sqlite3_column_type(statement, 0) == SQLITE_INTEGER else {
+                    throw SQLiteEventJournalError.databaseCorrupt
+                }
+                values.append(sqlite3_column_int64(statement, 0))
+            case SQLITE_DONE:
+                return values
+            default:
+                throw SQLiteEventJournalError.databaseCorrupt
+            }
         }
     }
 
@@ -446,10 +593,17 @@ fileprivate struct SQLiteRecoveryIsolation {
             migrationBackupURL = nil
         }
 
+        let (expiresAtMilliseconds, expiryOverflow) = milliseconds.addingReportingOverflow(
+            604_800_000
+        )
+        guard milliseconds >= 0, expiryOverflow == false else {
+            throw SQLiteSensitiveArtifactInventoryError.invalidRecoveryManifest
+        }
         let manifest = SQLiteRecoveryManifest(
             version: 1,
             reason: reason,
             createdAtMilliseconds: milliseconds,
+            expiresAtMilliseconds: expiresAtMilliseconds,
             artifacts: artifactNames.sorted()
         )
         let manifestURL = directoryURL.appendingPathComponent("manifest.json")
@@ -472,6 +626,7 @@ private struct SQLiteRecoveryManifest: Codable {
     let version: Int
     let reason: SQLiteRecoveryReason
     let createdAtMilliseconds: Int64
+    let expiresAtMilliseconds: Int64
     let artifacts: [String]
 }
 

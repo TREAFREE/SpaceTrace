@@ -5,6 +5,8 @@ set -euo pipefail
 readonly plan_path="docs/superpowers/plans/2026-08-11-sqlite-v11-historical-ledger.md"
 readonly released_fixture_root="Packages/SpaceTraceKit/Tests/SpaceTracePersistenceTests/Fixtures/ReleasedSchemas"
 readonly released_fixture_manifest="${released_fixture_root}/manifest.json"
+readonly released_fixture_verifier="Scripts/verify-released-schema-fixtures.sh"
+readonly reviewed_manifest_v2_sha256="25fee3602653820e235a0cfa4d2b881bfa798cbdf531aba44d1882a547a2a93d"
 readonly maximum_commit_count=4096
 readonly maximum_artifact_count=20000
 readonly maximum_artifact_bytes=$((32 * 1024 * 1024))
@@ -57,6 +59,7 @@ total_materialized_bytes=0
 enumerated_path_count=0
 enumerated_path_bytes=0
 typeset -gA manifest_fixture_paths
+manifest_format_version=""
 base_manifest_digest=""
 base_manifest_available=false
 
@@ -227,6 +230,7 @@ require_regular_fixture_file() {
     local view=$1
     local reference=$2
     local repository_path=$3
+    local expected_mode=${4:-100644}
     local lookup_path="$temporary_root/regular-file-lookup"
     local mode
     local object_type
@@ -243,7 +247,7 @@ require_regular_fixture_file() {
                 report_violation "released-schema artifact is absent"
             IFS=' ' read -r mode object_type object_id <"$lookup_path" || \
                 infrastructure_failure
-            [[ "$mode" == 100644 && "$object_type" == blob ]] || \
+            [[ "$mode" == "$expected_mode" && "$object_type" == blob ]] || \
                 report_violation "released-schema artifact is not a regular file"
             ;;
         index)
@@ -253,13 +257,19 @@ require_regular_fixture_file() {
                 report_violation "released-schema artifact is absent"
             IFS=$' \t' read -r mode object_id stage ignored_path <"$lookup_path" || \
                 infrastructure_failure
-            [[ "$mode" == 100644 && "$stage" == 0 ]] || \
+            [[ "$mode" == "$expected_mode" && "$stage" == 0 ]] || \
                 report_violation "released-schema artifact is not a regular file"
             ;;
         worktree)
-            [[ -f "$repository_path" && ! -L "$repository_path" && \
-               ! -x "$repository_path" ]] || \
+            [[ -f "$repository_path" && ! -L "$repository_path" ]] || \
                 report_violation "released-schema artifact is not a regular file"
+            if [[ "$expected_mode" == 100755 ]]; then
+                [[ -x "$repository_path" ]] || \
+                    report_violation "released-schema artifact mode is invalid"
+            else
+                [[ ! -x "$repository_path" ]] || \
+                    report_violation "released-schema artifact mode is invalid"
+            fi
             ;;
         *) infrastructure_failure ;;
     esac
@@ -454,12 +464,17 @@ validate_manifest_file() {
     local binary_path
     local binary_content="$temporary_root/fixture-content"
     local actual_digest
+    local generator_path
+    local generator_digest
+    local generator_content="$temporary_root/generator-content"
+    local actual_generator_digest
 
     manifest_fixture_paths=()
     format_version=$(plist_value "$manifest_path" formatVersion)
+    manifest_format_version=$format_version
     fixture_count=$(plist_value "$manifest_path" fixtures)
-    [[ "$format_version" == 1 ]] || \
-        report_violation "new released-schema manifest formats require the Task 8 verifier"
+    [[ "$format_version" == 1 || "$format_version" == 2 ]] || \
+        report_violation "unsupported released-schema manifest format"
     [[ "$fixture_count" == <-> ]] || \
         report_violation "released-schema manifest fixture count is invalid"
     (( fixture_count <= 128 )) || \
@@ -472,6 +487,13 @@ validate_manifest_file() {
             infrastructure_failure
         [[ "$manifest_digest" == "$base_manifest_digest" ]] || \
             report_violation "format-1 fixture manifest differs from the frozen plan base"
+    else
+        manifest_digest=$(shasum -a 256 "$manifest_path" | awk '{print $1}') || \
+            infrastructure_failure
+        [[ "$manifest_digest" == "$reviewed_manifest_v2_sha256" ]] || \
+            report_violation "format-2 fixture manifest is not independently reviewed"
+        (( fixture_count == 2 )) || \
+            report_violation "format-2 fixture closure is incomplete"
     fi
 
     for (( index = 0; index < fixture_count; index++ )); do
@@ -503,6 +525,24 @@ validate_manifest_file() {
             infrastructure_failure
         [[ "$actual_digest" == "$expected_digest" ]] || \
             report_violation "released-schema fixture digest mismatch"
+
+        if [[ "$format_version" == 2 ]]; then
+            generator_path=$(plist_value "$manifest_path" "fixtures.${index}.generatorPath")
+            generator_digest=$(plist_value "$manifest_path" "fixtures.${index}.generatorSHA256")
+            [[ "$generator_path" == \
+                "Scripts/Fixtures/generate-released-schema-v${schema_version}-fixture.sh" ]] || \
+                report_violation "released-schema generator path is not canonical"
+            valid_lowercase_sha256 "$generator_digest" || \
+                report_violation "released-schema generator digest is invalid"
+            require_regular_fixture_file "$view" "$reference" "$generator_path" 100755
+            materialize_view_file "$view" "$reference" "$generator_path" \
+                "$generator_content" || \
+                report_violation "released-schema generator is absent in the same repository view"
+            actual_generator_digest=$(shasum -a 256 "$generator_content" | awk '{print $1}') || \
+                infrastructure_failure
+            [[ "$actual_generator_digest" == "$generator_digest" ]] || \
+                report_violation "released-schema generator digest mismatch"
+        fi
     done
 }
 
@@ -549,6 +589,9 @@ validate_fixture_closure() {
     local repository_path
     local relative_path
     local manifest_present=false
+    local legacy_content="$temporary_root/legacy-fixture-content"
+    local legacy_digest
+    local expected_legacy_digest
 
     if materialize_view_file "$view" "$reference" "$released_fixture_manifest" \
         "$manifest_content"; then
@@ -574,8 +617,27 @@ validate_fixture_closure() {
             v<->/SpaceTrace.sqlite) ;;
             *) report_violation "released-schema fixture path is not canonical" ;;
         esac
-        [[ -n ${manifest_fixture_paths[$relative_path]:-} ]] || \
-            report_violation "binary fixture is absent from its manifest"
+        if [[ -z ${manifest_fixture_paths[$relative_path]:-} ]]; then
+            case "$manifest_format_version:$relative_path" in
+                2:v6/SpaceTrace.sqlite)
+                    expected_legacy_digest=5a5bbe6cdf57ac6c5e4398a771b6505e29e4775b4f321fd5ed1097ff30bae528 ;;
+                2:v7/SpaceTrace.sqlite)
+                    expected_legacy_digest=beccfcbf1bf40ad2f3f89997d58f61aeacb7b0126ed9a4c813b9448a3cdfb95c ;;
+                2:v8/SpaceTrace.sqlite)
+                    expected_legacy_digest=8d2d9468362f685e8e485ae291d007c0b70aaf06d691dd8ff2f50c2de506eeb5 ;;
+                2:v9/SpaceTrace.sqlite)
+                    expected_legacy_digest=fdc8a4452202260b6bbefd47c122c60e98ad7a959f184646a06ed067817c7108 ;;
+                *) report_violation "binary fixture is absent from its manifest" ;;
+            esac
+            require_regular_fixture_file "$view" "$reference" "$repository_path"
+            materialize_view_file "$view" "$reference" "$repository_path" \
+                "$legacy_content" || \
+                report_violation "frozen legacy fixture is absent"
+            legacy_digest=$(shasum -a 256 "$legacy_content" | awk '{print $1}') || \
+                infrastructure_failure
+            [[ "$legacy_digest" == "$expected_legacy_digest" ]] || \
+                report_violation "frozen legacy fixture digest mismatch"
+        fi
     done <"$fixture_paths"
 }
 
@@ -810,6 +872,16 @@ if materialize_commit_blob "$scan_base" "$released_fixture_manifest" \
     base_count=$(plist_value "$base_manifest_content" fixtures)
     [[ "$base_format" == 1 && "$base_count" == <-> ]] || \
         report_violation "plan-base fixture manifest is not the frozen format"
+fi
+
+if [[ -f "$released_fixture_manifest" && ! -L "$released_fixture_manifest" ]]; then
+    current_manifest_format=$(plist_value "$released_fixture_manifest" formatVersion)
+    if [[ "$current_manifest_format" == 2 ]]; then
+        [[ -f "$released_fixture_verifier" && ! -L "$released_fixture_verifier" ]] || \
+            report_violation "format-2 fixture verifier is absent"
+        bash "$released_fixture_verifier" >/dev/null 2>&1 || \
+            report_violation "format-2 fixture verifier rejected the current closure"
+    fi
 fi
 
 reject_hidden_index_flags

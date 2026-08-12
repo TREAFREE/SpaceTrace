@@ -1783,8 +1783,10 @@ private func createVersionThreeMountFixture(at databaseURL: URL) throws {
             checksum TEXT NOT NULL
         );
         \(minimalCalibrationTablesSQL)
-        INSERT INTO schema_migration(version, applied_at_ms, checksum)
-        VALUES(3, 0, 'calibration-v3-staging-finalization');
+        INSERT INTO schema_migration(version, applied_at_ms, checksum) VALUES
+            (1, 0, 'event-journal-v1-big-endian-cursor'),
+            (2, 0, 'dirty-region-v2-optional-cursor-revision'),
+            (3, 0, 'calibration-v3-staging-finalization');
         PRAGMA user_version = 3;
         """
     guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else {
@@ -1814,8 +1816,11 @@ private func createVersionFourFixture(at databaseURL: URL) throws {
             updated_at_ms INTEGER NOT NULL
         ) WITHOUT ROWID;
         \(minimalCalibrationTablesSQL)
-        INSERT INTO schema_migration(version, applied_at_ms, checksum)
-        VALUES(4, 0, 'scope-mount-generation-v4');
+        INSERT INTO schema_migration(version, applied_at_ms, checksum) VALUES
+            (1, 0, 'event-journal-v1-big-endian-cursor'),
+            (2, 0, 'dirty-region-v2-optional-cursor-revision'),
+            (3, 0, 'calibration-v3-staging-finalization'),
+            (4, 0, 'scope-mount-generation-v4');
         PRAGMA user_version = 4;
         """
     guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else {

@@ -14,8 +14,8 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
     /// actor's nonisolated deinitializer. All operational access remains
     /// serialized by the actor itself.
     private let connection: Mutex<OpaquePointer?>
-    private var injectedFailurePoint: SQLiteEventJournalTestFailurePoint?
-    private let now: @Sendable () -> Date
+    var injectedFailurePoint: SQLiteEventJournalTestFailurePoint?
+    let now: @Sendable () -> Date
 
     public init(databaseURL: URL) throws {
         try self.init(databaseURL: databaseURL, failurePoint: nil)
@@ -573,61 +573,13 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         workItem: DirtyRegionWorkItem,
         streamID: EventStreamID
     ) throws -> Bool {
-        guard report.coverage == .complete else {
-            throw SQLiteEventJournalError.incompleteReportCannotFinalize
-        }
-        try execute("BEGIN IMMEDIATE TRANSACTION", operation: "begin calibration finalization")
-        do {
-            let context = try readScanRun(runID)
-            guard context.state == "running" else {
-                throw SQLiteEventJournalError.scanRunNotRunning(runID.rawValue)
-            }
-            guard context.streamID == streamID,
-                  context.regionPath == workItem.region.path,
-                  context.revision == workItem.revision else {
-                throw SQLiteEventJournalError.scanRunContextMismatch(runID.rawValue)
-            }
-            let summary = try stagedSummary(runID: runID, root: context.regionPath)
-            guard summary.count == report.directoriesStaged,
-                  summary.containsRoot,
-                  summary.partialCount == 0 else {
-                throw SQLiteEventJournalError.stagedDirectoryCountMismatch(
-                    expected: report.directoriesStaged,
-                    actual: summary.count
-                )
-            }
-
-            guard try dirtyRevision(
-                streamID: streamID,
-                path: workItem.region.path
-            ) == workItem.revision else {
-                try finishScanRun(runID, state: "superseded", report: report)
-                try deleteStagedRows(runID)
-                try execute("COMMIT TRANSACTION", operation: "commit superseded scan")
-                return false
-            }
-
-            try markMissingDirectoriesDeleted(
-                streamID: streamID,
-                region: context.regionPath,
-                runID: runID
-            )
-            try publishStagedDirectories(streamID: streamID, runID: runID)
-            try recordDirectoryHistory(
-                streamID: streamID,
-                runID: runID,
-                observedAt: now()
-            )
-            guard try resolve(workItem, for: streamID) else {
-                throw SQLiteEventJournalError.dirtyRevisionChangedDuringFinalization
-            }
-            try finishScanRun(runID, state: "completed", report: report)
-            try deleteStagedRows(runID)
-            try execute("COMMIT TRANSACTION", operation: "commit calibration finalization")
-            return true
-        } catch {
-            try rollback(after: error)
-        }
+        try finalizeCalibrationPrimitive(
+            runID: runID,
+            report: report,
+            workItem: workItem,
+            streamID: streamID,
+            historicalRequest: nil
+        ).legacyPublished
     }
 
     public func discardCalibration(
@@ -1114,6 +1066,14 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
 
     func secureDeleteEnabledForTesting() throws -> Bool {
         try readInt32Pragma("PRAGMA secure_delete") == 1
+    }
+
+    func failHistoricalFinalizationIfRequested(
+        _ point: SQLiteEventJournalTestFailurePoint
+    ) throws {
+        guard injectedFailurePoint == point else { return }
+        injectedFailurePoint = nil
+        throw SQLiteEventJournalError.injectedFailure
     }
 
     /// Explicitly releases SQLite resources. Calling close repeatedly is safe;
@@ -2860,7 +2820,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         root == "/" || candidate == root || candidate.hasPrefix(root + "/")
     }
 
-    private func readScanRun(_ runID: CalibrationRunID) throws -> ScanRunContext {
+    func readScanRun(_ runID: CalibrationRunID) throws -> ScanRunContext {
         let sql = """
             SELECT stream_id, region_path, dirty_revision_be, state
             FROM scan_run WHERE id = ?1
@@ -2929,7 +2889,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         }
     }
 
-    private func stagedSummary(
+    func stagedSummary(
         runID: CalibrationRunID,
         root: DirtyRegionPath
     ) throws -> (count: Int64, containsRoot: Bool, partialCount: Int64) {
@@ -2958,7 +2918,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         }
     }
 
-    private func dirtyRevision(
+    func dirtyRevision(
         streamID: EventStreamID,
         path: DirtyRegionPath
     ) throws -> DirtyRegionRevision? {
@@ -2987,7 +2947,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         }
     }
 
-    private func markMissingDirectoriesDeleted(
+    func markMissingDirectoriesDeleted(
         streamID: EventStreamID,
         region: DirtyRegionPath,
         runID: CalibrationRunID
@@ -3018,7 +2978,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         }
     }
 
-    private func publishStagedDirectories(
+    func publishStagedDirectories(
         streamID: EventStreamID,
         runID: CalibrationRunID
     ) throws {
@@ -3052,7 +3012,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         }
     }
 
-    private func finishScanRun(
+    func finishScanRun(
         _ runID: CalibrationRunID,
         state: String,
         report: CalibrationReport?
@@ -3092,7 +3052,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         }
     }
 
-    private func deleteStagedRows(_ runID: CalibrationRunID) throws {
+    func deleteStagedRows(_ runID: CalibrationRunID) throws {
         let sql = "DELETE FROM scan_node_stage WHERE scan_run_id = ?1"
         try withStatement(sql, operation: "delete staged calibration rows") { statement in
             try runID.rawValue.withCString { runCString in
@@ -3102,7 +3062,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         }
     }
 
-    private func recordDirectoryHistory(
+    func recordDirectoryHistory(
         streamID: EventStreamID,
         runID: CalibrationRunID,
         observedAt: Date
@@ -3427,7 +3387,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         throw SQLiteEventJournalError.injectedFailure
     }
 
-    private func rollback(after originalError: any Error) throws -> Never {
+    func rollback(after originalError: any Error) throws -> Never {
         do {
             try execute("ROLLBACK TRANSACTION", operation: "roll back transaction")
         } catch {
@@ -3440,7 +3400,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         throw originalError
     }
 
-    private func databaseHandle() throws -> OpaquePointer {
+    func databaseHandle() throws -> OpaquePointer {
         try connection.withLock { database in
             guard let database else {
                 throw SQLiteEventJournalError.databaseClosed
@@ -3449,7 +3409,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         }
     }
 
-    private func execute(_ sql: String, operation: String) throws {
+    func execute(_ sql: String, operation: String) throws {
         let database = try databaseHandle()
         try Self.execute(on: database, sql, operation: operation)
     }
@@ -3775,7 +3735,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
     }
 }
 
-private struct ScanRunContext {
+struct ScanRunContext {
     let streamID: EventStreamID
     let regionPath: DirtyRegionPath
     let revision: DirtyRegionRevision
@@ -3809,6 +3769,13 @@ enum SQLiteEventJournalTestFailurePoint: Sendable, Equatable {
     case afterRecoveryWorkBeforeCheckpointInvalidation
     case afterExpiredDeletedNodesBeforeBaselines
     case beforeMigrationCommit(version: Int32)
+    case afterHistoricalDictionaries
+    case afterHistoricalBatch
+    case afterHistoricalNodes
+    case afterHistoricalLogicalEndpoints
+    case afterHistoricalLogicalMarker
+    case beforeHistoricalProjectionWork
+    case afterCalibrationCommitBeforeReturningReceipt
 }
 
 public enum SQLiteEventJournalError: Error, Sendable, Equatable {
@@ -3828,6 +3795,11 @@ public enum SQLiteEventJournalError: Error, Sendable, Equatable {
     case incompleteReportCannotFinalize
     case stagedDirectoryCountMismatch(expected: Int64, actual: Int64)
     case dirtyRevisionChangedDuringFinalization
+    case historicalCandidateStageMismatch
+    case historicalFirstBaselineCannotContainAbsence
+    case historicalAbsenceEvidenceMissing
+    case historicalCandidateExpired
+    case historicalImmutableRequestConflict
     case invalidCursorEncoding(field: String, actualByteCount: Int)
     case corruptStoredValue(field: String)
     case sqliteFailure(operation: String, code: Int32, message: String)

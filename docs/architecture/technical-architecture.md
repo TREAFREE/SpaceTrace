@@ -519,6 +519,14 @@ invalidation capability from the stored audit record, and Persistence accepts
 that non-`Codable` capability through a package-scoped reconciliation port while
 revalidating its finding ID and draft digest transactionally.
 
+[ADR-008](decisions/ADR-008-append-only-reconciliation-corrections.md)
+proposes the separate schema-v12 correction boundary. Provisional hourly/daily
+summary changes become append-only reconciliation revisions, while an
+audit-grade correcting projection may replace only a projection over the exact
+same immutable frame pair through a registered deterministic generator. A
+later scan over a different interval can invalidate earlier evidence or create
+ordinary later findings, but it cannot rewrite the earlier interval.
+
 ### 12.3 Attribution confidence
 
 | Level | Requirements | Example wording |

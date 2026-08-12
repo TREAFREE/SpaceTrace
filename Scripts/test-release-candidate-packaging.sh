@@ -97,6 +97,39 @@ if /usr/bin/grep -Fq "$repository_root" \
     exit 1
 fi
 
+graph_probe="$temporary_root/dependency-graph-probe"
+git clone --quiet --shared "$repository_root" "$graph_probe"
+graph_generator="$graph_probe/Scripts/generate-release-metadata.sh"
+graph_commit=$(git -C "$graph_probe" rev-parse HEAD)
+
+: >"$graph_probe/Packages/SpaceTraceKit/Package.resolved"
+expect_failure "metadata Swift package resolution file" \
+    "$graph_generator" \
+    --version "$version" \
+    --commit "$graph_commit" \
+    --sbom "$temporary_root/generator-a/resolved.spdx.json" \
+    --notices "$temporary_root/generator-a/resolved.notices.txt"
+rm -f -- "$graph_probe/Packages/SpaceTraceKit/Package.resolved"
+
+print '\n.package(url: "https://example.invalid/fixture.git", from: "1.0.0")' \
+    >>"$graph_probe/Packages/SpaceTraceKit/Package.swift"
+expect_failure "metadata remote Swift package" \
+    "$graph_generator" \
+    --version "$version" \
+    --commit "$graph_commit" \
+    --sbom "$temporary_root/generator-a/remote-swift.spdx.json" \
+    --notices "$temporary_root/generator-a/remote-swift.notices.txt"
+git -C "$graph_probe" restore Packages/SpaceTraceKit/Package.swift
+
+print '\nXCRemoteSwiftPackageReference /* injected release-contract fixture */' \
+    >>"$graph_probe/SpaceTrace.xcodeproj/project.pbxproj"
+expect_failure "metadata Xcode remote package" \
+    "$graph_generator" \
+    --version "$version" \
+    --commit "$graph_commit" \
+    --sbom "$temporary_root/generator-a/remote-xcode.spdx.json" \
+    --notices "$temporary_root/generator-a/remote-xcode.notices.txt"
+
 mkdir "$temporary_root/existing"
 expect_failure "existing output" \
     "$packager" --version "$version" --output "$temporary_root/existing"
@@ -136,6 +169,14 @@ notices_path="$output/SpaceTrace-$version.third-party-notices.txt"
     shasum -a 256 -c "${checksum_path:t}"
 )
 [[ $(wc -l <"$checksum_path" | tr -d ' ') == 4 ]]
+checksum_entries=("${(@f)$(/usr/bin/awk '{ print $2 }' "$checksum_path" | sort)}")
+expected_checksum_entries=(
+    "${dmg_path:t}"
+    "${manifest_path:t}"
+    "${sbom_path:t}"
+    "${notices_path:t}"
+)
+[[ "${(j:\n:)checksum_entries}" == "${(j:\n:)expected_checksum_entries}" ]]
 codesign --verify --deep --strict --verbose=2 "$app_path"
 hdiutil verify "$dmg_path" >/dev/null
 
@@ -158,7 +199,14 @@ hdiutil verify "$dmg_path" >/dev/null
 [[ $(plutil -extract packages.0.versionInfo raw -o - "$sbom_path") == "$version" ]]
 [[ $(plutil -extract packages.0.licenseDeclared raw -o - "$sbom_path") == NOASSERTION ]]
 [[ $(plutil -extract packages.0.filesAnalyzed raw -o - "$sbom_path") == false ]]
+[[ $(plutil -extract packages.0.downloadLocation raw -o - "$sbom_path") == \
+    "https://github.com/TREAFREE/SpaceTrace/tree/$(git rev-parse HEAD)" ]]
+[[ $(plutil -extract packages.0.externalRefs.0.referenceLocator raw -o - "$sbom_path") == \
+    "pkg:github/TREAFREE/SpaceTrace@$(git rev-parse HEAD)" ]]
 grep -Fq 'No third-party libraries are embedded in SpaceTrace.app.' "$notices_path"
+for regular_artifact in "$dmg_path" "$manifest_path" "$checksum_path" "$sbom_path" "$notices_path"; do
+    [[ $(stat -f '%Lp' "$regular_artifact") == 644 ]]
+done
 
 signature_details=$(codesign -dvvv "$app_path" 2>&1)
 [[ $signature_details == *"Signature=adhoc"* ]]

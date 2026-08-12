@@ -8,7 +8,7 @@ Chinese companion translation: [deterministic-attribution.zh-CN.md](deterministi
 
 `SpaceTraceAttribution` is the pure, offline classifier behind FR-007. It turns lexical path features and explicit volume context into a conservative storage category. It does not access the filesystem, open file contents, inspect processes, use the network, or decide that data is safe to delete.
 
-This slice implements the engine and its initial regression corpus. The pure immutable historical-finding projection now freezes the exact catalog/rule decision at each available endpoint. Production SQLite persistence, the Overview UI, the at-least-60-known corpus gate, and user-controlled diagnostic export remain unimplemented.
+This slice implements the engine and its initial regression corpus. The immutable historical-finding pipeline freezes the exact catalog/rule decision at each available endpoint, persists it in SQLite, and presents it in the bounded Overview without reclassification. The at-least-60-known corpus gate and user-controlled diagnostic export remain unimplemented.
 
 ## Result contract
 
@@ -66,4 +66,4 @@ This is regression evidence, not real-user accuracy evidence. It does not satisf
 4. Run `swift test --package-path Packages/SpaceTraceKit --filter SpaceTraceAttributionTests` and `make verify`.
 5. Increment the rule version when its match or explanation meaning changes. Historical results must retain the old identity; silent reinterpretation is not allowed.
 
-Community rule packs, localized evidence wording, production finding persistence/UI, and explicit recomputation are later governed features, not implicit behavior of catalog v1.
+Community rule packs, localized evidence wording, replacement/supersession, and explicit recomputation are later governed features, not implicit behavior of catalog v1.

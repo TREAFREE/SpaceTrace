@@ -9,6 +9,7 @@ struct SpaceTraceCompositionRoot {
     let authorizationCoordinator: WatchedScopeAuthorizationCoordinator
     let baselineScanCoordinator: AuthorizedBaselineScanCoordinator
     let storageHistoryQuery: StorageHistoryOverviewQuery
+    let historicalFindingOverviewQuery: HistoricalFindingOverviewQuery
     let startupVolume24HourStatusQuery: StartupVolume24HourStatusQuery
     let storageHistoryBackgroundCoordinator: StorageHistoryBackgroundCoordinator
     let storageHistoryLifecycleMonitor: NativeStorageHistoryLifecycleMonitor
@@ -156,6 +157,9 @@ struct SpaceTraceCompositionRoot {
             storageHistoryQuery: StorageHistoryOverviewQuery(
                 directoryRepository: repository,
                 volumeRepository: repository
+            ),
+            historicalFindingOverviewQuery: HistoricalFindingOverviewQuery(
+                repository: repository
             ),
             startupVolume24HourStatusQuery: statusQuery,
             storageHistoryBackgroundCoordinator:

@@ -18,6 +18,7 @@ struct SpaceTraceApp: App {
                 authorizationModel: appDelegate.authorizationModel,
                 baselineScanModel: appDelegate.baselineScanModel,
                 directoryHistoryModel: appDelegate.directoryHistoryModel,
+                historicalFindingsModel: appDelegate.historicalFindingsModel,
                 databaseRecoveryModel: appDelegate.databaseRecoveryModel
             )
         }

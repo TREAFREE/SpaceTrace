@@ -8,6 +8,7 @@ struct OverviewView: View {
     let scopeIDs: [WatchedScopeID]
     @Bindable var baselineScanModel: BaselineScanViewModel
     @Bindable var directoryHistoryModel: DirectoryHistoryViewModel
+    @Bindable var historicalFindingsModel: HistoricalFindingsViewModel
     let showPermissions: () -> Void
 
     private var readiness: OverviewReadiness {
@@ -21,6 +22,7 @@ struct OverviewView: View {
                 readinessCard
                 baselineCard
                 DirectoryHistoryOverviewView(model: directoryHistoryModel)
+                HistoricalFindingsOverviewView(model: historicalFindingsModel)
                 workflow
             }
             .spaceTracePageLayout()

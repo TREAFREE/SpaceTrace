@@ -2,7 +2,7 @@
 
 ## Status
 
-The schema-v11 persistence slice and production complete-scan integration are implemented and verified on the current development host. This closes the schema, migration, repository transaction, paired logical/allocated finalization, complete-parent disappearance reconciliation, qualified APFS stable-move evidence, production creation of projector work, bounded immediate/launch projection, retraction, retention, recovery-fixture, and current-host scale-benchmark work described here. It does **not** make SpaceTrace release-ready: finding UI, minimum-OS qualification, accessibility/usability evidence, and distribution trust remain open.
+The schema-v11 persistence slice and production complete-scan integration are implemented and verified on the current development host. This closes the schema, migration, repository transaction, paired logical/allocated finalization, complete-parent disappearance reconciliation, qualified APFS stable-move evidence, production creation of projector work, bounded immediate/launch projection, retraction, retention, recovery-fixture, and current-host scale-benchmark work described here. The bounded Overview now consumes current-effective and immutable audit reads. This does **not** make SpaceTrace release-ready: minimum-OS qualification, manual accessibility/usability evidence, and distribution trust remain open.
 
 ADR-004 and ADR-006 remain **Proposed**. Passing an implementation gate is evidence for review, not maintainer acceptance of an ADR.
 

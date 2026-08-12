@@ -1,5 +1,4 @@
 import AppKit
-import OSLog
 import SpaceTraceApplication
 import SpaceTraceDomain
 import SpaceTraceMonitoring
@@ -11,13 +10,10 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
     let authorizationModel = DirectoryAuthorizationViewModel()
     let baselineScanModel = BaselineScanViewModel()
     let directoryHistoryModel = DirectoryHistoryViewModel()
+    let historicalFindingsModel = HistoricalFindingsViewModel()
     let databaseRecoveryModel = DatabaseRecoveryViewModel()
     let menuBarStatusModel = MenuBarStatusViewModel()
 
-    private let logger = Logger(
-        subsystem: "com.TREAFREE.SpaceTrace",
-        category: "lifecycle"
-    )
     private var compositionRoot: SpaceTraceCompositionRoot?
     private var recoverySession: SQLiteReadOnlyRecoverySession?
     private var startupTask: Task<Void, Never>?
@@ -31,6 +27,7 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
 #if DEBUG
         if authorizationModel.loadUITestScenarioIfConfigured() {
             directoryHistoryModel.connect(UITestStorageHistoryLoader())
+            historicalFindingsModel.connect(UITestHistoricalFindingOverviewService())
             menuBarStatusModel.loadUITestFixture()
             return
         }
@@ -47,6 +44,9 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
                 authorizationModel.connect(compositionRoot.authorizationCoordinator)
                 baselineScanModel.connect(compositionRoot.baselineScanCoordinator)
                 directoryHistoryModel.connect(compositionRoot.storageHistoryQuery)
+                historicalFindingsModel.connect(
+                    compositionRoot.historicalFindingOverviewQuery
+                )
                 menuBarStatusModel.connect(
                     compositionRoot.startupVolume24HourStatusQuery
                 )
@@ -80,14 +80,15 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
                 authorizationModel.handleCompositionFailure()
                 baselineScanModel.handleCompositionFailure()
                 directoryHistoryModel.handleCompositionFailure()
+                historicalFindingsModel.handleCompositionFailure()
                 menuBarStatusModel.handleCompositionFailure()
             }
         } catch {
             authorizationModel.handleCompositionFailure()
             baselineScanModel.handleCompositionFailure()
             directoryHistoryModel.handleCompositionFailure()
+            historicalFindingsModel.handleCompositionFailure()
             menuBarStatusModel.handleCompositionFailure()
-            logger.error("Application composition failed with private diagnostic context.")
         }
     }
 
@@ -206,6 +207,153 @@ private struct UITestStorageHistoryLoader: StorageHistoryOverviewLoading {
                 unknownVolumeScopeCount: 0,
                 coverage: .partial
             )
+        )
+    }
+}
+
+private struct UITestHistoricalFindingOverviewService:
+    HistoricalFindingOverviewServing
+{
+    nonisolated func loadFindingOverview(
+        scopeIDs: [WatchedScopeID],
+        currentLimit: Int,
+        auditLimit: Int
+    ) throws -> HistoricalFindingOverview {
+        _ = currentLimit
+        _ = auditLimit
+        let scenario = ProcessInfo.processInfo.environment[
+            "SPACETRACE_UI_TEST_SCENARIO"
+        ]
+        let availability: HistoricalPathHistoryAvailability
+        let retentionDays: Int
+        switch scenario {
+        case "history-disabled":
+            availability = .historyDisabled
+            retentionDays = 0
+        case "baseline-unavailable":
+            availability = .baselineUnavailable
+            retentionDays = 30
+        default:
+            availability = .available
+            retentionDays = 30
+        }
+
+        let current: [HistoricalFindingOverviewItem]
+        let invalidated: [HistoricalFindingOverviewItem]
+        if availability == .available {
+            current = [
+                try Self.item(
+                    id: 1,
+                    kind: .growth,
+                    delta: 1_073_741_824,
+                    baselinePath: "/Volumes/SpaceTraceFixture/Selected/Cache",
+                    comparisonPath: "/Volumes/SpaceTraceFixture/Selected/Cache",
+                    baselineName: "Cache",
+                    comparisonName: "Cache",
+                    rank: 1,
+                    validity: .currentEffective
+                ),
+                try Self.item(
+                    id: 2,
+                    kind: .move,
+                    delta: 0,
+                    baselinePath: "/Volumes/SpaceTraceFixture/Selected/Before",
+                    comparisonPath: "/Volumes/SpaceTraceFixture/Selected/After",
+                    baselineName: "Before",
+                    comparisonName: "After",
+                    rank: nil,
+                    validity: .currentEffective
+                ),
+                try Self.item(
+                    id: 3,
+                    kind: .disappearance,
+                    delta: -536_870_912,
+                    baselinePath: "/Volumes/SpaceTraceFixture/Selected/Old",
+                    comparisonPath: "/Volumes/SpaceTraceFixture/Selected/Old",
+                    baselineName: "Old",
+                    comparisonName: "Old",
+                    rank: nil,
+                    validity: .currentEffective
+                ),
+            ]
+            invalidated = [
+                try Self.item(
+                    id: 4,
+                    kind: .growth,
+                    delta: 268_435_456,
+                    baselinePath: "/Volumes/SpaceTraceFixture/Selected/Invalidated",
+                    comparisonPath: "/Volumes/SpaceTraceFixture/Selected/Invalidated",
+                    baselineName: "Invalidated",
+                    comparisonName: "Invalidated",
+                    rank: 2,
+                    validity: .evidenceInvalidated(
+                        at: ObservationInstant(millisecondsSince1970: 1_800_000_100_000)
+                    )
+                ),
+            ]
+        } else {
+            current = []
+            invalidated = []
+        }
+
+        return try HistoricalFindingOverview(
+            retentionDays: retentionDays,
+            scopes: try scopeIDs.map {
+                try HistoricalFindingScopeOverview(
+                    scopeID: $0,
+                    availability: availability,
+                    currentFindings: current,
+                    invalidatedFindings: invalidated
+                )
+            }
+        )
+    }
+
+    nonisolated func setHistoryEnabled(_ enabled: Bool) {
+        _ = enabled
+    }
+
+    private static func item(
+        id: Int64,
+        kind: HistoricalFindingKind,
+        delta: Int64,
+        baselinePath: String,
+        comparisonPath: String,
+        baselineName: String,
+        comparisonName: String,
+        rank: Int?,
+        validity: HistoricalFindingOverviewItemValidity
+    ) throws -> HistoricalFindingOverviewItem {
+        try HistoricalFindingOverviewItem(
+            id: HistoricalFindingRecordID(id),
+            kind: kind,
+            metric: .logical,
+            inclusiveDeltaBytes: delta,
+            rankingContributionBytes: rank == nil ? nil : delta,
+            positiveRank: rank,
+            baselinePath: baselinePath,
+            comparisonPath: comparisonPath,
+            baselineDisplayName: baselineName,
+            comparisonDisplayName: comparisonName,
+            baselineTime: ObservationInstant(
+                millisecondsSince1970: 1_799_996_400_000 + id
+            ),
+            comparisonTime: ObservationInstant(
+                millisecondsSince1970: 1_800_000_000_000 + id
+            ),
+            classification: id == 1
+                ? .classified(
+                    category: .logsAndCaches,
+                    confidence: .high,
+                    ruleID: AttributionRuleID("logs.fixture"),
+                    ruleVersion: AttributionRuleVersion(1),
+                    catalogVersion: AttributionCatalogVersion(1),
+                    evidenceCode: AttributionEvidenceCode("fixture.logs")
+                )
+                : .unknownNoMatchingRule(
+                    catalogVersion: AttributionCatalogVersion(1)
+                ),
+            validity: validity
         )
     }
 }

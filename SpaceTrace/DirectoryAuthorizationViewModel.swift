@@ -179,7 +179,7 @@ final class DirectoryAuthorizationViewModel {
             switch scenario {
             case "unconfigured":
                 apply(.init(configuredScopeCount: 0, scopes: [], failures: []))
-            case "authorized":
+            case "authorized", "history-disabled", "baseline-unavailable":
                 apply(
                     try Self.debugReport(
                         authorized: [("scope-ui-authorized", "/Volumes/SpaceTraceFixture/Selected")]

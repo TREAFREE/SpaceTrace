@@ -536,19 +536,24 @@ public protocol HistoricalCalibrationFinalizationRepository: EventJournalReposit
 
 /// Public history persistence boundary. Evidence invalidation is intentionally
 /// absent: ordinary app, UI, classifier, and cleanup callers cannot request it.
-public protocol HistoricalFindingPersistenceRepository:
-    HistoricalCalibrationFinalizationRepository,
-    HistoricalFindingProjectionRepository
-{
-    func historicalFindingAuditRecord(
-        id: HistoricalFindingRecordID
-    ) async throws -> HistoricalFindingAuditRecord?
-
+public protocol HistoricalFindingOverviewRepository: Sendable {
     func effectiveHistoricalFindings(
         for scopeID: ScopeID,
         through comparisonSequence: ObservationCommitSequence,
         limit: HistoricalFindingQueryLimit
     ) async throws -> [EffectiveHistoricalFinding]
+
+    func historicalFindingAuditRecords(
+        for scopeID: ScopeID,
+        through comparisonSequence: ObservationCommitSequence,
+        limit: HistoricalFindingQueryLimit
+    ) async throws -> [HistoricalFindingAuditRecord]
+
+    func evidenceInvalidatedHistoricalFindingAuditRecords(
+        for scopeID: ScopeID,
+        through comparisonSequence: ObservationCommitSequence,
+        limit: HistoricalFindingQueryLimit
+    ) async throws -> [HistoricalFindingAuditRecord]
 
     func historicalPathHistoryPolicy() async throws -> HistoricalPathHistoryPolicy
 
@@ -559,6 +564,17 @@ public protocol HistoricalFindingPersistenceRepository:
     func setHistoricalPathHistoryPolicy(
         _ policy: HistoricalPathHistoryPolicy
     ) async throws
+}
+
+public protocol HistoricalFindingPersistenceRepository:
+    HistoricalCalibrationFinalizationRepository,
+    HistoricalFindingProjectionRepository,
+    HistoricalFindingOverviewRepository
+{
+    func historicalFindingAuditRecord(
+        id: HistoricalFindingRecordID
+    ) async throws -> HistoricalFindingAuditRecord?
+
 }
 
 /// Package-only mutation surface for current-validity invalidation. v1 does

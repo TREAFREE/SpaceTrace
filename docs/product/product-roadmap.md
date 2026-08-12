@@ -6,25 +6,25 @@
 |---|---|
 | Document status | Draft for product and engineering review |
 | Version | 0.1.0 |
-| Last updated | 2026-08-12 |
+| Last updated | 2026-08-13 |
 | Planning horizon | Eight weeks to Public Beta (Assumption); 1.0 date TBD |
 | Platform state | Accepted baseline: macOS 15.6+ on Apple Silicon. All Project/App/Unit Tests/UI Tests configurations are aligned; runtime qualification remains a Public Beta gate. |
 | Source of requirements | [Product Requirements Document](./product-requirements.md) |
 
 This roadmap is a sequencing and evidence plan, not a promise that every proposed feature will ship. Product scope and acceptance criteria remain authoritative in the PRD. A phase exits only when its evidence gate passes; reaching a calendar date is not sufficient.
 
-## Current Release Decision — NO-GO retained; evidence refreshed 2026-08-11
+## Current Release Decision — NO-GO retained; evidence refreshed 2026-08-13
 
 **Public Beta and GitHub Release: NO-GO. Local engineering RC generation: CONDITIONAL GO.** No tag, GitHub Release, or artifact upload was created by this decision. The local RC channel exists only to continue controlled qualification with the [ad-hoc release candidate checklist](../engineering/release-candidate-checklist.md).
 
 | Gate | Status | Evidence / remaining condition |
 |---|---|---|
 | Current-stable-macOS endurance and process-resource evidence | Passed for current-host ad-hoc scope | Corrected 25-hour run and deterministic Instruments analysis are recorded in the [background soak protocol](../engineering/background-soak-qualification.md); this is not watt/joule, Apple-identity, or minimum-OS evidence |
-| Current-host controlled UI/accessibility tree | Passed for automated fixture scope | Eight authorization/history scenarios passed; manual VoiceOver, Full Keyboard Access, contrast/motion/larger-text review remains open in the [visual design system](./visual-design-system.md) |
+| Current-host controlled UI/accessibility tree | Passed for automated fixture scope | Twelve authorization/history/finding scenarios passed, including current versus invalidated evidence, History Off, baseline unavailable, and destructive confirmation; manual VoiceOver, Full Keyboard Access, contrast/motion/larger-text review remains open in the [visual design system](./visual-design-system.md) |
 | Ad-hoc RC artifact contract | Passed | Two independent `0.1.0-rc.1` builds from `f2119be` passed checksums, strict code signing, entitlement, architecture, deployment-target, DMG, and manifest checks; Gatekeeper rejected them as expected |
-| Complete P0 product workflow | Open — release blocking | The deterministic classifier, immutable coverage-aware finding projection, schema-v11 persistence, production complete-scan paired finalization, complete-parent disappearance reconciliation, qualified APFS stable moves, and projector lifecycle are implemented. Finding/History-Off UI, replacement/supersession, the at-least-60-known corpus gate, true in-enumerator continuation, and user-controlled redacted export remain open |
+| Complete P0 product workflow | Open — release blocking | The deterministic classifier, immutable coverage-aware finding projection, schema-v11 persistence, production complete-scan paired finalization, complete-parent disappearance reconciliation, qualified APFS stable moves, projector lifecycle, and finding/History-Off Overview are implemented. Replacement/supersession, the at-least-60-known corpus gate, true in-enumerator continuation, and user-controlled redacted export remain open |
 | macOS 15.6 Apple Silicon runtime | Blocked by unavailable qualified host | Compile/link target is 15.6, but no P0 runtime/benchmark evidence exists on that OS |
-| ADR-003, ADR-004, and ADR-006 | Open — release blocking | All remain Proposed. Genuine daemon drop/wrap, permission revocation, minimum-OS behavior, replacement/supersession, finding UI, and maintainer review remain incomplete; explicit disappearance and APFS stable-move evidence now pass current-host qualification |
+| ADR-003, ADR-004, and ADR-006 | Open — release blocking | All remain Proposed. Genuine daemon drop/wrap, permission revocation, minimum-OS behavior, replacement/supersession, manual finding-UI review, and maintainer review remain incomplete; automated finding UI, explicit disappearance, and APFS stable-move evidence pass current-host qualification |
 | Developer identity and notarization | Blocked for trusted public distribution | No stable Apple signing identity is installed. Ad-hoc tester risk has documentation but is not equivalent to Developer ID/notarization |
 | Fresh quarantined clean-account install | Open — release blocking | DMG verification passed locally; an actual downloaded/quarantined clean-account flow and per-app Gatekeeper exception have not been qualified |
 | Update/replacement and bookmark continuity | Partial — release blocking | Fresh/same-build/replacement process launch passed under a disposable ID; no bookmark was created, so cross-build restore/reselection behavior remains open |
@@ -184,7 +184,7 @@ Build the complete P0 product behind an internal/pre-release channel and make it
 
 - Implement FR-006 through FR-011: ranked sources, deterministic classification, uncertainty, menu bar, safe actions, and blind spots.
 - Complete at least 60 known-path classification fixtures plus ambiguity/negative cases.
-- Present persisted parent/child non-overlap, stable sorting, incomplete-evidence suppression, explicit disappearance, and APFS stable moves in the finding/History-Off UI.
+- Manually qualify the implemented finding/History-Off Overview for keyboard navigation, VoiceOver, contrast, larger text, and uncertainty wording on macOS 15.6 and current stable macOS.
 - Run first keyboard/VoiceOver review and uncertainty-language review.
 - Conduct three formative usability walkthroughs with current build.
 

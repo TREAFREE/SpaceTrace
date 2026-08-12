@@ -129,6 +129,100 @@ final class DirectoryAuthorizationUITests: XCTestCase {
     }
 
     @MainActor
+    func testOverviewSeparatesCurrentFindingsFromInvalidatedAuditEvidence() {
+        let app = launch(scenario: "authorized")
+
+        let loaded = element(
+            identifier: "historical-findings-loaded",
+            in: app
+        )
+        XCTAssertTrue(loaded.waitForExistence(timeout: 5))
+        let firstFinding = metric(containing: "Cache · 增长", in: app)
+        scrollToHittable(firstFinding, in: app)
+        XCTAssertTrue(firstFinding.exists)
+        XCTAssertTrue(
+            metric(containing: "规则 logs.fixture v1", in: app).exists
+        )
+        XCTAssertTrue(
+            metric(containing: "完整证据", in: app).exists
+        )
+        XCTAssertTrue(
+            metric(containing: "After · 位置变化", in: app).exists
+        )
+        XCTAssertTrue(
+            metric(containing: "Old · 已观测到消失", in: app).exists
+        )
+        XCTAssertFalse(
+            metric(containing: "Invalidated · 增长", in: app).exists
+        )
+
+        let disclosure = app.buttons[
+            "historical-findings-invalidated-disclosure"
+        ]
+        scrollToHittable(disclosure, in: app)
+        XCTAssertTrue(disclosure.isHittable)
+        disclosure.click()
+        let expanded = NSPredicate(format: "value == %@", "已展开")
+        expectation(for: expanded, evaluatedWith: disclosure)
+        waitForExpectations(timeout: 3)
+
+        let invalidated = element(
+            identifier: "historical-finding-invalidated-4",
+            in: app
+        )
+        XCTAssertTrue(invalidated.waitForExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testHistoryDisabledRemainsTypedAndCanBeReenabled() {
+        let app = launch(scenario: "history-disabled")
+
+        XCTAssertTrue(
+            element(identifier: "historical-findings-history-disabled", in: app)
+                .waitForExistence(timeout: 5)
+        )
+        let enable = app.buttons["enable-path-history"]
+        scrollToHittable(enable, in: app)
+        XCTAssertTrue(enable.isHittable)
+        XCTAssertFalse(
+            element(identifier: "historical-finding-current-1", in: app).exists
+        )
+    }
+
+    @MainActor
+    func testBaselineUnavailableIsNotPresentedAsAnEmptyHistory() {
+        let app = launch(scenario: "baseline-unavailable")
+
+        XCTAssertTrue(
+            element(identifier: "historical-findings-baseline-unavailable", in: app)
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(
+            element(identifier: "historical-findings-empty", in: app).exists
+        )
+    }
+
+    @MainActor
+    func testHistoryOffRequiresExplicitDestructiveConfirmation() {
+        let app = launch(scenario: "authorized")
+
+        let disable = app.buttons["disable-path-history"]
+        scrollToHittable(disable, in: app)
+        XCTAssertTrue(disable.isHittable)
+        disable.click()
+
+        let confirmation = app.buttons["confirm-history-off"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 3))
+        XCTAssertEqual(confirmation.label, "关闭并清除历史")
+        XCTAssertTrue(
+            app.staticTexts[
+                "这会删除路径历史、历史基线、变化记录和证据已失效的审计记录，且无法撤销。目录授权、当前监控状态和不含路径的卷空间记录会保留。"
+            ].exists
+        )
+        app.sheets.firstMatch.buttons["取消"].click()
+    }
+
+    @MainActor
     private func assertStatus(
         _ title: String,
         in app: XCUIApplication,
@@ -152,6 +246,29 @@ final class DirectoryAuthorizationUITests: XCTestCase {
     }
 
     @MainActor
+    private func element(
+        identifier: String,
+        in app: XCUIApplication
+    ) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(identifier: identifier)
+            .firstMatch
+    }
+
+    @MainActor
+    private func scrollToHittable(
+        _ element: XCUIElement,
+        in app: XCUIApplication
+    ) {
+        let scrollView = app.scrollViews.allElementsBoundByIndex.max {
+            $0.frame.width < $1.frame.width
+        } ?? app.scrollViews.firstMatch
+        for _ in 0..<20 where element.isHittable == false {
+            scrollView.scroll(byDeltaX: 0, deltaY: -120)
+        }
+    }
+
+    @MainActor
     private func openPermissions(
         in app: XCUIApplication,
         file: StaticString = #filePath,
@@ -165,6 +282,7 @@ final class DirectoryAuthorizationUITests: XCTestCase {
     @MainActor
     private func launch(scenario: String) -> XCUIApplication {
         let app = XCUIApplication()
+        app.launchArguments += ["-ApplePersistenceIgnoreState", "YES"]
         app.launchEnvironment["SPACETRACE_UI_TEST_SCENARIO"] = scenario
         app.launch()
         return app

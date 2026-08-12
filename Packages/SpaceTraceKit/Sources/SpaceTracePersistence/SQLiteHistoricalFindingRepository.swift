@@ -152,6 +152,120 @@ extension SQLiteEventJournalRepository {
         )
     }
 
+    public func historicalFindingAuditRecords(
+        for scopeID: ScopeID,
+        through comparisonSequence: ObservationCommitSequence,
+        limit: HistoricalFindingQueryLimit
+    ) throws -> [HistoricalFindingAuditRecord] {
+        try historicalFindingAuditRecords(
+            for: scopeID,
+            through: comparisonSequence,
+            limit: limit,
+            evidenceInvalidatedOnly: false
+        )
+    }
+
+    public func evidenceInvalidatedHistoricalFindingAuditRecords(
+        for scopeID: ScopeID,
+        through comparisonSequence: ObservationCommitSequence,
+        limit: HistoricalFindingQueryLimit
+    ) throws -> [HistoricalFindingAuditRecord] {
+        try historicalFindingAuditRecords(
+            for: scopeID,
+            through: comparisonSequence,
+            limit: limit,
+            evidenceInvalidatedOnly: true
+        )
+    }
+
+    private func historicalFindingAuditRecords(
+        for scopeID: ScopeID,
+        through comparisonSequence: ObservationCommitSequence,
+        limit: HistoricalFindingQueryLimit,
+        evidenceInvalidatedOnly: Bool
+    ) throws -> [HistoricalFindingAuditRecord] {
+        try performHistoricalStartupMaintenanceIfNeeded()
+        let scopeBytes = try SQLiteHistoricalFindingCodec.encodeUTF8(
+            scopeID.rawValue,
+            field: "scope_id",
+            maximumBytes: 4_096
+        )
+        let retractionJoin = evidenceInvalidatedOnly
+            ? "JOIN historical_finding_retraction AS x ON x.retracted_finding_id=f.finding_id"
+            : ""
+        let candidates = try historicalRows(
+            """
+            SELECT f.finding_id,f.projection_id,w.comparison_sequence,r.rank
+            FROM historical_finding AS f
+            JOIN historical_finding_projection AS p ON p.projection_id=f.projection_id
+            JOIN historical_projection_work AS w ON w.work_id=p.work_id
+            JOIN historical_observation_node AS bn ON bn.node_id=f.baseline_node_id
+            JOIN historical_observation_batch AS b ON b.batch_id=bn.batch_id
+            JOIN historical_scope AS s ON s.scope_key=b.scope_key
+            LEFT JOIN historical_finding_positive_rank AS r ON r.finding_id=f.finding_id
+            \(retractionJoin)
+            LEFT JOIN historical_observation_node AS cn ON cn.node_id=f.comparison_node_id
+            LEFT JOIN frozen_attribution_decision AS bd ON bd.decision_id=bn.classification_decision_id
+            LEFT JOIN frozen_attribution_decision AS cd ON cd.decision_id=cn.classification_decision_id
+            WHERE w.comparison_sequence<=?1 AND s.scope_id=?3
+            ORDER BY w.comparison_sequence DESC,
+                CASE WHEN r.rank IS NULL THEN 1 ELSE 0 END ASC,
+                r.rank ASC,
+                f.baseline_node_id ASC,f.baseline_metric ASC,
+                f.comparison_node_id ASC,f.comparison_metric ASC,
+                f.kind ASC,
+                COALESCE(bd.catalog_version,0) ASC,
+                COALESCE(cd.catalog_version,0) ASC,
+                f.finding_id ASC
+            LIMIT ?2
+            """,
+            integers: [comparisonSequence.rawValue, Int64(limit.rawValue)],
+            blobs: [scopeBytes]
+        ) { statement in
+            HistoricalEffectiveFindingCandidate(
+                findingID: sqlite3_column_int64(statement, 0),
+                projectionID: sqlite3_column_int64(statement, 1),
+                comparisonSequence: sqlite3_column_int64(statement, 2),
+                positiveRank: try historicalOptionalInteger(statement, 3).map(Int.init)
+            )
+        }
+
+        var projectionCache: [Int64: [Int64: HistoricalRehydratedFinding]] = [:]
+        var result: [HistoricalFindingAuditRecord] = []
+        result.reserveCapacity(candidates.count)
+        for candidate in candidates {
+            if projectionCache[candidate.projectionID] == nil {
+                projectionCache[candidate.projectionID] = try rehydratedHistoricalProjection(
+                    id: candidate.projectionID
+                )
+            }
+            let projection = try projectionCache[candidate.projectionID]
+                .unwrap(field: "historical_audit_projection")
+            let finding = try projection[candidate.findingID]
+                .unwrap(field: "historical_audit_finding")
+            guard finding.effective.comparisonSequence.rawValue
+                    == candidate.comparisonSequence,
+                  finding.effective.positiveRank == candidate.positiveRank else {
+                throw SQLiteEventJournalError.historicalProjectionImmutableConflict
+            }
+            let recordID = try HistoricalFindingRecordID(candidate.findingID)
+            let storedRetraction = try readHistoricalStoredRetraction(findingID: recordID)
+            if evidenceInvalidatedOnly, storedRetraction == nil {
+                throw SQLiteEventJournalError.historicalProjectionImmutableConflict
+            }
+            if let storedRetraction,
+               storedRetraction.expectedDraftDigest != finding.draftDigest {
+                throw SQLiteEventJournalError.historicalProjectionImmutableConflict
+            }
+            result.append(try HistoricalFindingAuditRecord(
+                finding: finding.effective,
+                draftSHA256: HistoricalEvidenceDigest(bytes: Array(finding.draftDigest)),
+                retraction: storedRetraction?.record
+            ))
+        }
+        return result
+    }
+
     public func effectiveHistoricalFindings(
         for scopeID: ScopeID,
         through comparisonSequence: ObservationCommitSequence,

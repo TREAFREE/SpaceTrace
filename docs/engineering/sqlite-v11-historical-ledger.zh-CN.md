@@ -2,7 +2,7 @@
 
 ## 状态
 
-schema v11 持久化切片与生产完整扫描接入已在当前开发主机上实现并通过验证。本文覆盖的 schema、迁移、repository 事务、paired logical/allocated finalization、完整父级 disappearance 对账、合格 APFS 稳定 move 证据、生产环境创建 projector work、有界即时/启动投影、撤回、保留、恢复夹具和当前主机规模基准由此收口。但这**不代表** SpaceTrace 已具备发布资格：finding UI、最低系统资格、辅助功能/可用性证据以及分发信任仍未完成。
+schema v11 持久化切片与生产完整扫描接入已在当前开发主机上实现并通过验证。本文覆盖的 schema、迁移、repository 事务、paired logical/allocated finalization、完整父级 disappearance 对账、合格 APFS 稳定 move 证据、生产环境创建 projector work、有界即时/启动投影、撤回、保留、恢复夹具和当前主机规模基准由此收口；有界概览现已消费 current-effective 与不可变审计读取。但这**不代表** SpaceTrace 已具备发布资格：最低系统资格、人工辅助功能/可用性证据以及分发信任仍未完成。
 
 ADR-004 与 ADR-006 继续保持**提议中（Proposed）**。实现门禁通过只是供评审使用的证据，不等于维护者已经接受 ADR。
 

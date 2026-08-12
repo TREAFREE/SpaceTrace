@@ -204,16 +204,24 @@ struct SQLiteHistoricalFindingRetractionTests {
         defer { fixture.remove() }
         let repository = try retractionRepository(for: fixture)
         let projection = try await commitRetractionProjection(repository: repository)
-        let original = projection.findings[0]
-        let audit = try #require(
-            try await repository.historicalFindingAuditRecord(id: original.recordID)
-        )
         let before = try await repository.effectiveHistoricalFindings(
             for: ScopeID("scope-fixture"),
             through: projection.comparisonSequence,
             limit: HistoricalFindingQueryLimit(1_000)
         )
+        #expect(before.count > 1)
+        let original = try #require(before.last)
+        let audit = try #require(
+            try await repository.historicalFindingAuditRecord(id: original.recordID)
+        )
         #expect(before.contains(original))
+        let auditBefore = try await repository.historicalFindingAuditRecords(
+            for: ScopeID("scope-fixture"),
+            through: projection.comparisonSequence,
+            limit: HistoricalFindingQueryLimit(1_000)
+        )
+        #expect(auditBefore.map(\.finding) == before)
+        #expect(auditBefore.allSatisfy { $0.retraction == nil })
         #expect(
             try await repository.effectiveHistoricalFindings(
                 for: ScopeID("scope-fixture"),
@@ -247,6 +255,51 @@ struct SQLiteHistoricalFindingRetractionTests {
         #expect(preserved.finding == audit.finding)
         #expect(preserved.draftSHA256 == audit.draftSHA256)
         #expect(preserved.retraction != nil)
+        let auditAfter = try await repository.historicalFindingAuditRecords(
+            for: ScopeID("scope-fixture"),
+            through: projection.comparisonSequence,
+            limit: HistoricalFindingQueryLimit(1_000)
+        )
+        #expect(auditAfter.count == before.count)
+        #expect(
+            auditAfter.first(where: { $0.finding.recordID == original.recordID })?
+                .retraction?.reason == .evidenceInvalidated
+        )
+        let topUnfilteredAudit = try await repository.historicalFindingAuditRecords(
+            for: ScopeID("scope-fixture"),
+            through: projection.comparisonSequence,
+            limit: HistoricalFindingQueryLimit(1)
+        )
+        #expect(topUnfilteredAudit.map(\.finding.recordID) != [original.recordID])
+        let boundedInvalidatedAudit = try await repository
+            .evidenceInvalidatedHistoricalFindingAuditRecords(
+                for: ScopeID("scope-fixture"),
+                through: projection.comparisonSequence,
+                limit: HistoricalFindingQueryLimit(1)
+            )
+        #expect(boundedInvalidatedAudit.map(\.finding.recordID) == [original.recordID])
+        #expect(
+            try await repository.historicalFindingAuditRecords(
+                for: ScopeID("scope-fixture"),
+                through: projection.baselineSequence,
+                limit: HistoricalFindingQueryLimit(1_000)
+            ).isEmpty
+        )
+        let overview = try await HistoricalFindingOverviewQuery(
+            repository: repository
+        ).loadFindingOverview(
+            scopeIDs: [WatchedScopeID("scope-fixture")],
+            currentLimit: 10,
+            auditLimit: 100
+        )
+        #expect(overview.scopes.map(\.availability) == [.available])
+        #expect(
+            overview.currentFindings.contains(where: { $0.id == original.recordID })
+                == false
+        )
+        #expect(
+            overview.invalidatedFindings.map(\.id).contains(original.recordID)
+        )
         try await repository.close()
     }
 

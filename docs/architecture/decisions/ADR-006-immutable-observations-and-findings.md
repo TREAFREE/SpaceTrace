@@ -186,7 +186,7 @@ Retraction idempotency is request-scoped. Repeating the same request ID with the
 
 The current-effective query excludes any finding that currently has a retraction, even when the query constrains findings through an earlier comparison sequence. The sequence bound is about observation/finding time, not an as-of correction view. A separate audit read continues to return the unchanged original finding together with its optional retraction record. Schema v11 therefore makes no claim to historical as-of correction semantics.
 
-Primary finding UI must not present a retracted finding as current. Audit/detail UI keeps it visible and labels it as **Evidence invalidated**; it must not say that the finding was fixed, replaced, deleted, or cleaned up, and it must not imply any filesystem action. Exact wording, visibility, accessibility, and localization remain release-gated UI work.
+Primary finding UI does not present a retracted finding as current. The implemented audit disclosure keeps it visible and labels it as **Evidence invalidated**; it does not say that the finding was fixed, replaced, deleted, or cleaned up, and it does not imply any filesystem action. Manual wording, visibility, accessibility, and localization qualification remains release-gated work.
 
 A true correction or replacement requires a future approved model: frozen correction input, a generator/version registry, correction work and idempotent request ownership, a versioned correcting projection, an explicit successor relationship, retention/crash recovery semantics, benchmark evidence, and a schema migration plus ADR amendment. V11's retraction does not close the still-open replacement/supersession gate.
 
@@ -223,7 +223,7 @@ Raw paths, display names, opaque object tokens, normalized location keys, timeli
 
 ## Validation plan
 
-Current-host schema-v11 persistence and production-path evidence is recorded in [SQLite v11 Historical Ledger](../../engineering/sqlite-v11-historical-ledger.md). It closes migration, immutable frame/finding commits, complete-scan paired publication, complete-parent disappearance reconciliation, APFS stable move proof, idempotent immediate/launch projection, evidence-invalidated retraction, ordered retention, released recovery fixtures, and the 500k/1M current-host persistence gates. It does not close minimum-OS, UI, classifier-corpus, export, distribution, or maintainer-acceptance gates.
+Current-host schema-v11 persistence and production-path evidence is recorded in [SQLite v11 Historical Ledger](../../engineering/sqlite-v11-historical-ledger.md). It closes migration, immutable frame/finding commits, complete-scan paired publication, complete-parent disappearance reconciliation, APFS stable move proof, idempotent immediate/launch projection, evidence-invalidated retraction, ordered retention, released recovery fixtures, the 500k/1M current-host persistence gates, and automated bounded-Overview integration. It does not close minimum-OS, manual UI qualification, classifier-corpus, export, distribution, or maintainer-acceptance gates.
 
 1. Domain tests cover every compatibility mismatch, partial/unknown state, explicit absence, strict sequence ordering, wall-clock rollback, checked arithmetic, and Codable revalidation.
 2. Application tests cover growth, decrease, appearance, disappearance, stable move, rename-only rejection, identity ambiguity, ancestor-move collapse, child reparenting, exclusive contribution, input-order permutations, and stable Top 10.

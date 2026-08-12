@@ -6,6 +6,7 @@ struct ContentView: View {
     @Bindable var authorizationModel: DirectoryAuthorizationViewModel
     @Bindable var baselineScanModel: BaselineScanViewModel
     @Bindable var directoryHistoryModel: DirectoryHistoryViewModel
+    @Bindable var historicalFindingsModel: HistoricalFindingsViewModel
     @Bindable var databaseRecoveryModel: DatabaseRecoveryViewModel
     @State private var selection: SpaceTraceSection? = .overview
 
@@ -51,12 +52,22 @@ struct ContentView: View {
                 contexts: historyContexts
             )
         }
+        .task(id: findingScopes) {
+            await historicalFindingsModel.load(scopes: findingScopes)
+        }
     }
 
     private var historyContexts: [AuthorizedBaselineScanContext] {
         baselineScanModel.historyContexts(
             configuredScopeIDs: authorizationModel.configuredScopeIDs
         )
+    }
+
+    private var findingScopes: [HistoricalFindingScopeDisplay] {
+        authorizationModel.items.compactMap { item in
+            guard case .authorized(let path) = item.status else { return nil }
+            return HistoricalFindingScopeDisplay(scopeID: item.id, path: path)
+        }
     }
 
     @ViewBuilder
@@ -67,7 +78,8 @@ struct ContentView: View {
                 authorizationSummary: authorizationModel.summary,
                 scopeIDs: authorizationModel.authorizedScopeIDs,
                 baselineScanModel: baselineScanModel,
-                directoryHistoryModel: directoryHistoryModel
+                directoryHistoryModel: directoryHistoryModel,
+                historicalFindingsModel: historicalFindingsModel
             ) {
                 selection = .permissions
             }
@@ -84,6 +96,7 @@ struct ContentView: View {
         ),
         baselineScanModel: BaselineScanViewModel(),
         directoryHistoryModel: DirectoryHistoryViewModel(),
+        historicalFindingsModel: HistoricalFindingsViewModel(),
         databaseRecoveryModel: DatabaseRecoveryViewModel()
     )
 }

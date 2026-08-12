@@ -262,6 +262,53 @@ final class DirectoryAuthorizationUITests: XCTestCase {
     }
 
     @MainActor
+    func testSignedSandboxSavesARealRedactedDiagnosticExport() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "SpaceTrace-UI-DiagnosticExport-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let app = launch(scenario: "authorized", exportDirectory: directory)
+        let destination = app.staticTexts["诊断导出"]
+        XCTAssertTrue(destination.waitForExistence(timeout: 3))
+        destination.click()
+
+        let save = app.buttons["diagnostic-export-save-button"]
+        XCTAssertTrue(save.waitForExistence(timeout: 5))
+        save.click()
+
+        let savePanel = app.windows["save-panel"]
+        XCTAssertTrue(savePanel.waitForExistence(timeout: 5))
+        let confirmSave = savePanel.buttons["OKButton"]
+        XCTAssertTrue(confirmSave.waitForExistence(timeout: 3))
+        confirmSave.click()
+
+        XCTAssertTrue(
+            element(identifier: "diagnostic-export-saved", in: app)
+                .waitForExistence(timeout: 5)
+        )
+        let files = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey]
+        )
+        let output = try XCTUnwrap(
+            files.first { $0.pathExtension == "json" }
+        )
+        let data = try Data(contentsOf: output)
+        let text = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertLessThanOrEqual(data.count, 2 * 1_024 * 1_024)
+        XCTAssertFalse(text.contains("SpaceTraceFixture"))
+        XCTAssertFalse(text.contains("Cache"))
+        XCTAssertTrue(text.contains("\"pathMode\" : \"redacted\""))
+        XCTAssertTrue(text.contains("\"uploadsAutomatically\" : false"))
+    }
+
+    @MainActor
     private func assertStatus(
         _ title: String,
         in app: XCUIApplication,
@@ -319,10 +366,18 @@ final class DirectoryAuthorizationUITests: XCTestCase {
     }
 
     @MainActor
-    private func launch(scenario: String) -> XCUIApplication {
+    private func launch(
+        scenario: String,
+        exportDirectory: URL? = nil
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += ["-ApplePersistenceIgnoreState", "YES"]
         app.launchEnvironment["SPACETRACE_UI_TEST_SCENARIO"] = scenario
+        if let exportDirectory {
+            app.launchEnvironment[
+                "SPACETRACE_UI_TEST_EXPORT_DIRECTORY"
+            ] = exportDirectory.path
+        }
         app.launch()
         return app
     }

@@ -15,6 +15,16 @@ final class SystemDiagnosticExportDestinationSelector:
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
         panel.allowedContentTypes = [.json]
+#if DEBUG
+        if let fixtureDirectory = ProcessInfo.processInfo.environment[
+            "SPACETRACE_UI_TEST_EXPORT_DIRECTORY"
+        ], fixtureDirectory.first == "/" {
+            panel.directoryURL = URL(
+                fileURLWithPath: fixtureDirectory,
+                isDirectory: true
+            )
+        }
+#endif
         activePanel = panel
         defer { activePanel = nil }
         return await withCheckedContinuation { continuation in

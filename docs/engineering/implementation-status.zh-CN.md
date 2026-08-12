@@ -83,11 +83,11 @@
 
 ## 明确不作出的声明
 
-- 面向用户的多目录权限列表、批量基线、启动卷容量历史、版本/Schema 元数据、重启恢复、电源/温度/睡眠感知、schema v10 概览/菜单栏历史、不可变 finding 概览、schema v11 持久化、完整扫描 paired finalization、完整父级消失对账、合格 APFS 稳定移动、有界即时/启动投影、FR-007/KPI-03 仓库语料门禁，以及用户控制的脱敏诊断导出均已实现。生产扫描会在同一次遍历中冻结仅目录 logical/allocated 证据、直接子级覆盖、分类与 APFS 对象/复用证据；真实 Foundation 增长/重命名/删除与受控 APFS 镜像测试均已通过。概览直接读取持久化的 current-effective 与失效审计记录，不重新分类，并展示类型化 History Off/baseline-unavailable 状态。未经证明的缺失行和不受支持的文件系统仍会被抑制；replacement/supersession 仍未完成。APFS 唯一块核算和真正枚举器内存中点续扫也仍未完成。导出 entitlement 与真实签名沙盒保存流程现已通过当前主机资格；人工辅助技术、干净账户 Gatekeeper 例外、打包 bookmark 连续性和 macOS 15.6 资格仍未完成。
+- 面向用户的多目录权限列表、批量基线、启动卷容量历史、版本/Schema 元数据、重启恢复、电源/温度/睡眠感知、schema v10 概览/菜单栏历史、不可变 finding 概览、schema v11 持久化、完整扫描 paired finalization、完整父级消失对账、合格 APFS 稳定移动、有界即时/启动投影、FR-007/KPI-03 仓库语料门禁，以及用户控制的脱敏诊断导出均已实现。生产扫描会在同一次遍历中冻结仅目录 logical/allocated 证据、直接子级覆盖、分类与 APFS 对象/复用证据；真实 Foundation 增长/重命名/删除与受控 APFS 镜像测试均已通过。概览直接读取持久化的 current-effective 与失效审计记录，不重新分类，并展示类型化 History Off/baseline-unavailable 状态。中断基线会安全丢弃未完成 staging，并重新扫描受影响的持久 dirty root，因此在不声称内存枚举偏移续跑的前提下满足 FR-002；真正中点续跑保留为非 P0 性能增强。未经证明的缺失行和不受支持的文件系统仍会被抑制；FR-004 correction/replacement 仍未完成。APFS 唯一块核算也仍未完成。导出 entitlement 与真实签名沙盒保存流程已通过当前主机资格；人工辅助技术、干净账户 Gatekeeper 例外、打包 bookmark 连续性和 macOS 15.6 资格仍未完成。
 - 修正后的当前主机运行关闭了提交 `ed0d660` 的 ad-hoc 24 小时进程/耐久门禁。Activity Monitor 的 CPU、唤醒、内存、I/O 与 thermal 区间仍只是能耗相关证据，不是直接瓦特/焦耳测量；该结果也不能证明普遍的系统调度到达保证、签名状态项交互矩阵、Apple 身份分发、Release Candidate 替换或 macOS 15.6 运行资格。
 - 用户主动基线调度会响应休眠、低电量模式、严重/危急温度，并观察当前供电来源。后台速率预算、系统负载调度以及架构中的 token bucket 尚未实现。硬链接去重受条目预算限制，但每次扫描运行期间仍保存在内存中。
 - 真实 sandbox Powerbox 展示以及 stale/身份失败的重新授权 UI 已实现；当前主机上的持久选择、同一 bundle 重启、明确 App 内移除和同镜像外置卷返回已经通过。真实 stale 证据、UI 流程中的不同 UUID 换卷子项、Apple 身份签名以及 macOS 15.6 运行矩阵仍未完成，或受到当前环境阻塞。
-- 当前主机的受控 UI fixture 已 8/8 通过，并检查关键辅助功能名称、value 与可点击性；这不是人工辅助技术资格验证，不能证明 VoiceOver 发音、Full Keyboard Access 顺序，或增强对比度、减少动态效果和更大系统文字下的布局。
+- 当前主机的受控 UI fixture 已 14/14 通过，并检查关键辅助功能名称、value 与可点击性，包括 finding、History Off 和真实保存面板导出流程；这不是人工辅助技术资格验证，不能证明 VoiceOver 发音、Full Keyboard Access 顺序，或增强对比度、减少动态效果和更大系统文字下的布局。
 - ad-hoc RC 打包只适合人数较少、明确互相信任的测试者；它没有 Developer ID 签名或公证，在用户授予单 App 例外前应被 Gatekeeper 拒绝，也不能证明 bookmark 跨替换连续、真实拒绝/stale 授权、外置卷替换、干净 Mac quarantine 启动、自动更新、回滚或完整容器移除。
 - 不会依据 FSEvents 推断精确字节差值或进程归因。
 - 原生资格测试已经在开发主机上覆盖受控卸载、重挂和同名卷替换；但最老支持系统的真实运行、守护进程真实 `UserDropped`/`KernelDropped`、事件 ID 回绕、睡眠/唤醒以及权限撤销仍未完成资格验证；允许采用的证据边界记录在 [FSEvents 连续性丢失资格验证](fsevents-continuity-qualification.zh-CN.md) 中。
@@ -112,5 +112,5 @@
 
 - **本地工程 RC 生成：CONDITIONAL GO（有条件继续）。** 可以使用 fail-closed ad-hoc 打包器，为明确互相信任的维护者/测试者生成带 provenance 的受控测试产物。
 - **GitHub Release 与 Public Beta：NO-GO（暂不发布）。** 本次没有创建 tag、Release 或上传产物。
-- 阻塞门禁包括：未来获批的 replacement/supersession 模型；macOS 15.6 运行；人工辅助功能/可用性和真实 bookmark/权限/换卷矩阵；ADR-003/004/006 接受；Developer ID/公证，或明确接受未签名风险并完成干净账户 Gatekeeper 例外启动；打包升级/回滚；正式许可、第三方 notices 与 SBOM。自动化 finding/History-Off 概览、FR-007 语料和 FR-014 实现/当前主机真实签名沙盒导出门禁已经关闭，但人工辅助技术与最低系统资格验证尚未完成。
+- 阻塞门禁包括：未来获批的 replacement/supersession 模型；macOS 15.6 运行；人工辅助功能/可用性和真实 bookmark/权限/换卷矩阵；ADR-003/004/006 接受；Developer ID/公证，或明确接受未签名风险并完成干净账户 Gatekeeper 例外启动；打包升级/回滚；以及仓库所有者批准项目许可证。确定性 SBOM/notices 生成、自动化 finding/History-Off 概览、FR-007 语料和 FR-014 实现/当前主机真实签名沙盒导出门禁已经关闭，但打包/人工辅助技术与最低系统资格验证尚未完成。
 - 逐行门禁表和未发布的测试者说明见[产品路线图](../product/product-roadmap.md)与 [Changelog](../../CHANGELOG.md)。

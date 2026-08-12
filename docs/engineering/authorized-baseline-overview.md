@@ -1,14 +1,14 @@
 # Authorized Directory Baseline and Overview
 
-Status: **Implemented application slice; FR-002 remains partially complete**
+Status: **FR-002 implemented; external release qualification remains separate**
 
-Last updated: 2026-07-20
+Last updated: 2026-08-13
 
 Chinese companion translation: [authorized-baseline-overview.zh-CN.md](authorized-baseline-overview.zh-CN.md). This English document remains the engineering source of truth.
 
 ## Purpose and scope
 
-This slice connects restored, user-selected directories to a cancellable metadata baseline and renders only verifiable results in the overview. The committed record includes a startup-data-volume capacity sample and survives an application restart. The permission UI now projects every configured scope independently and sends all currently active scope IDs through the bounded multi-root request. FR-002 still does **not** implement true mid-scan continuation, thermal or power scheduling, or historical comparison points.
+This slice connects restored, user-selected directories to a cancellable metadata baseline and renders only verifiable results in the overview. The committed record includes a startup-data-volume capacity sample and survives an application restart. The permission UI projects every configured scope independently and sends all currently active scope IDs through the bounded multi-root request. Together with the implemented scan-scheduling lifecycle and persisted history/finding flows, this satisfies FR-002's baseline contract: an interrupted scan either restarts safely from durable dirty work or leaves no newly committed complete baseline. Continuing from a `FileManager` enumerator's in-memory offset is not a PRD requirement and remains a non-P0 performance enhancement, not a release blocker.
 
 ## Ownership and data flow
 
@@ -77,7 +77,7 @@ These rules preserve the architecture invariant that unknown is not zero.
 
 Schema v6 adds `authorized_baseline_snapshot` and `authorized_baseline_root`. Each committed snapshot records its start/commit times, App version, schema version, complete coverage, volume observation time and optional capacity values. Roots are stored as the same ordered, unique-scope collection produced by the multi-root scheduler.
 
-On startup, SQLite performs a bounded recovery transaction. Any `running` calibration row belongs to the dead process: its staging rows are deleted, it is marked failed, and its durable dirty work remains. SpaceTrace deliberately does not claim that arbitrary filesystem enumeration can resume from an in-memory midpoint. After authorization restoration, the coordinator loads only the latest committed baseline containing that scope and labels the UI result as restored.
+On startup, SQLite performs a bounded recovery transaction. Any `running` calibration row belongs to the dead process: its staging rows are deleted, it is marked failed, and its durable dirty work remains. SpaceTrace deliberately does not claim that arbitrary filesystem enumeration can resume from an in-memory midpoint. FR-002 permits a safe restart, and this implementation uses that branch: the incomplete stage is discarded, durable dirty work is preserved, and a later eligible run restarts the affected root. After authorization restoration, the coordinator loads only the latest committed baseline containing that scope and labels the UI result as restored.
 
 The startup-data-volume provider queries the volume containing the Application Support directory rather than assuming an APFS mount path. `total`, immediately `available`, and `availableForImportantUsage` are distinct optional values. The important-usage value may include space macOS can make available and is not labeled as current free blocks. Unavailable API values remain unknown.
 

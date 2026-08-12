@@ -2,7 +2,7 @@
 
 ## 状态
 
-schema v11 持久化切片与生产完整扫描接入已在当前开发主机上实现并通过验证。本文覆盖的 schema、迁移、repository 事务、paired logical/allocated finalization、生产环境创建 projector work、有界即时/启动投影、撤回、保留、恢复夹具和当前主机规模基准由此收口。但这**不代表** SpaceTrace 已具备发布资格：显式 absence 采集、合格稳定 move 证据、finding UI、最低系统资格、辅助功能/可用性证据以及分发信任仍未完成。
+schema v11 持久化切片与生产完整扫描接入已在当前开发主机上实现并通过验证。本文覆盖的 schema、迁移、repository 事务、paired logical/allocated finalization、完整父级 disappearance 对账、合格 APFS 稳定 move 证据、生产环境创建 projector work、有界即时/启动投影、撤回、保留、恢复夹具和当前主机规模基准由此收口。但这**不代表** SpaceTrace 已具备发布资格：finding UI、最低系统资格、辅助功能/可用性证据以及分发信任仍未完成。
 
 ADR-004 与 ADR-006 继续保持**提议中（Proposed）**。实现门禁通过只是供评审使用的证据，不等于维护者已经接受 ADR。
 
@@ -75,7 +75,7 @@ History Off 与 Clear History 不同。History Off 会跨重启保持，删除�
 
 这一接入切片仍不声称：
 
-- 生产扫描器已经证明目录 link-set 唯一性或产生显式 absence；它会采集完整直接子级覆盖、冻结分类与 reuse-guard 元数据，但把 link status 记录为 `unknown`，因此缺失行继续只是缺少证据，生产 move 会被抑制；
+- APFS 目录 link-set 唯一性与顶层完整父级 disappearance 现已由真实 Foundation 和受控磁盘镜像测试证明；不受支持的文件系统、已移动/不完整父级、被替换对象占用的位置以及其他所有未证明缺失行仍会被抑制；
 - 每个 legacy 调用方都使用 paired v11 finalization：运行中的已授权卷和 FSEvents 校准路径只在持久卷/挂载上下文及富 scanner/repository 能力可用时采用它；明确不支持的上下文继续只发布当前状态，不会虚构历史；
 - 已有 replacement/supersession；v11 只支持证据失效；
 - 概览或菜单栏已经展示 finding、不确定性、撤回、History Off 或 baseline-unavailable 状态；

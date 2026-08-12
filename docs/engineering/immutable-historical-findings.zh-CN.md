@@ -12,7 +12,9 @@
 
 SpaceTrace 现在可以比较两个经过验证的不可变目录观测帧，并为增长、减少、出现、消失以及经过严格证明的移动生成确定性发现草稿。它还可以在不重复计算同一项父级/子级流量的前提下生成正增长排名。
 
-纯投影现在已经接入生产完整扫描路径。扫描器会在同一次遍历中产出仅目录 logical/allocated 测量、完整直接子级覆盖、保守对象元数据以及冻结的版本化分类。当持久卷与挂载代次上下文可用时，一个 SQLite 事务会发布当前事实与 paired v11 观测帧并登记投影 work；projector 会在提交后处理，也会在启动时恢复。它不会使旧小时级/天级 SQLite 历史自动达到审计级，也尚未把 finding 接入概览或菜单栏。显式 absence、合格的目录 link-set 唯一性/move 证据、replacement/supersession、UI、分类语料扩充与独立复核、用户明确控制的导出/脱敏证据，以及真实 macOS 15.6 资格验证仍是发布阻断项。
+纯投影现在已经接入生产完整扫描路径。扫描器会在同一次遍历中产出仅目录 logical/allocated 测量、完整直接子级覆盖、冻结的版本化分类，以及 APFS 对象号/birth time 证据。在提交后续帧前，一个纯应用层对账器只会为以下顶层节点补充 absent 端点：该节点此前完整存在，并且其未移动的当前直接父级拥有完整测量与直接子级枚举。Apple 明确说明 APFS 不支持目录硬链接，因此这些 APFS 目录对象可以携带唯一 link-set 证据；不受支持的文件系统继续使用路径身份且不能判定移动。随后，一个 SQLite 事务会发布当前事实与 paired v11 观测帧并登记投影 work；projector 会在提交后处理，也会在启动时恢复。真实 Foundation 集成现在已经证明增长、同卷移动和消失。它不会使旧小时级/天级 SQLite 历史自动达到审计级，也尚未把 finding 接入概览或菜单栏。replacement/supersession、UI、分类语料扩充与独立复核、用户明确控制的导出/脱敏证据，以及真实 macOS 15.6 资格验证仍是发布阻断项。
+
+link-set 策略遵循 Apple 的 [APFS 兼容性指南](https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/APFS_Guide/FAQ/FAQ.html)；受控 APFS 磁盘镜像测试验证了重命名会保留稳定对象身份，而 Foundation 目录链接尝试不会共享该身份。目录 `st_nlink` 不会被用作唯一性证明。
 
 FSEvents 仍然只是失效提示。任何事件标志、文件名、时间戳或方向相反的字节增量组合，都不能单独生成一条发现。
 
@@ -191,15 +193,19 @@ exclusiveDelta(node) = inclusiveDelta(node) - childFlowDelta(node)
 2. 原子完整扫描 finalization：发布当前事实并登记确定性投影 work，History Off 继续不写入路径历史；
 3. 幂等即时/启动投影、证据失效撤回、有序保留、已发布 v10/v11 fixture、类型化恢复，以及当前主机 500,000/1,000,000 行门禁。
 
+已经实现的生产证据边界还包括：
+
+1. 对紧邻上一份 logical 帧执行顶层 present-to-absent 对账，并验证父级未移动、测量完整、直接子级完整、路径/位置一致以及上一端点完整；
+2. 仅对 APFS 使用由卷身份、对象号和纳秒 birth time 派生的稳定 subject，并依据平台文件系统不变量标记唯一 link status；
+3. 真实临时目录增长/重命名/删除投影，以及可选启用的 APFS 镜像重命名/重挂/换卷资格测试。
+
 剩余 finding 门禁包括：
 
-1. 只能由未来对账阶段在证明完整直接父级枚举后持久化显式 absent 端点；缺少扫描记录必须继续只是缺少证据；
-2. 在受控重命名、复用、重挂和换卷测试中验证 APFS 目录身份与 link-set 唯一性；当前 Foundation 适配器把 link status 记录为 `unknown`，因此会有意抑制生产 move；
-3. 增加获批的 replacement/supersession 模型；v11 仅支持证据失效，不含 successor 链接；
-4. 在概览/菜单栏 UI 中展示 current-effective finding、不确定性、撤回、History Off 与 baseline-unavailable 状态，并保留准确 logical/allocated 限制和无障碍复核；
-5. 把经过独立复核的分类语料扩展到 FR-007“至少 60 个已知场景”门禁，同时保留 Unknown/歧义证据；
-6. 实现由用户明确触发、可预览和取消的导出，覆盖中断恢复与路径/令牌脱敏测试，并且绝不自动上传，以满足 FR-014；
-7. 完成签名沙盒重启/撤权/外置卷、干净 quarantine、macOS 15.6、分发信任和维护者接受门禁。
+1. 增加获批的 replacement/supersession 模型；v11 仅支持证据失效，不含 successor 链接；
+2. 在概览/菜单栏 UI 中展示 current-effective finding、不确定性、撤回、History Off 与 baseline-unavailable 状态，并保留准确 logical/allocated 限制和无障碍复核；
+3. 把经过独立复核的分类语料扩展到 FR-007“至少 60 个已知场景”门禁，同时保留 Unknown/歧义证据；
+4. 实现由用户明确触发、可预览和取消的导出，覆盖中断恢复与路径/令牌脱敏测试，并且绝不自动上传，以满足 FR-014；
+5. 完成签名沙盒重启/撤权/外置卷、干净 quarantine、macOS 15.6、分发信任和维护者接受门禁。
 
 在这些门禁关闭前，ADR-006 仍处于“提议中”，本功能不能被用作 Public Beta 或 GitHub Release 已就绪的声明。
 
@@ -211,4 +217,4 @@ exclusiveDelta(node) = inclusiveDelta(node) - childFlowDelta(node)
 swift test --package-path Packages/SpaceTraceKit --filter HistoricalFinding
 ```
 
-仓库阶段收口还需要严格并发验证、`make verify`、`git diff --check` 与隐私扫描。这些检查覆盖生产 paired-v11 切片，但不能替代尚未完成的显式 absence、稳定 move、签名沙盒、UI、分类、导出或发布门禁。
+仓库阶段收口还需要严格并发验证、`make verify`、`git diff --check` 与隐私扫描。这些检查覆盖生产 paired-v11、显式消失与稳定 APFS 移动切片，但不能替代尚未完成的签名沙盒、UI、分类、导出或发布门禁。

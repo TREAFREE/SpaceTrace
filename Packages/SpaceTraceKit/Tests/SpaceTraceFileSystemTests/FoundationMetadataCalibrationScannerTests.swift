@@ -50,8 +50,43 @@ struct FoundationMetadataCalibrationScannerTests {
         #expect(rootObservation.allocatedBytes == rootAggregate.allocatedBytes)
         #expect(rootObservation.directChildrenCoverage == .complete)
         #expect(rootObservation.objectIdentity != nil)
-        #expect(rootObservation.objectIdentity?.linkStatus == .unknown)
+        #expect(
+            rootObservation.objectIdentity?.linkStatus
+                == (rootObservation.objectIdentity?.fileSystem == .apfs ? .unique : .unknown)
+        )
         #expect(nestedObservation.parentPath == root)
+    }
+
+    @Test("APFS directory objects carry the no-directory-hard-link qualification")
+    func qualifiesAPFSDirectoryLinkSet() async throws {
+        let root = try DirtyRegionPath("/fixture")
+        let birthTime = try HistoricalFindingBirthTime(
+            secondsSince1970: 1_700_000_000,
+            nanoseconds: 123_456_789
+        )
+        let source = FixtureMetadataSource(
+            metadata: [
+                root: directory(
+                    volume: "volume-a",
+                    objectIdentity: MetadataDirectoryObjectIdentity(
+                        volumeLocalObjectID: 42,
+                        birthTime: birthTime
+                    )
+                ),
+            ],
+            children: [root: []],
+            fileSystem: .apfs
+        )
+
+        let result = try await scanner(source).scanHistorical(
+            try request(root: root)
+        ) { _ in }
+        let observation = try #require(result.evidence?.directories.first)
+
+        #expect(observation.objectIdentity?.fileSystem == .apfs)
+        #expect(observation.objectIdentity?.volumeLocalObjectID == 42)
+        #expect(observation.objectIdentity?.birthTime == birthTime)
+        #expect(observation.objectIdentity?.linkStatus == .unique)
     }
 
     @Test("Directory aggregates contain no leaf paths and deduplicate hard-link allocation")
@@ -258,19 +293,22 @@ private struct FixtureMetadataSource: MetadataTreeSource {
     let metadataErrors: [DirtyRegionPath: MetadataTreeSourceError]
     let childErrors: [DirtyRegionPath: MetadataTreeSourceError]
     let cancelAtMetadataPath: DirtyRegionPath?
+    let observedFileSystem: HistoricalDirectoryFileSystem
 
     init(
         metadata: [DirtyRegionPath: MetadataEntry],
         children: [DirtyRegionPath: [DirtyRegionPath]],
         metadataErrors: [DirtyRegionPath: MetadataTreeSourceError] = [:],
         childErrors: [DirtyRegionPath: MetadataTreeSourceError] = [:],
-        cancelAtMetadataPath: DirtyRegionPath? = nil
+        cancelAtMetadataPath: DirtyRegionPath? = nil,
+        fileSystem: HistoricalDirectoryFileSystem = .unsupported
     ) {
         metadataByPath = metadata
         childrenByPath = children
         self.metadataErrors = metadataErrors
         self.childErrors = childErrors
         self.cancelAtMetadataPath = cancelAtMetadataPath
+        observedFileSystem = fileSystem
     }
 
     func metadata(at path: DirtyRegionPath) throws -> MetadataEntry {
@@ -292,15 +330,24 @@ private struct FixtureMetadataSource: MetadataTreeSource {
             wasTruncated: children.count > max(0, limit)
         )
     }
+
+    func fileSystem(at path: DirtyRegionPath) -> HistoricalDirectoryFileSystem {
+        _ = path
+        return observedFileSystem
+    }
 }
 
-private func directory(volume: String) -> MetadataEntry {
+private func directory(
+    volume: String,
+    objectIdentity: MetadataDirectoryObjectIdentity? = nil
+) -> MetadataEntry {
     MetadataEntry(
         kind: .directory,
         logicalBytes: nil,
         allocatedBytes: nil,
         volumeIdentity: volume,
-        fileIdentity: nil
+        fileIdentity: nil,
+        directoryObjectIdentity: objectIdentity
     )
 }
 

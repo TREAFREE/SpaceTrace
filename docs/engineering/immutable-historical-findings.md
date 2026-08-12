@@ -12,7 +12,9 @@ Related decision: [ADR-006](../architecture/decisions/ADR-006-immutable-observat
 
 SpaceTrace can now compare two validated immutable directory observation frames and produce deterministic finding drafts for growth, decrease, appearance, disappearance, and a strictly proven move. It can also derive a positive-growth ranking without counting the same parent/child flow twice.
 
-The pure projection is now backed by a production complete-scan path. The scanner emits directory-only logical/allocated measurements, complete direct-child coverage, conservative object metadata, and frozen versioned classification from the same traversal. When persistent volume and mount-generation context are available, one SQLite transaction publishes current truth plus paired v11 frames and registers projection work; the projector drains after commit and resumes at launch. This does not make the legacy hourly/daily history audit-grade and does not yet put findings in the Overview or menu bar. Explicit absence, qualified directory link-set uniqueness/move evidence, replacement/supersession, UI, classification-corpus expansion and independent review, explicit user-controlled export/redaction evidence, and real macOS 15.6 qualification remain release blockers.
+The pure projection is now backed by a production complete-scan path. The scanner emits directory-only logical/allocated measurements, complete direct-child coverage, frozen versioned classification, and APFS object-number/birth-time evidence from the same traversal. Before a later frame is committed, a pure Application reconciler adds only topmost absent endpoints previously observed as complete when their unchanged current direct parent has complete measurement and direct-child enumeration. Apple states that APFS does not support directory hard links, so those APFS directory objects can carry unique link-set evidence; unsupported filesystems remain path-based and move-ineligible. One SQLite transaction then publishes current truth plus paired v11 frames and registers projection work; the projector drains after commit and resumes at launch. Real Foundation integration now proves growth, same-volume move, and disappearance. This does not make the legacy hourly/daily history audit-grade and does not yet put findings in the Overview or menu bar. Replacement/supersession, UI, classification-corpus expansion and independent review, explicit user-controlled export/redaction evidence, and real macOS 15.6 qualification remain release blockers.
+
+The link-set policy follows Apple's [APFS compatibility guide](https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/APFS_Guide/FAQ/FAQ.html), and a controlled APFS disk-image test verifies that rename preserves stable object identity while a Foundation directory-link attempt never shares that identity. Directory `st_nlink` is not used as uniqueness proof.
 
 FSEvents remains an invalidation hint. No event flag, filename, timestamp, or pair of opposite byte deltas can create a finding by itself.
 
@@ -191,15 +193,19 @@ The implemented boundary includes:
 2. atomic complete-scan finalization that publishes current truth and registers deterministic projection work, with History Off remaining path-history-free;
 3. idempotent immediate and launch-time projection, evidence-invalidated retraction, ordered retention, released v10/v11 fixtures, typed recovery, and current-host 500,000/1,000,000-row gates.
 
+The implemented production evidence boundary additionally includes:
+
+1. topmost present-to-absent reconciliation against the immediately preceding logical frame, with unchanged-parent, complete-measurement, complete-direct-child, path/location, and prior-endpoint checks;
+2. APFS-only stable subjects derived from volume identity, object number, and nanosecond birth time, with unique link status based on the platform filesystem invariant;
+3. real temporary-directory growth/rename/delete projection and opt-in APFS image rename/remount/replacement qualification.
+
 The remaining finding gates are:
 
-1. persist explicit absent endpoints only from a future reconciliation stage that proves complete direct-parent enumeration; a missing scan row must stay missing evidence;
-2. qualify APFS directory identity and link-set uniqueness under controlled rename, reuse, remount, and replacement tests; the current Foundation adapter records link status as `unknown`, so production moves are intentionally suppressed;
-3. add an approved replacement/supersession model; v11 supports evidence invalidation only and has no successor link;
-4. present current-effective findings, uncertainty, retractions, History Off, and baseline-unavailable states in Overview/menu-bar UI with exact logical/allocated limits and accessibility review;
-5. expand the independently reviewed classification corpus to the FR-007 gate of at least 60 known cases while preserving Unknown/ambiguity evidence;
-6. implement explicit user-controlled export with preview, cancellation, interruption recovery, path/token redaction tests, and no automatic upload, satisfying FR-014;
-7. complete signed-sandbox restart/revocation/external-volume, clean quarantine, macOS 15.6, distribution-trust, and maintainer-acceptance gates.
+1. add an approved replacement/supersession model; v11 supports evidence invalidation only and has no successor link;
+2. present current-effective findings, uncertainty, retractions, History Off, and baseline-unavailable states in Overview/menu-bar UI with exact logical/allocated limits and accessibility review;
+3. expand the independently reviewed classification corpus to the FR-007 gate of at least 60 known cases while preserving Unknown/ambiguity evidence;
+4. implement explicit user-controlled export with preview, cancellation, interruption recovery, path/token redaction tests, and no automatic upload, satisfying FR-014;
+5. complete signed-sandbox restart/revocation/external-volume, clean quarantine, macOS 15.6, distribution-trust, and maintainer-acceptance gates.
 
 Until those gates close, ADR-006 remains Proposed and this feature is not a Public Beta or GitHub Release readiness claim.
 
@@ -211,4 +217,4 @@ The focused contract suite is:
 swift test --package-path Packages/SpaceTraceKit --filter HistoricalFinding
 ```
 
-Repository completion still requires strict-concurrency verification, `make verify`, `git diff --check`, and a privacy scan. Those checks cover the production paired-v11 slice but do not substitute for the unfinished explicit-absence, stable-move, signed-sandbox, UI, classification, export, or release gates above.
+Repository completion still requires strict-concurrency verification, `make verify`, `git diff --check`, and a privacy scan. Those checks cover the production paired-v11, explicit-disappearance, and stable-APFS-move slice but do not substitute for the unfinished signed-sandbox, UI, classification, export, or release gates above.

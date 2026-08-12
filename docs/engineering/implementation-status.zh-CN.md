@@ -81,7 +81,7 @@
 
 ## 明确不作出的声明
 
-- 面向用户的多目录权限列表、批量基线、启动卷容量历史、版本/Schema 元数据、重启恢复、电源/温度/睡眠感知、schema v10 概览/菜单栏历史、纯分类器/finding 投影、schema v11 持久化、完整扫描 paired finalization，以及有界即时/启动投影均已实现。生产扫描现在会在同一次遍历中冻结仅目录 logical/allocated 证据、直接子级覆盖、分类与保守对象元数据。显式 absence 与目录 link-set 唯一性尚不能产生，因此缺失行继续只是缺少证据，生产 move finding 会被抑制；replacement/supersession 与 finding/History-Off UI 也仍未完成。24 known/8 Unknown 语料仍低于 PRD 门禁；APFS 唯一块核算、真正枚举器内存中点续扫和用户控制的脱敏导出也仍未完成。
+- 面向用户的多目录权限列表、批量基线、启动卷容量历史、版本/Schema 元数据、重启恢复、电源/温度/睡眠感知、schema v10 概览/菜单栏历史、纯分类器/finding 投影、schema v11 持久化、完整扫描 paired finalization、完整父级消失对账、合格 APFS 稳定移动，以及有界即时/启动投影均已实现。生产扫描现在会在同一次遍历中冻结仅目录 logical/allocated 证据、直接子级覆盖、分类与 APFS 对象/复用证据；真实 Foundation 增长/重命名/删除与受控 APFS 镜像测试均已通过。未经证明的缺失行和不受支持的文件系统仍会被抑制；replacement/supersession 与 finding/History-Off UI 仍未完成。24 known/8 Unknown 语料仍低于 PRD 门禁；APFS 唯一块核算、真正枚举器内存中点续扫和用户控制的脱敏导出也仍未完成。
 - 修正后的当前主机运行关闭了提交 `ed0d660` 的 ad-hoc 24 小时进程/耐久门禁。Activity Monitor 的 CPU、唤醒、内存、I/O 与 thermal 区间仍只是能耗相关证据，不是直接瓦特/焦耳测量；该结果也不能证明普遍的系统调度到达保证、签名状态项交互矩阵、Apple 身份分发、Release Candidate 替换或 macOS 15.6 运行资格。
 - 用户主动基线调度会响应休眠、低电量模式、严重/危急温度，并观察当前供电来源。后台速率预算、系统负载调度以及架构中的 token bucket 尚未实现。硬链接去重受条目预算限制，但每次扫描运行期间仍保存在内存中。
 - 真实 sandbox Powerbox 展示以及 stale/身份失败的重新授权 UI 已实现；当前主机上的持久选择、同一 bundle 重启、明确 App 内移除和同镜像外置卷返回已经通过。真实 stale 证据、UI 流程中的不同 UUID 换卷子项、Apple 身份签名以及 macOS 15.6 运行矩阵仍未完成，或受到当前环境阻塞。
@@ -103,7 +103,7 @@
 5. 使用稳定 Apple 身份在 Apple Silicon macOS 15.6 上重跑签名沙盒协议，并覆盖真实 stale 证据、UI 的不同 UUID 换卷子项和系统菜单栏交互矩阵；不得以已完成的当前主机 ad-hoc smoke 代替该门禁。
 6. 在签名沙盒矩阵中验证活跃扫描期间撤权和多目录列表变更。
 7. 在把相应界面视为 Beta 就绪或具备发布资格之前，为用户可见的基线/历史切片完成 ADR-003 与 ADR-004 维护者评审，并为不可变 finding 完成 ADR-006 维护者评审。
-8. 增加显式 absence 对账，并在受控重命名、inode 复用、重挂与换卷测试中验证 APFS 目录 link-set/稳定身份；缺失行和 unknown link status 必须继续被抑制。在不静默重算历史文案的前提下展示 current-effective finding、撤回、History Off 与 baseline-unavailable 状态。replacement/supersession 仍需未来获批迁移；v11 证据失效不提供该能力。
+8. 在不静默重算历史文案的前提下，展示现已持久化的 current-effective 增长/移动/消失 finding、撤回、History Off 与 baseline-unavailable 状态。不受支持的文件系统与未经证明的缺失行必须继续被抑制。replacement/supersession 仍需未来获批迁移；v11 证据失效不提供该能力。
 9. 把经过独立复核的分类语料从当前 24 个已知场景扩充到 PRD 门禁，再在概览中展示已经冻结并持久化的决策。
 10. 实现由用户明确控制、可预览和取消的导出，覆盖中断恢复与路径/令牌脱敏证据，并且绝不自动上传。
 
@@ -111,5 +111,5 @@
 
 - **本地工程 RC 生成：CONDITIONAL GO（有条件继续）。** 可以使用 fail-closed ad-hoc 打包器，为明确互相信任的维护者/测试者生成带 provenance 的受控测试产物。
 - **GitHub Release 与 Public Beta：NO-GO（暂不发布）。** 本次没有创建 tag、Release 或上传产物。
-- 阻塞门禁包括：显式 absence 对账、生产稳定身份资格与 finding/History-Off UI；未来获批的 replacement/supersession 模型；分类语料扩充与用户控制导出/脱敏；macOS 15.6 运行；人工辅助功能/可用性和真实权限/换卷矩阵；ADR-003/004/006 接受；Developer ID/公证，或明确接受未签名风险并完成干净 quarantine 安装；打包升级/回滚；正式许可、第三方 notices 与 SBOM。
+- 阻塞门禁包括：finding/History-Off UI；未来获批的 replacement/supersession 模型；分类语料扩充与用户控制导出/脱敏；macOS 15.6 运行；人工辅助功能/可用性和真实权限/换卷矩阵；ADR-003/004/006 接受；Developer ID/公证，或明确接受未签名风险并完成干净 quarantine 安装；打包升级/回滚；正式许可、第三方 notices 与 SBOM。
 - 逐行门禁表和未发布的测试者说明见[产品路线图](../product/product-roadmap.md)与 [Changelog](../../CHANGELOG.md)。

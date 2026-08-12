@@ -6,7 +6,7 @@ import SpaceTraceFileSystem
 @testable import SpaceTracePersistence
 
 struct CalibrationPipelineIntegrationTests {
-    @Test("Foundation scans publish paired v11 frames and project current-effective findings")
+    @Test("Foundation scans project growth, APFS moves, and explicit disappearance evidence")
     func foundationScannerPublishesHistoricalFrames() async throws {
         let databaseFixture = try PipelineTemporaryDatabase()
         let repository = try SQLiteEventJournalRepository(
@@ -63,6 +63,19 @@ struct CalibrationPipelineIntegrationTests {
         ])
         #expect(try await pipeline.calibratePending(limit: 1) == 1)
 
+        let renamedChild = watchedRoot.appendingPathComponent("Renamed", isDirectory: true)
+        try FileManager.default.moveItem(at: child, to: renamedChild)
+        try await pipeline.ingest([
+            try fileInvalidation(path: root.rawValue, cursor: 3, itemKind: .directory),
+        ])
+        #expect(try await pipeline.calibratePending(limit: 1) == 1)
+
+        try FileManager.default.removeItem(at: renamedChild)
+        try await pipeline.ingest([
+            try fileInvalidation(path: root.rawValue, cursor: 4, itemKind: .directory),
+        ])
+        #expect(try await pipeline.calibratePending(limit: 1) == 1)
+
         #expect(try await repository.nextHistoricalProjectionWork() == nil)
         let baseline = try #require(
             try await repository.historicalObservationFrame(
@@ -74,14 +87,32 @@ struct CalibrationPipelineIntegrationTests {
                 sequence: try ObservationCommitSequence(3)
             )
         )
+        let moved = try #require(
+            try await repository.historicalObservationFrame(
+                sequence: try ObservationCommitSequence(5)
+            )
+        )
+        let disappeared = try #require(
+            try await repository.historicalObservationFrame(
+                sequence: try ObservationCommitSequence(7)
+            )
+        )
         #expect(baseline.metric == .logical)
         #expect(comparison.metric == .logical)
         #expect(baseline.nodes.count == 2)
         #expect(comparison.nodes.count == 2)
+        #expect(moved.nodes.count == 2)
+        #expect(disappeared.nodes.count == 2)
         #expect(comparison.sequence > baseline.sequence)
+        #expect(
+            disappeared.nodes.contains { node in
+                if case .absent = node.endpoint.state { return true }
+                return false
+            }
+        )
         let findings = try await repository.effectiveHistoricalFindings(
             for: try ScopeID("historical-pipeline-scope"),
-            through: try ObservationCommitSequence(4),
+            through: try ObservationCommitSequence(8),
             limit: try HistoricalFindingQueryLimit(10)
         )
         let containsLogicalGrowth = findings.contains(where: { finding in
@@ -89,6 +120,8 @@ struct CalibrationPipelineIntegrationTests {
                 && finding.draft.evidence.metric == StorageMetric.logical
         })
         #expect(containsLogicalGrowth)
+        #expect(findings.contains { $0.draft.kind == .move })
+        #expect(findings.contains { $0.draft.kind == .disappearance })
         #expect(try await repository.dirtyRegions(for: streamID).isEmpty)
         try await repository.close()
     }

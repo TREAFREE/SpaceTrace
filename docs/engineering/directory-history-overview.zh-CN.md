@@ -74,7 +74,7 @@ MainActor ViewModel 只公开四种持久展示阶段：
 
 1. 让已经完成的启动卷对比继续与本目录查询契约保持一致；参见[启动数据卷历史与空间归因](startup-volume-history-and-reconciliation.zh-CN.md)。
 2. 在不重新计算历史决策的前提下，把已经冻结并持久化的 schema v11 分类/finding 投影读取到本概览。
-3. 在展示 move/disappearance 前增加显式 absence 对账并验证 APFS 稳定身份；缺少记录绝不能成为消失证据。参见[不可变历史发现](immutable-historical-findings.zh-CN.md)。
+3. 在概览中展示现已验证的显式 disappearance 与 APFS 稳定 move，同时继续对所有未经证明的缺失行和不受支持文件系统保留类型化抑制。参见[不可变历史发现](immutable-historical-findings.zh-CN.md)。
 4. 在已经完成资格判断的菜单栏 24 小时状态中接入 v11 finding 与覆盖状态，但不得把不完整证据变成醒目的确定性差值。
 5. 实现用户确认的历史重置，以及保留期/数据库占用设置。
 6. 在接受 ADR-004 或宣称 Beta 就绪前，于 macOS 15.6 重跑 UI、性能与无障碍资格验证。

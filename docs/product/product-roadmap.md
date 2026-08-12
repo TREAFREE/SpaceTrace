@@ -22,9 +22,9 @@ This roadmap is a sequencing and evidence plan, not a promise that every propose
 | Current-stable-macOS endurance and process-resource evidence | Passed for current-host ad-hoc scope | Corrected 25-hour run and deterministic Instruments analysis are recorded in the [background soak protocol](../engineering/background-soak-qualification.md); this is not watt/joule, Apple-identity, or minimum-OS evidence |
 | Current-host controlled UI/accessibility tree | Passed for automated fixture scope | Eight authorization/history scenarios passed; manual VoiceOver, Full Keyboard Access, contrast/motion/larger-text review remains open in the [visual design system](./visual-design-system.md) |
 | Ad-hoc RC artifact contract | Passed | Two independent `0.1.0-rc.1` builds from `f2119be` passed checksums, strict code signing, entitlement, architecture, deployment-target, DMG, and manifest checks; Gatekeeper rejected them as expected |
-| Complete P0 product workflow | Open — release blocking | The deterministic classifier, immutable coverage-aware finding projection, schema-v11 persistence, production complete-scan paired finalization, and projector lifecycle are implemented. Explicit-absence reconciliation, stable-identity qualification, finding/History-Off UI, replacement/supersession, the at-least-60-known corpus gate, true in-enumerator continuation, and user-controlled redacted export remain open |
+| Complete P0 product workflow | Open — release blocking | The deterministic classifier, immutable coverage-aware finding projection, schema-v11 persistence, production complete-scan paired finalization, complete-parent disappearance reconciliation, qualified APFS stable moves, and projector lifecycle are implemented. Finding/History-Off UI, replacement/supersession, the at-least-60-known corpus gate, true in-enumerator continuation, and user-controlled redacted export remain open |
 | macOS 15.6 Apple Silicon runtime | Blocked by unavailable qualified host | Compile/link target is 15.6, but no P0 runtime/benchmark evidence exists on that OS |
-| ADR-003, ADR-004, and ADR-006 | Open — release blocking | All remain Proposed. Genuine daemon drop/wrap, permission revocation, minimum-OS behavior, explicit absence/stable identity, replacement/supersession, finding UI, and maintainer review remain incomplete |
+| ADR-003, ADR-004, and ADR-006 | Open — release blocking | All remain Proposed. Genuine daemon drop/wrap, permission revocation, minimum-OS behavior, replacement/supersession, finding UI, and maintainer review remain incomplete; explicit disappearance and APFS stable-move evidence now pass current-host qualification |
 | Developer identity and notarization | Blocked for trusted public distribution | No stable Apple signing identity is installed. Ad-hoc tester risk has documentation but is not equivalent to Developer ID/notarization |
 | Fresh quarantined clean-account install | Open — release blocking | DMG verification passed locally; an actual downloaded/quarantined clean-account flow and per-app Gatekeeper exception have not been qualified |
 | Update/replacement and bookmark continuity | Partial — release blocking | Fresh/same-build/replacement process launch passed under a disposable ID; no bookmark was created, so cross-build restore/reselection behavior remains open |
@@ -184,7 +184,7 @@ Build the complete P0 product behind an internal/pre-release channel and make it
 
 - Implement FR-006 through FR-011: ranked sources, deterministic classification, uncertainty, menu bar, safe actions, and blind spots.
 - Complete at least 60 known-path classification fixtures plus ambiguity/negative cases.
-- Present the persisted parent/child non-overlap, stable sorting, and incomplete-evidence contracts; qualify explicit absence and production stable identity before exposing move/disappearance.
+- Present persisted parent/child non-overlap, stable sorting, incomplete-evidence suppression, explicit disappearance, and APFS stable moves in the finding/History-Off UI.
 - Run first keyboard/VoiceOver review and uncertainty-language review.
 - Conduct three formative usability walkthroughs with current build.
 

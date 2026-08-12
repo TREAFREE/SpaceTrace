@@ -140,9 +140,10 @@ files.
 - A successfully persisted sleep/wake boundary distinguishes genuine sleep
   from an awake sampling gap. App termination and missing/one-sided boundaries
   remain explicit, disqualifying gaps.
-- APFS physical uniqueness and snapshot enumeration remain separate work. The
-  pure classification and move/disappearance projection now exists, but its
-  schema-v11 production persistence and UI integration, plus history reset and
-  release signing, remain open.
+- APFS physical uniqueness and snapshot enumeration remain separate work.
+  Classification plus move/disappearance now reaches schema-v11 production
+  persistence through qualified APFS directory identity and complete-parent
+  absence evidence; UI integration, history reset, and release signing remain
+  open.
 - ADR-004 remains Proposed until its remaining minimum-OS, distribution, and
   maintainer-review gates are complete.

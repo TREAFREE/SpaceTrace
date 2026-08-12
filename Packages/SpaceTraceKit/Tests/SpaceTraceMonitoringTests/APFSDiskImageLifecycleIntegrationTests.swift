@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import SpaceTraceApplication
 import SpaceTraceFileSystem
 import SpaceTraceMonitoring
@@ -15,6 +16,85 @@ extension Tag {
     .tags(.apfsDiskImage)
 )
 struct APFSDiskImageLifecycleIntegrationTests {
+    @Test(
+        "APFS directory identity survives rename while location changes",
+        .enabled(if: ProcessInfo.processInfo.environment["SPACETRACE_RUN_APFS_IMAGE_TESTS"] == "1"),
+        .timeLimit(.minutes(3))
+    )
+    func directoryIdentitySurvivesRename() async throws {
+        let fixture = try APFSDiskImageFixture()
+        defer { fixture.remove() }
+        try fixture.prepareImages()
+        let mounted = try fixture.attachFirstImage()
+        let before = fixture.watchedRoot.appendingPathComponent("Before", isDirectory: true)
+        let after = fixture.watchedRoot.appendingPathComponent("After", isDirectory: true)
+        let linkAttempt = fixture.watchedRoot.appendingPathComponent(
+            "DirectoryLinkAttempt",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: before,
+            withIntermediateDirectories: false
+        )
+
+        let scanner = FoundationMetadataCalibrationScanner()
+        let beforeEvidence = try await scanHistoricalEvidence(
+            root: fixture.watchedRoot,
+            scanner: scanner,
+            cursor: 1
+        )
+        let linkAttemptExists: Bool
+        do {
+            try FileManager.default.linkItem(
+                at: before,
+                to: linkAttempt
+            )
+            linkAttemptExists = true
+        } catch {
+            linkAttemptExists = false
+        }
+        try FileManager.default.moveItem(at: before, to: after)
+        let afterEvidence = try await scanHistoricalEvidence(
+            root: fixture.watchedRoot,
+            scanner: scanner,
+            cursor: 2
+        )
+
+        let context = try HistoricalCalibrationContext(
+            watchedScopeID: WatchedScopeID("apfs-identity-qualification"),
+            volumeUUID: mounted.volumeUUID,
+            mountGenerationID: MountGenerationID("mounted-generation-a"),
+            homeDirectoryPath: nil
+        )
+        let builder = HistoricalCalibrationCandidateBuilder()
+        let beforeCandidate = try builder.build(beforeEvidence, context: context)
+        let afterCandidate = try builder.build(afterEvidence, context: context)
+        let beforeNode = try #require(
+            beforeCandidate.nodes.first { $0.path == before.standardizedFileURL.path }
+        )
+        let afterNode = try #require(
+            afterCandidate.nodes.first { $0.path == after.standardizedFileURL.path }
+        )
+
+        #expect(beforeNode.identityBasis == .stableFileSystemObject)
+        #expect(beforeNode.stableIdentityEvidence?.linkStatus == .unique)
+        #expect(beforeNode.subjectID == afterNode.subjectID)
+        #expect(beforeNode.locationID != afterNode.locationID)
+        #expect(beforeNode.stableIdentityEvidence == afterNode.stableIdentityEvidence)
+        if linkAttemptExists {
+            let distinctObject = try #require(
+                afterCandidate.nodes.first {
+                    $0.path == linkAttempt.standardizedFileURL.path
+                }
+            )
+            // Foundation may satisfy linkItem for an APFS directory by
+            // creating a distinct directory object. It must never share the
+            // stable object identity used to prove a move.
+            #expect(distinctObject.subjectID != afterNode.subjectID)
+        }
+        try fixture.detachMountedImage()
+    }
+
     @Test(
         "Unmount, remount, and same-name replacement restart isolated generations",
         .enabled(if: ProcessInfo.processInfo.environment["SPACETRACE_RUN_APFS_IMAGE_TESTS"] == "1"),
@@ -222,6 +302,28 @@ struct APFSDiskImageLifecycleIntegrationTests {
     }
 }
 
+private func scanHistoricalEvidence(
+    root: URL,
+    scanner: FoundationMetadataCalibrationScanner,
+    cursor: UInt64
+) async throws -> HistoricalCalibrationScanEvidence {
+    let path = try DirtyRegionPath(root.standardizedFileURL.path)
+    let request = CalibrationRequest(
+        streamID: try EventStreamID("apfs-identity-scan"),
+        workItem: DirtyRegionWorkItem(
+            region: try DirtyRegion(
+                path: path,
+                reasons: [.requiresCalibration],
+                maximumCursor: EventJournalCursor(cursor)
+            ),
+            revision: try DirtyRegionRevision(cursor)
+        )
+    )
+    let result = try await scanner.scanHistorical(request) { _ in }
+    #expect(result.report.coverage == .complete)
+    return try #require(result.evidence)
+}
+
 private actor RuntimeFailureRecorder {
     private var recordedFailure: String?
 
@@ -392,21 +494,77 @@ private final class APFSDiskImageFixture {
     }
 
     private static func run(_ executable: String, _ arguments: [String]) throws -> Data {
-        let process = Process()
         let output = Pipe()
         let error = Pipe()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.standardOutput = output
-        process.standardError = error
-        try process.run()
-        process.waitUntilExit()
-        let outputData = output.fileHandleForReading.readDataToEndOfFile()
-        let errorData = error.fileHandleForReading.readDataToEndOfFile()
-        guard process.terminationStatus == 0 else {
+        var fileActions: posix_spawn_file_actions_t?
+        guard posix_spawn_file_actions_init(&fileActions) == 0 else {
             throw APFSDiskImageFixtureError.commandFailed(
                 executable: executable,
-                status: process.terminationStatus,
+                status: -1,
+                message: "spawn actions unavailable"
+            )
+        }
+        defer { posix_spawn_file_actions_destroy(&fileActions) }
+        guard posix_spawn_file_actions_adddup2(
+            &fileActions,
+            output.fileHandleForWriting.fileDescriptor,
+            STDOUT_FILENO
+        ) == 0,
+        posix_spawn_file_actions_adddup2(
+            &fileActions,
+            error.fileHandleForWriting.fileDescriptor,
+            STDERR_FILENO
+        ) == 0 else {
+            throw APFSDiskImageFixtureError.commandFailed(
+                executable: executable,
+                status: -1,
+                message: "spawn output unavailable"
+            )
+        }
+
+        var argumentPointers: [UnsafeMutablePointer<CChar>?] =
+            ([executable] + arguments).map { strdup($0) }
+        argumentPointers.append(nil)
+        defer {
+            for case let pointer? in argumentPointers { free(pointer) }
+        }
+        var processID: pid_t = 0
+        let spawnStatus = executable.withCString { executablePointer in
+            argumentPointers.withUnsafeMutableBufferPointer { buffer in
+                posix_spawn(
+                    &processID,
+                    executablePointer,
+                    &fileActions,
+                    nil,
+                    buffer.baseAddress,
+                    environ
+                )
+            }
+        }
+        output.fileHandleForWriting.closeFile()
+        error.fileHandleForWriting.closeFile()
+        guard spawnStatus == 0 else {
+            throw APFSDiskImageFixtureError.commandFailed(
+                executable: executable,
+                status: Int32(spawnStatus),
+                message: "spawn failed"
+            )
+        }
+        var waitStatus: Int32 = 0
+        guard waitpid(processID, &waitStatus, 0) == processID else {
+            throw APFSDiskImageFixtureError.commandFailed(
+                executable: executable,
+                status: -1,
+                message: "wait failed"
+            )
+        }
+        let outputData = output.fileHandleForReading.readDataToEndOfFile()
+        let errorData = error.fileHandleForReading.readDataToEndOfFile()
+        let terminationStatus = (waitStatus >> 8) & 0xff
+        guard waitStatus & 0x7f == 0, terminationStatus == 0 else {
+            throw APFSDiskImageFixtureError.commandFailed(
+                executable: executable,
+                status: terminationStatus,
                 message: String(decoding: errorData, as: UTF8.self)
             )
         }

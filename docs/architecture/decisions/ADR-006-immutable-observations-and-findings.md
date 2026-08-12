@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — the pure contracts, schema-v11 persistence, production complete-scan paired finalization, and bounded projector lifecycle are implemented. Migration, transaction, retraction, retention, recovery-fixture, privacy, current-host 500k/1M benchmark, and production-path integration tests pass. The decision remains unaccepted until explicit-absence and stable-identity qualification, UI, minimum-OS, maintainer-adoption, and remaining release gates pass.
+Proposed — the pure contracts, schema-v11 persistence, production complete-scan paired finalization, complete-parent disappearance reconciliation, qualified APFS directory identity, and bounded projector lifecycle are implemented. Migration, transaction, retraction, retention, recovery-fixture, privacy, current-host 500k/1M benchmark, real Foundation growth/move/disappearance, and controlled APFS-image tests pass. The decision remains unaccepted until UI, minimum-OS, maintainer-adoption, and remaining release gates pass.
 
 Date: 2026-08-11
 
@@ -18,9 +18,9 @@ Superseded by: none
 
 ## Context
 
-SpaceTrace already exposes current directory aggregates and lossy hourly/daily history internally, and it has a pure deterministic path classifier. Those surfaces are not an audit-grade finding source. Schema v11 now persists validated versioned decisions and pure projection results. A complete production scan also captures directory-only measurements, direct-child coverage, birth-time-qualified object metadata, and frozen classification from the same traversal; when a persistent volume and mount generation are known, one transaction publishes current truth plus consecutive logical/allocated v11 frames and registers deterministic projection work. The projector drains new work after commit and resumes pending work at launch. The scanner still cannot emit explicit absent endpoints or prove directory link-set uniqueness, so missing rows remain missing evidence and production move findings remain suppressed. Overview presentation is not connected.
+SpaceTrace already exposes current directory aggregates and lossy hourly/daily history internally, and it has a pure deterministic path classifier. Those surfaces are not an audit-grade finding source. Schema v11 now persists validated versioned decisions and pure projection results. A complete production scan also captures directory-only measurements, direct-child coverage, birth-time-qualified object metadata, and frozen classification from the same traversal; when a persistent volume and mount generation are known, one transaction publishes current truth plus consecutive logical/allocated v11 frames and registers deterministic projection work. Before a later frame is committed, an Application reconciler may add only topmost absent endpoints that were complete in the immediately preceding frame and whose unchanged current direct parent has complete measurement and child enumeration. Apple documents that APFS does not support directory hard links, so an APFS directory with a nonzero object number and nanosecond birth time receives unique link-set evidence; every unsupported filesystem remains path-based. The projector drains new work after commit and resumes pending work at launch. Missing rows that fail these proofs remain missing evidence. Overview presentation is not connected.
 
-FSEvents reports lossy, coalesced invalidation hints. A rename flag contains neither a trusted source/destination pair nor a durable object identity. The scanner observes file identity to avoid allocated-byte double counting during one scan and records conservative directory object metadata for v11 candidates, but it deliberately records directory link status as `unknown`. Therefore name, inode alone, size, timestamp proximity, opposite deltas, or an FSEvents rename flag cannot establish a move.
+FSEvents reports lossy, coalesced invalidation hints. A rename flag contains neither a trusted source/destination pair nor a durable object identity. The scanner observes file identity to avoid allocated-byte double counting during one scan. For APFS directories only, it combines volume identity, object number, nanosecond birth time, and the documented absence of directory hard links; unsupported filesystems retain `unknown` link status. Therefore name, inode alone, size, timestamp proximity, opposite deltas, or an FSEvents rename flag still cannot establish a move.
 
 The architecture currently says classifier schema participates in observation comparability. Classification does not change measured bytes, and rule upgrades must not sever otherwise compatible measurement history. Classification belongs after measurement comparison and must be frozen into each historical finding.
 
@@ -216,14 +216,14 @@ Raw paths, display names, opaque object tokens, normalized location keys, timeli
 ### Neutral or follow-up
 
 - ADR-003 and ADR-004 remain Proposed and require their own acceptance gates.
-- Explicit-absence capture, production APFS link-set/stable-identity qualification, Overview/menu-bar UI, corpus expansion, export, and macOS 15.6 qualification remain separate stages.
+- Overview/menu-bar UI, corpus expansion, export, and macOS 15.6 qualification remain separate stages. Explicit disappearance and APFS stable moves are implemented, but a never-before-observed missing row still cannot become an appearance/disappearance claim.
 - A correction/replacement model, successor schema, and append-only supersession evidence remain a separate adoption gate; v11 retraction does not complete them.
 - An observed disappearance describes evidence at a path; it never authorizes deletion and is not a reclaimability claim.
 - Every category and finding is an explanation of observed metadata, never a deletion instruction, cleanup recommendation, or safety guarantee.
 
 ## Validation plan
 
-Current-host schema-v11 persistence and production-path evidence is recorded in [SQLite v11 Historical Ledger](../../engineering/sqlite-v11-historical-ledger.md). It closes migration, immutable frame/finding commits, complete-scan paired publication, idempotent immediate/launch projection, evidence-invalidated retraction, ordered retention, released recovery fixtures, and the 500k/1M current-host persistence gates. It does not close explicit absence, stable move proof, minimum-OS, UI, classifier-corpus, export, distribution, or maintainer-acceptance gates.
+Current-host schema-v11 persistence and production-path evidence is recorded in [SQLite v11 Historical Ledger](../../engineering/sqlite-v11-historical-ledger.md). It closes migration, immutable frame/finding commits, complete-scan paired publication, complete-parent disappearance reconciliation, APFS stable move proof, idempotent immediate/launch projection, evidence-invalidated retraction, ordered retention, released recovery fixtures, and the 500k/1M current-host persistence gates. It does not close minimum-OS, UI, classifier-corpus, export, distribution, or maintainer-acceptance gates.
 
 1. Domain tests cover every compatibility mismatch, partial/unknown state, explicit absence, strict sequence ordering, wall-clock rollback, checked arithmetic, and Codable revalidation.
 2. Application tests cover growth, decrease, appearance, disappearance, stable move, rename-only rejection, identity ambiguity, ancestor-move collapse, child reparenting, exclusive contribution, input-order permutations, and stable Top 10.

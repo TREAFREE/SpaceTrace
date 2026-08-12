@@ -145,9 +145,11 @@ public struct FoundationMetadataCalibrationScanner: HistoricalCalibrationScanner
                             fileSystem: rootFileSystem,
                             volumeLocalObjectID: $0.volumeLocalObjectID,
                             birthTime: $0.birthTime,
-                            // Directory st_nlink is deliberately not used as
-                            // hard-link uniqueness evidence.
-                            linkStatus: .unknown
+                            // Apple documents that APFS does not support
+                            // directory hard links. Directory st_nlink remains
+                            // deliberately unused because it counts hierarchy
+                            // structure rather than object-name uniqueness.
+                            linkStatus: rootFileSystem == .apfs ? .unique : .unknown
                         )
                     }
                     accumulators[path] = DirectoryAccumulator(

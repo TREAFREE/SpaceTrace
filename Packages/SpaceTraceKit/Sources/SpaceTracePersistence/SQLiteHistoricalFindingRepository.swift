@@ -490,24 +490,37 @@ private extension HistoricalCalibrationFinalizationOutcome {
     }
 }
 
-private extension ObservationEndpointState {
-    var isPresent: Bool {
-        if case .present = self { return true }
-        return false
-    }
-}
-
 private extension SQLiteEventJournalRepository {
     func persistHistoricalFrames(
         request: HistoricalCalibrationFinalizationRequest,
         requestDigest: Data
     ) throws -> HistoricalCalibrationFinalizationOutcome {
-        try validateCandidateAgainstStage(request)
         let priorSequences = try latestHistoricalSequences(
             scopeID: request.observation.scopeID
         )
+        let reconciledObservation: HistoricalPairedObservationCandidate
+        if let priorSequences {
+            let previousLogicalFrame = try readHistoricalFrame(
+                sequence: priorSequences.logical
+            ).unwrap(field: "historical_previous_logical_frame")
+            reconciledObservation = try HistoricalCalibrationAbsenceReconciler()
+                .reconcile(
+                    current: request.observation,
+                    previousLogicalFrame: previousLogicalFrame
+                )
+        } else {
+            reconciledObservation = request.observation
+        }
+        let persistedRequest = try HistoricalCalibrationFinalizationRequest(
+            runID: request.runID,
+            report: request.report,
+            workItem: request.workItem,
+            streamID: request.streamID,
+            observation: reconciledObservation
+        )
+        try validateCandidateAgainstStage(persistedRequest)
         if priorSequences == nil,
-           request.observation.nodes.contains(where: { node in
+           persistedRequest.observation.nodes.contains(where: { node in
                if case .absent = node.state { return true }
                return false
            }) {
@@ -515,12 +528,12 @@ private extension SQLiteEventJournalRepository {
         }
         if let priorSequences {
             try validateAbsenceEvidence(
-                in: request.observation,
+                in: persistedRequest.observation,
                 priorLogicalSequence: priorSequences.logical
             )
         }
 
-        let retentionAnchor = try request.observation.nodes
+        let retentionAnchor = try persistedRequest.observation.nodes
             .map(\.observedAt.millisecondsSince1970).min()
             .unwrap(field: "historical_retention_anchor")
         let expiresAt = try addingThirtyDays(retentionAnchor)
@@ -529,23 +542,23 @@ private extension SQLiteEventJournalRepository {
         }
         let committedAt = Self.historicalMilliseconds(now())
 
-        let scopeKey = try upsertHistoricalScope(request.observation.scopeID)
+        let scopeKey = try upsertHistoricalScope(persistedRequest.observation.scopeID)
         let subjectKeys = try upsertHistoricalSubjects(
-            request.observation.nodes,
+            persistedRequest.observation.nodes,
             scopeKey: scopeKey
         )
         let locationKeys = try upsertHistoricalLocations(
-            request.observation.nodes,
+            persistedRequest.observation.nodes,
             scopeKey: scopeKey,
-            pathSemanticsVersion: request.observation.pathSemanticsVersion
+            pathSemanticsVersion: persistedRequest.observation.pathSemanticsVersion
         )
-        let decisionKeys = try upsertHistoricalDecisions(request.observation.nodes)
+        let decisionKeys = try upsertHistoricalDecisions(persistedRequest.observation.nodes)
         try failHistoricalFinalizationIfRequested(.afterHistoricalDictionaries)
 
-        let rootSubjectKey = try subjectKeys[request.observation.rootSubjectID]
+        let rootSubjectKey = try subjectKeys[persistedRequest.observation.rootSubjectID]
             .unwrap(field: "historical_root_subject_key")
         let batchID = try insertHistoricalBatch(
-            request: request,
+            request: persistedRequest,
             scopeKey: scopeKey,
             rootSubjectKey: rootSubjectKey,
             committedAt: committedAt
@@ -555,7 +568,7 @@ private extension SQLiteEventJournalRepository {
         try failHistoricalFinalizationIfRequested(.afterHistoricalBatch)
 
         let nodeIDs = try insertHistoricalNodes(
-            request.observation.nodes,
+            persistedRequest.observation.nodes,
             batchID: batchID,
             subjectKeys: subjectKeys,
             locationKeys: locationKeys,
@@ -563,26 +576,26 @@ private extension SQLiteEventJournalRepository {
         )
         try failHistoricalFinalizationIfRequested(.afterHistoricalNodes)
         try insertHistoricalEndpoints(
-            request.observation.nodes,
+            persistedRequest.observation.nodes,
             nodeIDs: nodeIDs,
             frameID: logicalFrameID,
             metric: .logical
         )
         try failHistoricalFinalizationIfRequested(.afterHistoricalLogicalEndpoints)
         try insertHistoricalEndpoints(
-            request.observation.nodes,
+            persistedRequest.observation.nodes,
             nodeIDs: nodeIDs,
             frameID: allocatedFrameID,
             metric: .allocated
         )
 
-        let rootNodeID = try nodeIDs[request.observation.rootSubjectID]
+        let rootNodeID = try nodeIDs[persistedRequest.observation.rootSubjectID]
             .unwrap(field: "historical_root_node_id")
         let logicalSequence = try insertHistoricalFrameCommit(
             frameID: logicalFrameID,
             rootNodeID: rootNodeID,
             metricCode: 1,
-            endpointCount: request.observation.nodes.count,
+            endpointCount: persistedRequest.observation.nodes.count,
             committedAt: committedAt,
             retentionAnchor: retentionAnchor,
             expiresAt: expiresAt
@@ -592,14 +605,14 @@ private extension SQLiteEventJournalRepository {
             frameID: allocatedFrameID,
             rootNodeID: rootNodeID,
             metricCode: 2,
-            endpointCount: request.observation.nodes.count,
+            endpointCount: persistedRequest.observation.nodes.count,
             committedAt: committedAt,
             retentionAnchor: retentionAnchor,
             expiresAt: expiresAt
         )
 
         let materialized = try HistoricalPairedObservationCommitMaterializer(
-            candidate: request.observation
+            candidate: persistedRequest.observation
         ).materialize(
             storeGeneration: try historicalStoreGeneration(),
             nodeIDs: nodeIDs,
@@ -614,7 +627,7 @@ private extension SQLiteEventJournalRepository {
         }
 
         try insertPublishedReceipt(
-            request: request,
+            request: persistedRequest,
             digest: requestDigest,
             logicalSequence: logicalSequence,
             allocatedSequence: allocatedSequence,
@@ -645,12 +658,12 @@ private extension SQLiteEventJournalRepository {
                 logical: try HistoricalObservationFrameCommit(
                     sequence: logicalSequence,
                     rootEndpointID: logicalRootID,
-                    endpointCount: request.observation.nodes.count
+                    endpointCount: persistedRequest.observation.nodes.count
                 ),
                 allocated: try HistoricalObservationFrameCommit(
                     sequence: allocatedSequence,
                     rootEndpointID: allocatedRootID,
-                    endpointCount: request.observation.nodes.count
+                    endpointCount: persistedRequest.observation.nodes.count
                 )
             )
         )
@@ -758,19 +771,31 @@ private extension SQLiteEventJournalRepository {
         priorLogicalSequence: ObservationCommitSequence
     ) throws {
         let prior = try readHistoricalFrame(sequence: priorLogicalSequence)
+        let previousBySubject = Dictionary(
+            uniqueKeysWithValues: (prior?.nodes ?? []).map {
+                ($0.endpoint.subjectID, $0)
+            }
+        )
         for node in candidate.nodes {
             guard case .absent = node.state else { continue }
             guard let parentSubjectID = node.parentSubjectID,
-                  let previousNode = prior?.nodes.first(where: {
-                      $0.endpoint.subjectID == node.subjectID
-                  }),
-                  previousNode.endpoint.state.isPresent,
+                  let previousNode = previousBySubject[node.subjectID],
+                  let previousParent = previousBySubject[parentSubjectID],
+                  previousNode.parentSubjectID == parentSubjectID,
+                  case .present(_, .complete) = previousNode.endpoint.state,
                   let currentParent = candidate.nodes.first(where: {
                       $0.subjectID == parentSubjectID
                   }),
                   currentParent.directChildrenCoverage == .complete,
                   case let .present(_, _, parentCoverage) = currentParent.state,
-                  parentCoverage == .complete else {
+                  parentCoverage == .complete,
+                  previousParent.endpoint.locationID == currentParent.locationID,
+                  previousParent.path.utf8.elementsEqual(currentParent.path.utf8),
+                  previousNode.endpoint.identityBasis == node.identityBasis,
+                  previousNode.endpoint.locationID == node.locationID,
+                  previousNode.path.utf8.elementsEqual(node.path.utf8),
+                  previousNode.displayName.utf8.elementsEqual(node.displayName.utf8),
+                  previousNode.stableIdentityEvidence == node.stableIdentityEvidence else {
                 throw SQLiteEventJournalError.historicalAbsenceEvidenceMissing
             }
         }

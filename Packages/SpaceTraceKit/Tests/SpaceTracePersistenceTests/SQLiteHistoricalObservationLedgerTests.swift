@@ -117,6 +117,41 @@ struct SQLiteHistoricalObservationLedgerTests {
             child: .absent,
             observedAtMilliseconds: 2_000_000_100_000
         )
+        let fabricatedNodes = try second.request.observation.nodes.map { node in
+            guard node.subjectID.rawValue == "child" else { return node }
+            return try historicalLedgerNode(
+                subject: "child",
+                parent: "root",
+                location: "location-fabricated",
+                path: "/Fixtures/Fabricated",
+                displayName: "Fabricated",
+                state: .absent,
+                childrenCoverage: .unknown,
+                observedAtMilliseconds: node.observedAt.millisecondsSince1970,
+                classification: nil
+            )
+        }
+        let fabricated = try HistoricalCalibrationFinalizationRequest(
+            runID: second.runID,
+            report: second.report,
+            workItem: second.workItem,
+            streamID: second.streamID,
+            observation: HistoricalPairedObservationCandidate(
+                rootSubjectID: second.request.observation.rootSubjectID,
+                rootPath: second.request.observation.rootPath,
+                nodes: fabricatedNodes,
+                scopeID: second.request.observation.scopeID,
+                volumeID: second.request.observation.volumeID,
+                mountGenerationID: second.request.observation.mountGenerationID,
+                coverageEpochID: second.request.observation.coverageEpochID,
+                pathSemanticsVersion: second.request.observation.pathSemanticsVersion,
+                measurementSemanticsVersion: second.request.observation
+                    .measurementSemanticsVersion
+            )
+        )
+        await #expect(throws: SQLiteEventJournalError.historicalAbsenceEvidenceMissing) {
+            _ = try await repository.finalizeCalibrationWithHistoricalFrames(fabricated)
+        }
         let commit = try published(
             try await repository.finalizeCalibrationWithHistoricalFrames(second.request)
         )

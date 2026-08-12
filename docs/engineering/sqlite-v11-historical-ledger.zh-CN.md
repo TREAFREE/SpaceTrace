@@ -78,8 +78,8 @@ History Off 与 Clear History 不同。History Off 会跨重启保持，删除�
 - APFS 目录 link-set 唯一性与顶层完整父级 disappearance 现已由真实 Foundation 和受控磁盘镜像测试证明；不受支持的文件系统、已移动/不完整父级、被替换对象占用的位置以及其他所有未证明缺失行仍会被抑制；
 - 每个 legacy 调用方都使用 paired v11 finalization：运行中的已授权卷和 FSEvents 校准路径只在持久卷/挂载上下文及富 scanner/repository 能力可用时采用它；明确不支持的上下文继续只发布当前状态，不会虚构历史；
 - 已有 replacement/supersession；v11 只支持证据失效；
-- 概览或菜单栏已经展示 finding、不确定性、撤回、History Off 或 baseline-unavailable 状态；
-- 当前 24 known/8 Unknown 分类语料已经满足独立 60 案例门禁；
+- 已自动化实现的 finding、不确定性、撤回、History Off 与 baseline-unavailable 概览展示可以替代人工辅助技术或最低系统资格验证；
+- 经过审阅的 v2 分类语料（64 known/32 Unknown）属于真实用户准确率证据；它只关闭 FR-007/KPI-03 的开放仓库回归门禁；
 - 已完成用户控制的脱敏导出、macOS 15.6 运行、Apple 身份签名/公证、干净 quarantine 安装、升级/回滚、人工辅助功能/可用性、许可/notices/SBOM 或公开分发资格。
 
 在这些门禁关闭且 ADR-004/ADR-006 被接受之前，产品发布决策继续为 **NO-GO**。本地生成的 ad-hoc DMG 仍只是受控工程产物，不是公开 Release。

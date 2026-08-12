@@ -1,6 +1,6 @@
 # Deterministic Attribution Engine
 
-Last verified: 2026-08-11
+Last verified: 2026-08-13
 
 Chinese companion translation: [deterministic-attribution.zh-CN.md](deterministic-attribution.zh-CN.md).
 
@@ -8,7 +8,7 @@ Chinese companion translation: [deterministic-attribution.zh-CN.md](deterministi
 
 `SpaceTraceAttribution` is the pure, offline classifier behind FR-007. It turns lexical path features and explicit volume context into a conservative storage category. It does not access the filesystem, open file contents, inspect processes, use the network, or decide that data is safe to delete.
 
-This slice implements the engine and its initial regression corpus. The immutable historical-finding pipeline freezes the exact catalog/rule decision at each available endpoint, persists it in SQLite, and presents it in the bounded Overview without reclassification. The at-least-60-known corpus gate and user-controlled diagnostic export remain unimplemented.
+This slice implements the engine and the reviewed version-two regression corpus. The immutable historical-finding pipeline freezes the exact catalog/rule decision at each available endpoint, persists it in SQLite, and presents it in the bounded Overview without reclassification. The FR-007/KPI-03 repository-corpus gate is now closed; user-controlled diagnostic export remains unimplemented.
 
 ## Result contract
 
@@ -54,9 +54,9 @@ These categories explain observed storage location or context. They are not owne
 
 ## Fixture evidence and open gate
 
-`attribution-fixtures-v1.json` currently contains 24 known scenarios—three for each P0 category—and eight near-miss/Unknown scenarios. The checked-in suite currently reports 100% precision, 100% recall, and 100% Unknown accuracy on this synthetic reviewed corpus. Separate tests prove that cross-category ties remain ambiguous and that precision, recall, and Unknown accuracy use distinct denominators.
+`attribution-fixtures-v2.json` contains 64 known scenarios—eight for each P0 category—and 32 near-miss/Unknown scenarios. Its separate rule-contract table freezes every built-in rule's ID, rule version, category, confidence, and path-free evidence code; each known case names the exact expected rule rather than only its category. The checked-in suite reports 100% precision, 100% recall, and 100% Unknown accuracy on this synthetic reviewed corpus. It also enforces unique lowercase case IDs, exact catalog coverage, component-boundary/case/home-directory negatives, and explicit snapshot context. Separate tests prove that cross-category ties remain ambiguous and that precision, recall, and Unknown accuracy use distinct denominators. The original v1 corpus remains checked in as historical evidence and is not used to inflate the v2 denominator.
 
-This is regression evidence, not real-user accuracy evidence. It does not satisfy the PRD corpus gate of at least 60 known paths or the stronger per-category review target. Public Beta remains blocked until the corpus is expanded, independently reviewed, and the frozen finding decisions are persisted and presented without silent reinterpretation.
+This is regression evidence, not real-user prevalence or accuracy evidence. It satisfies KPI-03's repository gate of at least 60 known paths at no less than 95% precision, plus the stronger eight-per-category review target, without forcing labels onto the 32 Unknown cases. Frozen finding decisions are persisted and presented without silent reinterpretation. Public Beta remains blocked by the separate minimum-OS, manual accessibility/usability, export/redaction, governance, and distribution gates.
 
 ## Adding or changing a rule
 

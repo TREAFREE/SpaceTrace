@@ -6,6 +6,7 @@ All notable user-visible changes are recorded in this file.
 
 ### Added
 
+- Expand the reviewed attribution corpus to 64 known scenarios (eight per P0 category) and 32 Unknown near misses, with exact rule ID/version/confidence/evidence contracts and 100% repository precision, recall, and Unknown accuracy.
 - Add a bounded historical-finding Overview backed by current-effective and immutable audit reads, with separate evidence-invalidated records, frozen classification evidence, exact logical/allocated semantics, complete-evidence time ranges, typed History Off/baseline-unavailable states, and explicit destructive confirmation.
 - Connect the production complete-scan path to atomic paired logical/allocated schema-v11 frames, frozen classification, APFS directory object/reuse qualification, complete-parent explicit-disappearance reconciliation, immediate projection, and launch-time pending-work recovery. Real Foundation scans now project growth, same-volume APFS moves, and observed disappearance; unproved missing rows remain missing evidence.
 - Add a bounded, cancellation-aware application projector that drains newly registered schema-v11 work after commit, resumes persisted work at launch, rejects missing frames and non-advancing repositories, and is verified through the real SQLite queue.
@@ -27,7 +28,7 @@ All notable user-visible changes are recorded in this file.
 - **Public Beta: NO-GO.** No tag, GitHub Release, or artifact upload is authorized by this record.
 - **Local engineering RC generation: CONDITIONAL GO.** Maintainers may generate `0.1.0-rc.1` ad-hoc artifacts to continue controlled testing. They are not Apple-verified, are expected to be rejected by Gatekeeper, and are limited to Apple Silicon with a declared—not runtime-qualified—macOS 15.6 minimum.
 - The current-host 25-hour ad-hoc endurance run and its Activity Monitor/thermal evidence passed. The current-host controlled UI runner passed twelve authorization/history/finding scenarios and key accessibility-tree assertions.
-- Public blockers remain: a future approved replacement/supersession model; classification-corpus expansion and user-controlled export/redaction; macOS 15.6 runtime; genuine permission/replacement matrices; manual assistive-technology review of the implemented finding Overview; ADR-003/004/006 approval; clean quarantine install/rollback; Developer ID/notarization or explicit unsigned-risk acceptance; approved license/notices/SBOM; and required usability evidence.
+- Public blockers remain: a future approved replacement/supersession model; user-controlled export/redaction; macOS 15.6 runtime; genuine permission/replacement matrices; manual assistive-technology review of the implemented finding Overview; ADR-003/004/006 approval; clean quarantine install/rollback; Developer ID/notarization or explicit unsigned-risk acceptance; approved license/notices/SBOM; and required usability evidence. The FR-007/KPI-03 repository-corpus gate is closed.
 
 ### Draft tester notes — not published
 

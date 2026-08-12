@@ -42,7 +42,7 @@
 
 - `swift test --package-path Packages/SpaceTraceKit`：516 个测试、63 个 suite（会改变测试环境的资格测试保持 opt-in，常规运行中显示为 skipped）；
 - 同一套 package 测试在完整严格并发诊断以及“编译器警告视为错误”条件下通过；
-- 分类模块的 7 个 suite、41 个聚焦测试已通过，覆盖词法路径校验、精确组件匹配、priority/具体度顺序、同类别稳定并列、跨类别歧义、明确快照上下文、严格耐久决策、8 个首版 P0 类别、24 个已知 fixture、8 个 Unknown 近似反例，以及相互独立的 precision/recall/Unknown 分母检查；
+- 分类模块的 7 个 suite、41 个聚焦测试已通过，覆盖词法路径校验、精确组件匹配、priority/具体度顺序、同类别稳定并列、跨类别歧义、明确快照上下文、严格耐久决策、8 个首版 P0 类别、v2 语料的 64 个已知 fixture（每类 8 个）与 32 个 Unknown 近似反例、准确规则 ID/版本/置信度/证据契约，以及相互独立的 precision/recall/Unknown 分母检查；
 - 不可变 finding 的 4 个 suite、70 个聚焦测试已通过，覆盖观测帧/模型准入、显式缺失、移动证明与根目录抑制、父子排他贡献、Unicode/序列/scope 平局顺序、严格 v1 Codable 对抗载荷，以及确定性的 2,000 节点移动依赖预算；
 - schema v11 迁移、不可变账本 finalization、投影、撤回、History Off/保留与恢复 fixture 套件已通过；最终当前主机 repository 矩阵的十个 50 万/100 万场景全部通过，最坏指标为 231,653,376 字节数据库、114,032,640 字节峰值 RSS、46.69 ms 端点写入 P95、20.48 ms finding 写入 P95、142.02 ms effective Top-10 P95 和 75.75 ms 旧历史七日 Top-100 P95；完整证据见 [SQLite v11 历史账本](sqlite-v11-historical-ledger.zh-CN.md)；
 - 一条从适配器到应用层再到真实 SQLite 的集成测试，校准 scanner 使用注入实现；
@@ -82,7 +82,7 @@
 
 ## 明确不作出的声明
 
-- 面向用户的多目录权限列表、批量基线、启动卷容量历史、版本/Schema 元数据、重启恢复、电源/温度/睡眠感知、schema v10 概览/菜单栏历史、不可变 finding 概览、schema v11 持久化、完整扫描 paired finalization、完整父级消失对账、合格 APFS 稳定移动，以及有界即时/启动投影均已实现。生产扫描会在同一次遍历中冻结仅目录 logical/allocated 证据、直接子级覆盖、分类与 APFS 对象/复用证据；真实 Foundation 增长/重命名/删除与受控 APFS 镜像测试均已通过。概览直接读取持久化的 current-effective 与失效审计记录，不重新分类，并展示类型化 History Off/baseline-unavailable 状态。未经证明的缺失行和不受支持的文件系统仍会被抑制；replacement/supersession 仍未完成。24 known/8 Unknown 语料仍低于 PRD 门禁；APFS 唯一块核算、真正枚举器内存中点续扫和用户控制的脱敏导出也仍未完成。
+- 面向用户的多目录权限列表、批量基线、启动卷容量历史、版本/Schema 元数据、重启恢复、电源/温度/睡眠感知、schema v10 概览/菜单栏历史、不可变 finding 概览、schema v11 持久化、完整扫描 paired finalization、完整父级消失对账、合格 APFS 稳定移动、有界即时/启动投影，以及 FR-007/KPI-03 仓库语料门禁均已实现。生产扫描会在同一次遍历中冻结仅目录 logical/allocated 证据、直接子级覆盖、分类与 APFS 对象/复用证据；真实 Foundation 增长/重命名/删除与受控 APFS 镜像测试均已通过。概览直接读取持久化的 current-effective 与失效审计记录，不重新分类，并展示类型化 History Off/baseline-unavailable 状态。未经证明的缺失行和不受支持的文件系统仍会被抑制；replacement/supersession 仍未完成。APFS 唯一块核算、真正枚举器内存中点续扫和用户控制的脱敏导出也仍未完成。
 - 修正后的当前主机运行关闭了提交 `ed0d660` 的 ad-hoc 24 小时进程/耐久门禁。Activity Monitor 的 CPU、唤醒、内存、I/O 与 thermal 区间仍只是能耗相关证据，不是直接瓦特/焦耳测量；该结果也不能证明普遍的系统调度到达保证、签名状态项交互矩阵、Apple 身份分发、Release Candidate 替换或 macOS 15.6 运行资格。
 - 用户主动基线调度会响应休眠、低电量模式、严重/危急温度，并观察当前供电来源。后台速率预算、系统负载调度以及架构中的 token bucket 尚未实现。硬链接去重受条目预算限制，但每次扫描运行期间仍保存在内存中。
 - 真实 sandbox Powerbox 展示以及 stale/身份失败的重新授权 UI 已实现；当前主机上的持久选择、同一 bundle 重启、明确 App 内移除和同镜像外置卷返回已经通过。真实 stale 证据、UI 流程中的不同 UUID 换卷子项、Apple 身份签名以及 macOS 15.6 运行矩阵仍未完成，或受到当前环境阻塞。
@@ -105,12 +105,11 @@
 6. 在签名沙盒矩阵中验证活跃扫描期间撤权和多目录列表变更。
 7. 在把相应界面视为 Beta 就绪或具备发布资格之前，为用户可见的基线/历史切片完成 ADR-003 与 ADR-004 维护者评审，并为不可变 finding 完成 ADR-006 维护者评审。
 8. 在 macOS 15.6 与当前稳定版 macOS 上，为已实现的 finding 概览完成人工键盘、VoiceOver、对比度、大字体和不确定性措辞复核。不受支持的文件系统与未经证明的缺失行必须继续被抑制。replacement/supersession 仍需未来获批迁移；v11 证据失效不提供该能力。
-9. 把经过独立复核的分类语料从当前 24 个已知场景扩充到 PRD 门禁，之后才能把概览中已展示的冻结决策视为具备 Beta 资格。
-10. 实现由用户明确控制、可预览和取消的导出，覆盖中断恢复与路径/令牌脱敏证据，并且绝不自动上传。
+9. 实现由用户明确控制、可预览和取消的导出，覆盖中断恢复与路径/令牌脱敏证据，并且绝不自动上传。
 
 ## 发布决策（继续维持 NO-GO；证据更新于 2026-08-13）
 
 - **本地工程 RC 生成：CONDITIONAL GO（有条件继续）。** 可以使用 fail-closed ad-hoc 打包器，为明确互相信任的维护者/测试者生成带 provenance 的受控测试产物。
 - **GitHub Release 与 Public Beta：NO-GO（暂不发布）。** 本次没有创建 tag、Release 或上传产物。
-- 阻塞门禁包括：未来获批的 replacement/supersession 模型；分类语料扩充与用户控制导出/脱敏；macOS 15.6 运行；人工辅助功能/可用性和真实权限/换卷矩阵；ADR-003/004/006 接受；Developer ID/公证，或明确接受未签名风险并完成干净 quarantine 安装；打包升级/回滚；正式许可、第三方 notices 与 SBOM。自动化 finding/History-Off 概览门禁已经关闭，但其人工辅助技术与最低系统资格验证尚未完成。
+- 阻塞门禁包括：未来获批的 replacement/supersession 模型；用户控制导出/脱敏；macOS 15.6 运行；人工辅助功能/可用性和真实权限/换卷矩阵；ADR-003/004/006 接受；Developer ID/公证，或明确接受未签名风险并完成干净 quarantine 安装；打包升级/回滚；正式许可、第三方 notices 与 SBOM。自动化 finding/History-Off 概览与 FR-007 语料门禁已经关闭，但人工辅助技术与最低系统资格验证尚未完成。
 - 逐行门禁表和未发布的测试者说明见[产品路线图](../product/product-roadmap.md)与 [Changelog](../../CHANGELOG.md)。

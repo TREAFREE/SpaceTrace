@@ -78,8 +78,8 @@ This integrated slice still does not claim that:
 - APFS directory link-set uniqueness and topmost complete-parent disappearance are now produced and verified through real Foundation and controlled disk-image tests; unsupported filesystems, moved/incomplete parents, occupied replacement locations, and every other unproved missing row remain suppressed;
 - every legacy caller uses paired v11 finalization: the running authorized-volume and FSEvents calibration paths use it when persistent volume/mount context and the rich scanner/repository capabilities are available, while deliberately unsupported contexts stay on current-state publication without inventing history;
 - replacement/supersession exists; v11 supports evidence invalidation only;
-- Overview or menu-bar UI presents findings, uncertainty, retractions, History Off, or baseline-unavailable state;
-- the current 24-known/8-Unknown classifier corpus satisfies the independent 60-case gate;
+- automated Overview presentation of findings, uncertainty, retractions, History Off, and baseline-unavailable state is a substitute for manual assistive-technology or minimum-OS qualification;
+- the reviewed 64-known/32-Unknown v2 classifier corpus is real-user accuracy evidence; it closes only the FR-007/KPI-03 open-repository regression gate;
 - redacted user-controlled export, macOS 15.6 runtime, Apple-identity signing/notarization, clean quarantine install, upgrade/rollback, manual accessibility/usability, licenses/notices/SBOM, or public distribution is qualified.
 
 Until those gates close and ADR-004/ADR-006 are accepted, the product release decision remains **NO-GO**. A locally generated ad-hoc DMG remains a controlled engineering artifact, not a public release.

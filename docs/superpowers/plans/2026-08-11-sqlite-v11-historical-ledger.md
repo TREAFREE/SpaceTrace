@@ -851,7 +851,7 @@ This plan intentionally leaves the product **NO-GO**. The next plans must still 
 2. replacement of the legacy pipeline finalization with the paired v11 API, projector lifecycle scheduling/restart, and removal of the bypass;
 3. an approved correction/replacement model and later schema migration if append-only supersession remains a requirement;
 4. Overview/menu-bar finding presentation with exact logical/allocated/APFS uncertainty wording, accessibility, localization, and no delete/cleanup implication;
-5. FR-007 independent >=60-case classification corpus review and FR-014 user-confirmed redacted export;
+5. FR-014 user-confirmed redacted export; the FR-007 reviewed corpus gate was completed on 2026-08-13 with 64 known and 32 Unknown scenarios;
 6. ADR-004/ADR-006 maintainer acceptance, production retention-scheduler wiring, checkpoint-busy recovery, and Application-Support backup/quarantine scrub qualification;
 7. APFS/non-APFS stable identity, reuse, link ambiguity, remount, and external-volume real-device matrices plus a 30-day virtual retention/crash-before-checkpoint run;
 8. reset/settings/database-size UI, presentation of typed History Off/baseline-unavailable states, the separate full-store Clear History workflow and five-second stop/delete qualification, signed sandbox restart/revocation/external-volume return, benchmark/privacy qualification on macOS 15.6 and the current stable macOS, 24-hour soak/energy evidence, packaging, and release review.

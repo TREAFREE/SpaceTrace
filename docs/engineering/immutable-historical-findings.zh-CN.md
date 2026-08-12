@@ -12,7 +12,7 @@
 
 SpaceTrace 现在可以比较两个经过验证的不可变目录观测帧，并为增长、减少、出现、消失以及经过严格证明的移动生成确定性发现草稿。它还可以在不重复计算同一项父级/子级流量的前提下生成正增长排名。
 
-纯投影现在已经接入生产完整扫描路径。扫描器会在同一次遍历中产出仅目录 logical/allocated 测量、完整直接子级覆盖、冻结的版本化分类，以及 APFS 对象号/birth time 证据。在提交后续帧前，一个纯应用层对账器只会为以下顶层节点补充 absent 端点：该节点此前完整存在，并且其未移动的当前直接父级拥有完整测量与直接子级枚举。Apple 明确说明 APFS 不支持目录硬链接，因此这些 APFS 目录对象可以携带唯一 link-set 证据；不受支持的文件系统继续使用路径身份且不能判定移动。随后，一个 SQLite 事务会发布当前事实与 paired v11 观测帧并登记投影 work；projector 会在提交后处理，也会在启动时恢复。真实 Foundation 集成已经证明增长、同卷移动和消失。概览现会读取有界的 current-effective 与不可变审计记录，分离证据失效项，保留冻结分类证据，展示 History Off/baseline-unavailable 状态，并明确标注 metric、完整证据和观测时间段。菜单栏继续承担 FR-009 所定义的独立、有界 24 小时卷状态。它不会使旧小时级/天级 SQLite 历史自动达到审计级。replacement/supersession、分类语料扩充与独立复核、用户明确控制的导出/脱敏证据、人工辅助技术复核，以及真实 macOS 15.6 资格验证仍是发布阻断项。
+纯投影现在已经接入生产完整扫描路径。扫描器会在同一次遍历中产出仅目录 logical/allocated 测量、完整直接子级覆盖、冻结的版本化分类，以及 APFS 对象号/birth time 证据。在提交后续帧前，一个纯应用层对账器只会为以下顶层节点补充 absent 端点：该节点此前完整存在，并且其未移动的当前直接父级拥有完整测量与直接子级枚举。Apple 明确说明 APFS 不支持目录硬链接，因此这些 APFS 目录对象可以携带唯一 link-set 证据；不受支持的文件系统继续使用路径身份且不能判定移动。随后，一个 SQLite 事务会发布当前事实与 paired v11 观测帧并登记投影 work；projector 会在提交后处理，也会在启动时恢复。真实 Foundation 集成已经证明增长、同卷移动和消失。概览现会读取有界的 current-effective 与不可变审计记录，分离证据失效项，保留冻结分类证据，展示 History Off/baseline-unavailable 状态，并明确标注 metric、完整证据和观测时间段。经过审阅的 v2 分类语料以 64 个已知和 32 个 Unknown 场景关闭了 FR-007/KPI-03 仓库门禁。菜单栏继续承担 FR-009 所定义的独立、有界 24 小时卷状态。它不会使旧小时级/天级 SQLite 历史自动达到审计级。replacement/supersession、用户明确控制的导出/脱敏证据、人工辅助技术复核，以及真实 macOS 15.6 资格验证仍是发布阻断项。
 
 link-set 策略遵循 Apple 的 [APFS 兼容性指南](https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/APFS_Guide/FAQ/FAQ.html)；受控 APFS 磁盘镜像测试验证了重命名会保留稳定对象身份，而 Foundation 目录链接尝试不会共享该身份。目录 `st_nlink` 不会被用作唯一性证明。
 
@@ -203,9 +203,8 @@ exclusiveDelta(node) = inclusiveDelta(node) - childFlowDelta(node)
 
 1. 增加获批的 replacement/supersession 模型；v11 仅支持证据失效，不含 successor 链接；
 2. 在 macOS 15.6 与当前稳定版 macOS 上，为已实现的概览完成人工键盘、VoiceOver、对比度、大字体和不确定性措辞复核；
-3. 把经过独立复核的分类语料扩展到 FR-007“至少 60 个已知场景”门禁，同时保留 Unknown/歧义证据；
-4. 实现由用户明确触发、可预览和取消的导出，覆盖中断恢复与路径/令牌脱敏测试，并且绝不自动上传，以满足 FR-014；
-5. 完成签名沙盒重启/撤权/外置卷、干净 quarantine、macOS 15.6、分发信任和维护者接受门禁。
+3. 实现由用户明确触发、可预览和取消的导出，覆盖中断恢复与路径/令牌脱敏测试，并且绝不自动上传，以满足 FR-014；
+4. 完成签名沙盒重启/撤权/外置卷、干净 quarantine、macOS 15.6、分发信任和维护者接受门禁。
 
 在这些门禁关闭前，ADR-006 仍处于“提议中”，本功能不能被用作 Public Beta 或 GitHub Release 已就绪的声明。
 
@@ -217,4 +216,4 @@ exclusiveDelta(node) = inclusiveDelta(node) - childFlowDelta(node)
 swift test --package-path Packages/SpaceTraceKit --filter HistoricalFinding
 ```
 
-仓库阶段收口还需要严格并发验证、`make verify`、`git diff --check` 与隐私扫描。这些检查覆盖生产 paired-v11、显式消失、稳定 APFS 移动与自动化概览切片，但不能替代尚未完成的签名沙盒/最低系统资格、人工 UI 复核、分类语料、导出或分发门禁。
+仓库阶段收口还需要严格并发验证、`make verify`、`git diff --check` 与隐私扫描。这些检查覆盖生产 paired-v11、显式消失、稳定 APFS 移动、经过审阅的分类语料与自动化概览切片，但不能替代尚未完成的签名沙盒/最低系统资格、人工 UI 复核、导出或分发门禁。

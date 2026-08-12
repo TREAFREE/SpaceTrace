@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 2,
+  "catalogVersion": 1,
+  "ruleContracts": [
+    {"ruleID":"developer.xcode.derived-data","ruleVersion":1,"category":"developer_tools","confidence":"high","evidenceCode":"home.library.developer.xcode.derived-data"},
+    {"ruleID":"developer.xcode.simulator","ruleVersion":1,"category":"developer_tools","confidence":"high","evidenceCode":"home.library.developer.core-simulator"},
+    {"ruleID":"developer.xcode.cache","ruleVersion":1,"category":"developer_tools","confidence":"high","evidenceCode":"home.library.caches.xcode"},
+
+    {"ruleID":"virtualization.docker.container","ruleVersion":1,"category":"virtualization","confidence":"high","evidenceCode":"home.library.containers.docker"},
+    {"ruleID":"virtualization.docker.group","ruleVersion":1,"category":"virtualization","confidence":"high","evidenceCode":"home.library.group-containers.docker"},
+    {"ruleID":"virtualization.utm","ruleVersion":1,"category":"virtualization","confidence":"high","evidenceCode":"home.library.application-support.utm"},
+
+    {"ruleID":"ai.ollama.models","ruleVersion":1,"category":"ai_models_and_caches","confidence":"high","evidenceCode":"home.ollama.models"},
+    {"ruleID":"ai.huggingface.cache","ruleVersion":1,"category":"ai_models_and_caches","confidence":"high","evidenceCode":"home.cache.huggingface"},
+    {"ruleID":"ai.lm-studio.models","ruleVersion":1,"category":"ai_models_and_caches","confidence":"high","evidenceCode":"home.library.application-support.lm-studio.models"},
+
+    {"ruleID":"creative.adobe.cache","ruleVersion":1,"category":"creative_caches_and_render_data","confidence":"high","evidenceCode":"home.library.caches.adobe"},
+    {"ruleID":"creative.adobe.media-cache","ruleVersion":1,"category":"creative_caches_and_render_data","confidence":"high","evidenceCode":"home.library.application-support.adobe.media-cache"},
+    {"ruleID":"creative.davinci.cache-clip","ruleVersion":1,"category":"creative_caches_and_render_data","confidence":"high","evidenceCode":"home.library.application-support.davinci.cache-clip"},
+
+    {"ruleID":"games.steam.steamapps","ruleVersion":1,"category":"games","confidence":"high","evidenceCode":"home.library.application-support.steam.steamapps"},
+    {"ruleID":"games.epic","ruleVersion":1,"category":"games","confidence":"high","evidenceCode":"home.library.application-support.epic"},
+    {"ruleID":"games.blizzard","ruleVersion":1,"category":"games","confidence":"high","evidenceCode":"home.library.application-support.blizzard"},
+
+    {"ruleID":"generic.user-caches","ruleVersion":1,"category":"logs_and_caches","confidence":"medium","evidenceCode":"home.library.caches"},
+    {"ruleID":"generic.user-logs","ruleVersion":1,"category":"logs_and_caches","confidence":"medium","evidenceCode":"home.library.logs"},
+    {"ruleID":"generic.system-caches","ruleVersion":1,"category":"logs_and_caches","confidence":"medium","evidenceCode":"absolute.library.caches"},
+    {"ruleID":"generic.system-logs","ruleVersion":1,"category":"logs_and_caches","confidence":"medium","evidenceCode":"absolute.library.logs"},
+
+    {"ruleID":"cloud.mobile-documents","ruleVersion":1,"category":"cloud_local_data","confidence":"high","evidenceCode":"home.library.mobile-documents"},
+    {"ruleID":"cloud.storage-providers","ruleVersion":1,"category":"cloud_local_data","confidence":"high","evidenceCode":"home.library.cloud-storage"},
+    {"ruleID":"cloud.apple-cloud-docs","ruleVersion":1,"category":"cloud_local_data","confidence":"medium","evidenceCode":"home.library.application-support.cloud-docs"},
+
+    {"ruleID":"snapshot.apfs.local","ruleVersion":1,"category":"snapshot_factors","confidence":"high","evidenceCode":"context.snapshot.apfs-local"},
+    {"ruleID":"snapshot.time-machine.local","ruleVersion":1,"category":"snapshot_factors","confidence":"high","evidenceCode":"context.snapshot.time-machine-local"}
+  ],
+  "cases": [
+    {"id":"developer-derived-root","absolutePath":"/Fixtures/Homes/alex/Library/Developer/Xcode/DerivedData","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"developer.xcode.derived-data"},
+    {"id":"developer-derived-build-products","absolutePath":"/Fixtures/Homes/alex/Library/Developer/Xcode/DerivedData/App-a/Build/Products","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"developer.xcode.derived-data"},
+    {"id":"developer-derived-renamed-home","absolutePath":"/Fixtures/Homes/renamed-account/Library/Developer/Xcode/DerivedData/App-b/Index.noindex","homeDirectory":"/Fixtures/Homes/renamed-account","expectedRuleID":"developer.xcode.derived-data"},
+    {"id":"developer-simulator-root","absolutePath":"/Fixtures/Homes/alex/Library/Developer/CoreSimulator","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"developer.xcode.simulator"},
+    {"id":"developer-simulator-device-data","absolutePath":"/Fixtures/Homes/alex/Library/Developer/CoreSimulator/Devices/device-a/data","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"developer.xcode.simulator"},
+    {"id":"developer-simulator-unicode-home","absolutePath":"/Fixtures/Homes/测试账户/Library/Developer/CoreSimulator/Caches","homeDirectory":"/Fixtures/Homes/测试账户","expectedRuleID":"developer.xcode.simulator"},
+    {"id":"developer-xcode-cache-root","absolutePath":"/Fixtures/Homes/alex/Library/Caches/com.apple.dt.Xcode","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"developer.xcode.cache"},
+    {"id":"developer-xcode-cache-deep","absolutePath":"/Fixtures/Homes/alex/Library/Caches/com.apple.dt.Xcode/Downloads/item","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"developer.xcode.cache"},
+
+    {"id":"virtualization-docker-container-root","absolutePath":"/Fixtures/Homes/alex/Library/Containers/com.docker.docker","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"virtualization.docker.container"},
+    {"id":"virtualization-docker-vm-disk","absolutePath":"/Fixtures/Homes/alex/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"virtualization.docker.container"},
+    {"id":"virtualization-docker-container-renamed-home","absolutePath":"/Fixtures/Homes/dev-two/Library/Containers/com.docker.docker/Data/log","homeDirectory":"/Fixtures/Homes/dev-two","expectedRuleID":"virtualization.docker.container"},
+    {"id":"virtualization-docker-group-root","absolutePath":"/Fixtures/Homes/alex/Library/Group Containers/group.com.docker","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"virtualization.docker.group"},
+    {"id":"virtualization-docker-group-settings","absolutePath":"/Fixtures/Homes/alex/Library/Group Containers/group.com.docker/settings-store.json","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"virtualization.docker.group"},
+    {"id":"virtualization-utm-root","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/UTM","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"virtualization.utm"},
+    {"id":"virtualization-utm-bundle","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/UTM/Data/Linux.utm/Data/drive.qcow2","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"virtualization.utm"},
+    {"id":"virtualization-utm-unicode-home","absolutePath":"/Fixtures/Homes/虚拟机用户/Library/Application Support/UTM/Data/Test.utm","homeDirectory":"/Fixtures/Homes/虚拟机用户","expectedRuleID":"virtualization.utm"},
+
+    {"id":"ai-ollama-models-root","absolutePath":"/Fixtures/Homes/alex/.ollama/models","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"ai.ollama.models"},
+    {"id":"ai-ollama-blob","absolutePath":"/Fixtures/Homes/alex/.ollama/models/blobs/sha256-item","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"ai.ollama.models"},
+    {"id":"ai-ollama-renamed-home","absolutePath":"/Fixtures/Homes/ml-user/.ollama/models/manifests/registry","homeDirectory":"/Fixtures/Homes/ml-user","expectedRuleID":"ai.ollama.models"},
+    {"id":"ai-huggingface-root","absolutePath":"/Fixtures/Homes/alex/.cache/huggingface","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"ai.huggingface.cache"},
+    {"id":"ai-huggingface-hub","absolutePath":"/Fixtures/Homes/alex/.cache/huggingface/hub/models--org--model","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"ai.huggingface.cache"},
+    {"id":"ai-huggingface-assets","absolutePath":"/Fixtures/Homes/alex/.cache/huggingface/assets/tool/default","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"ai.huggingface.cache"},
+    {"id":"ai-lm-studio-models-root","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/LM Studio/models","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"ai.lm-studio.models"},
+    {"id":"ai-lm-studio-model-file","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/LM Studio/models/publisher/model/model.gguf","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"ai.lm-studio.models"},
+
+    {"id":"creative-adobe-cache-root","absolutePath":"/Fixtures/Homes/alex/Library/Caches/Adobe","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"creative.adobe.cache"},
+    {"id":"creative-adobe-cache-premiere","absolutePath":"/Fixtures/Homes/alex/Library/Caches/Adobe/Premiere Pro/24.0","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"creative.adobe.cache"},
+    {"id":"creative-adobe-cache-unicode-home","absolutePath":"/Fixtures/Homes/剪辑师/Library/Caches/Adobe/After Effects","homeDirectory":"/Fixtures/Homes/剪辑师","expectedRuleID":"creative.adobe.cache"},
+    {"id":"creative-adobe-media-root","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/Adobe/Common/Media Cache Files","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"creative.adobe.media-cache"},
+    {"id":"creative-adobe-media-item","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/Adobe/Common/Media Cache Files/clip.cfa","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"creative.adobe.media-cache"},
+    {"id":"creative-davinci-cache-root","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/Blackmagic Design/DaVinci Resolve/CacheClip","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"creative.davinci.cache-clip"},
+    {"id":"creative-davinci-cache-project","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/Blackmagic Design/DaVinci Resolve/CacheClip/project-a","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"creative.davinci.cache-clip"},
+    {"id":"creative-davinci-renamed-home","absolutePath":"/Fixtures/Homes/editor-two/Library/Application Support/Blackmagic Design/DaVinci Resolve/CacheClip/job","homeDirectory":"/Fixtures/Homes/editor-two","expectedRuleID":"creative.davinci.cache-clip"},
+
+    {"id":"games-steam-root","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/Steam/steamapps","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"games.steam.steamapps"},
+    {"id":"games-steam-common","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/Steam/steamapps/common/Game","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"games.steam.steamapps"},
+    {"id":"games-steam-workshop","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/Steam/steamapps/workshop/content/100","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"games.steam.steamapps"},
+    {"id":"games-epic-root","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/Epic","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"games.epic"},
+    {"id":"games-epic-unreal","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/Epic/UnrealEngine/Common","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"games.epic"},
+    {"id":"games-blizzard-root","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/Blizzard","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"games.blizzard"},
+    {"id":"games-blizzard-cache","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/Blizzard/Battle.net/Cache","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"games.blizzard"},
+    {"id":"games-blizzard-renamed-home","absolutePath":"/Fixtures/Homes/gamer-two/Library/Application Support/Blizzard/Agent/data","homeDirectory":"/Fixtures/Homes/gamer-two","expectedRuleID":"games.blizzard"},
+
+    {"id":"logs-user-caches-root","absolutePath":"/Fixtures/Homes/alex/Library/Caches","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"generic.user-caches"},
+    {"id":"logs-user-cache-app","absolutePath":"/Fixtures/Homes/alex/Library/Caches/com.example.app/data","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"generic.user-caches"},
+    {"id":"logs-user-logs-root","absolutePath":"/Fixtures/Homes/alex/Library/Logs","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"generic.user-logs"},
+    {"id":"logs-user-log-app","absolutePath":"/Fixtures/Homes/alex/Library/Logs/Example/session.log","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"generic.user-logs"},
+    {"id":"logs-system-caches-root","absolutePath":"/Library/Caches","expectedRuleID":"generic.system-caches"},
+    {"id":"logs-system-cache-service","absolutePath":"/Library/Caches/com.example.service/data","expectedRuleID":"generic.system-caches"},
+    {"id":"logs-system-logs-root","absolutePath":"/Library/Logs","expectedRuleID":"generic.system-logs"},
+    {"id":"logs-system-diagnostic-reports","absolutePath":"/Library/Logs/DiagnosticReports/item.crash","expectedRuleID":"generic.system-logs"},
+
+    {"id":"cloud-mobile-documents-root","absolutePath":"/Fixtures/Homes/alex/Library/Mobile Documents","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"cloud.mobile-documents"},
+    {"id":"cloud-mobile-documents-drive","absolutePath":"/Fixtures/Homes/alex/Library/Mobile Documents/com~apple~CloudDocs/Folder/item","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"cloud.mobile-documents"},
+    {"id":"cloud-mobile-documents-renamed-home","absolutePath":"/Fixtures/Homes/cloud-user/Library/Mobile Documents/provider/item","homeDirectory":"/Fixtures/Homes/cloud-user","expectedRuleID":"cloud.mobile-documents"},
+    {"id":"cloud-storage-root","absolutePath":"/Fixtures/Homes/alex/Library/CloudStorage","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"cloud.storage-providers"},
+    {"id":"cloud-storage-provider","absolutePath":"/Fixtures/Homes/alex/Library/CloudStorage/Provider/Folder/item","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"cloud.storage-providers"},
+    {"id":"cloud-storage-unicode-home","absolutePath":"/Fixtures/Homes/云用户/Library/CloudStorage/Drive/item","homeDirectory":"/Fixtures/Homes/云用户","expectedRuleID":"cloud.storage-providers"},
+    {"id":"cloud-docs-root","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/CloudDocs","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"cloud.apple-cloud-docs"},
+    {"id":"cloud-docs-session","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/CloudDocs/session/state","homeDirectory":"/Fixtures/Homes/alex","expectedRuleID":"cloud.apple-cloud-docs"},
+
+    {"id":"snapshot-apfs-data-volume","absolutePath":"/System/Volumes/Data","snapshotFactorObservation":"local_apfs_snapshot","expectedRuleID":"snapshot.apfs.local"},
+    {"id":"snapshot-apfs-private-var","absolutePath":"/private/var","snapshotFactorObservation":"local_apfs_snapshot","expectedRuleID":"snapshot.apfs.local"},
+    {"id":"snapshot-apfs-user-documents","absolutePath":"/Fixtures/Homes/alex/Documents","homeDirectory":"/Fixtures/Homes/alex","snapshotFactorObservation":"local_apfs_snapshot","expectedRuleID":"snapshot.apfs.local"},
+    {"id":"snapshot-apfs-unicode-path","absolutePath":"/Fixtures/卷/数据","snapshotFactorObservation":"local_apfs_snapshot","expectedRuleID":"snapshot.apfs.local"},
+    {"id":"snapshot-time-machine-data-volume","absolutePath":"/System/Volumes/Data","snapshotFactorObservation":"time_machine_local_snapshot","expectedRuleID":"snapshot.time-machine.local"},
+    {"id":"snapshot-time-machine-user-documents","absolutePath":"/Fixtures/Homes/alex/Documents","homeDirectory":"/Fixtures/Homes/alex","snapshotFactorObservation":"time_machine_local_snapshot","expectedRuleID":"snapshot.time-machine.local"},
+    {"id":"snapshot-time-machine-projects","absolutePath":"/Fixtures/Projects","snapshotFactorObservation":"time_machine_local_snapshot","expectedRuleID":"snapshot.time-machine.local"},
+    {"id":"snapshot-time-machine-unicode-path","absolutePath":"/Fixtures/备份/项目","snapshotFactorObservation":"time_machine_local_snapshot","expectedRuleID":"snapshot.time-machine.local"},
+
+    {"id":"unknown-developer-derived-boundary","absolutePath":"/Fixtures/Homes/alex/Library/Developer/Xcode/DerivedDataBackup/App","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-developer-simulator-boundary","absolutePath":"/Fixtures/Homes/alex/Library/Developer/CoreSimulatorBackup/Devices","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-developer-cache-boundary","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/com.apple.dt.XcodeBeta/index","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-developer-wrong-case","absolutePath":"/Fixtures/Homes/alex/library/Developer/Xcode/DerivedData/App","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+
+    {"id":"unknown-virtualization-docker-helper","absolutePath":"/Fixtures/Homes/alex/Library/Containers/com.docker.helper/Data","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-virtualization-docker-group-boundary","absolutePath":"/Fixtures/Homes/alex/Library/Group Containers/group.com.dockerhelper/data","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-virtualization-utm-boundary","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/UTM Backup/Test.utm","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-virtualization-name-only","absolutePath":"/Fixtures/Homes/alex/Documents/UTM Projects/Test","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+
+    {"id":"unknown-ai-ollama-history","absolutePath":"/Fixtures/Homes/alex/.ollama/history","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-ai-huggingface-boundary","absolutePath":"/Fixtures/Homes/alex/.cache/huggingfaceBackup/model","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-ai-lm-studio-singular","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/LM Studio/model/item","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-ai-model-name-only","absolutePath":"/Fixtures/Homes/alex/Documents/AI Models/model.gguf","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+
+    {"id":"unknown-creative-adobe-boundary","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/AdobeBackup/item","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-creative-media-singular","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/Adobe/Common/Media Cache File/item","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-creative-davinci-boundary","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/Blackmagic Design/DaVinci Resolve/CacheClipBackup/item","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-creative-name-only","absolutePath":"/Fixtures/Homes/alex/Documents/Adobe Cache Notes/item","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+
+    {"id":"unknown-games-steam-boundary","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/Steam/steamappsBackup/Game","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-games-epic-name-variant","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/Epic Games/data","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-games-blizzard-boundary","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/BlizzardBackup/data","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-games-name-only","absolutePath":"/Fixtures/Homes/alex/Documents/Steam Projects/Game","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+
+    {"id":"unknown-logs-user-cache-boundary","absolutePath":"/Fixtures/Homes/alex/Library/CachesBackup/item","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-logs-user-log-boundary","absolutePath":"/Fixtures/Homes/alex/Library/LogsArchive/item","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-logs-system-cache-boundary","absolutePath":"/Library/CachesBackup/item","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-logs-system-prefix","absolutePath":"/System/Library/Logs/item","expectedUnknown":"no_matching_rule"},
+
+    {"id":"unknown-cloud-mobile-boundary","absolutePath":"/Fixtures/Homes/alex/Library/Mobile DocumentsBackup/item","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-cloud-storage-boundary","absolutePath":"/Fixtures/Homes/alex/Library/CloudStorageBackup/item","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-cloud-docs-boundary","absolutePath":"/Fixtures/Homes/alex/Library/Application Support/CloudDocsBackup/item","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-cloud-name-only","absolutePath":"/Fixtures/Homes/alex/Documents/CloudStorage Notes/item","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+
+    {"id":"unknown-snapshot-apfs-name-only","absolutePath":"/Fixtures/Homes/alex/Snapshots/APFS Local","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-snapshot-time-machine-name-only","absolutePath":"/Fixtures/Homes/alex/Time Machine Backups","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-snapshot-system-name-only","absolutePath":"/System/Volumes/Data/.snapshots/local","expectedUnknown":"no_matching_rule"},
+    {"id":"unknown-snapshot-unrelated","absolutePath":"/Fixtures/Homes/alex/Documents/Research/data","homeDirectory":"/Fixtures/Homes/alex","expectedUnknown":"no_matching_rule"}
+  ]
+}

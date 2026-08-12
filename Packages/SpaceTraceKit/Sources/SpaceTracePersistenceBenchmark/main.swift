@@ -2,11 +2,15 @@ import Darwin
 import Foundation
 import SQLite3
 import SpaceTraceApplication
-import SpaceTracePersistence
+@_spi(Benchmark) import SpaceTracePersistence
 
 @main
 enum SpaceTracePersistenceBenchmark {
     static func main() async throws {
+        if CommandLine.arguments.contains("--mode") {
+            try await runV11Prototype()
+            return
+        }
         let rowCount = try requestedRowCount()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(
             "SpaceTrace-history-benchmark-\(UUID().uuidString)",
@@ -62,8 +66,67 @@ enum SpaceTracePersistenceBenchmark {
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        FileHandle.standardOutput.write(try encoder.encode(output))
-        FileHandle.standardOutput.write(Data("\n".utf8))
+        try encoder.encode(output).write(
+            to: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "SpaceTrace-history-benchmark-\(rowCount).json"
+            ),
+            options: .atomic
+        )
+    }
+
+    private static func runV11Prototype() async throws {
+        let arguments = CommandLine.arguments
+        guard value(after: "--mode", in: arguments) == "v11-prototype",
+              let sampleText = value(after: "--directory-samples", in: arguments),
+              let directorySamples = Int(sampleText),
+              directorySamples == 500_000 || directorySamples == 1_000_000,
+              let scenarioText = value(after: "--scenario", in: arguments)
+        else {
+            throw BenchmarkError.arguments
+        }
+        let scenarios: [SQLiteHistoricalPrototypeScenario]
+        if scenarioText == "matrix" {
+            scenarios = SQLiteHistoricalPrototypeScenario.allCases
+        } else if let scenario = SQLiteHistoricalPrototypeScenario(rawValue: scenarioText) {
+            scenarios = [scenario]
+        } else {
+            throw BenchmarkError.arguments
+        }
+
+        var results: [SQLiteHistoricalPrototypeResult] = []
+        for scenario in scenarios {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+                "SpaceTrace-v11-\(directorySamples)-\(scenario.rawValue)-\(UUID().uuidString)",
+                isDirectory: true
+            )
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let databaseURL = root.appendingPathComponent("SpaceTrace.sqlite")
+            let repository = try SQLiteEventJournalRepository(databaseURL: databaseURL)
+            try await repository.close()
+            results.append(
+                try SQLiteHistoricalFindingSchema.runPrototype(
+                    databaseURL: databaseURL,
+                    directorySamples: directorySamples,
+                    scenario: scenario
+                )
+            )
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(results).write(
+            to: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "SpaceTrace-v11-prototype-\(directorySamples).json"
+            ),
+            options: .atomic
+        )
+    }
+
+    private static func value(after option: String, in arguments: [String]) -> String? {
+        guard let index = arguments.firstIndex(of: option),
+              arguments.indices.contains(index + 1)
+        else { return nil }
+        return arguments[index + 1]
     }
 
     private static func requestedRowCount() throws -> Int {

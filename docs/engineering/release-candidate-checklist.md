@@ -101,23 +101,27 @@ It separately reports fresh launch, graceful same-build restart, and independent
 
 | Row | Expected result | Current qualification |
 |---|---|---|
-| Fresh copy from mounted DMG | App launches only after the disclosed per-app Gatekeeper exception; no fabricated history | Open |
-| Same-build quit and restart | Same bundle identity restores valid bookmarks without another picker | Open for packaged RC |
-| Replace Applications copy with a separately built RC | App launches; existing bookmark either restores exactly or presents explicit reauthorization | Open; never assume ad-hoc designated-requirement continuity |
+| Fresh copy from mounted DMG | App launches only after the disclosed per-app Gatekeeper exception; no fabricated history | Read-only mount, copy, quarantine, and expected Gatekeeper rejection passed for `0.1.0-rc.3`; clean-account **Open Anyway** launch remains open |
+| Same-build quit and restart | Same bundle identity restores valid bookmarks without another picker | Process restart passed under a disposable identity; packaged bookmark continuity remains open |
+| Replace Applications copy with a separately built RC | App launches; existing bookmark either restores exactly or presents explicit reauthorization | Independent-binary process replacement passed; packaged bookmark continuity remains open and must not be assumed from ad-hoc signing |
 | Stale or revoked grant | No silent refresh or scope widening; user must select again | Deterministic fixture passed; genuine RC condition open |
 | Permission denied | Existing verified state is preserved or access is shown as unavailable; no scan starts from incomplete capability | Open for packaged RC |
 | External volume absent and same Volume UUID returns | Unavailable state while absent; exact authorization resumes when the same identity returns | Earlier signed-sandbox smoke passed; new RC row open |
 | Same-name replacement with a different Volume UUID | Old authorization does not transfer | Native lifecycle passed; packaged UI row open |
 | Database/schema replacement | Migration backup/recovery behavior matches released-schema fixtures; no silent rebuild | Deterministic tests passed; packaged upgrade row open |
 
-### Current-host non-interactive evidence (2026-08-10)
+### Current-host candidate evidence (2026-08-13)
 
-Two independent `0.1.0-rc.1` artifacts were built from clean commit `f2119be3fe0ed05e98ef5ec3656e6f7ccbe1d860`. Both packaging runs passed signature, entitlement, architecture, deployment-target, DMG, manifest, and checksum verification. As expected, their executable and DMG hashes differed; each manifest recorded its own values and made no byte-identical claim. `spctl` returned 3 and `rejected` for the ad-hoc unnotarized App.
+Two independent `0.1.0-rc.3` artifacts were built on macOS 26.6.1 with Xcode 26.1.1 from clean commit `d4f6cde5ffd328e21156b084fe761eb13aa09699`. Both packaging runs passed signature, exact-entitlement, architecture, deployment-target, DMG, manifest, and checksum verification. Their independent executable SHA-256 values were `6f24fa09d1b02c6d96605f0043afbd053385a2504dc40e73a35bbba6351bb359` and `bd00c70c98cec6d4a7237a98f731b333ae946eb6aece583cdd7cdc51a9eba725`; the primary DMG SHA-256 was `781fcacc98c9e53513876a524349541142bb02fd1c864eb9b451219745b84368`. Each manifest recorded its own values and made no byte-identical claim.
+
+The primary DMG mounted read-only and exposed exactly `SpaceTrace.app`, the `/Applications` symlink, and `READ-ME-FIRST.txt`. A copied App carrying a synthetic download-quarantine attribute still passed strict code-sign verification. `spctl` returned 3 and `rejected`; `syspolicy_check distribution` returned 70 and independently reported an ad-hoc signature plus a missing notarization ticket. The executable and `Info.plist` both recorded macOS 15.6 as their minimum. These checks prove the declared artifact and trust boundary on the current host; they do not replace a clean-account **Open Anyway** launch or macOS 15.6 runtime qualification.
+
+The Apple-identity-signed Xcode sandbox runner completed all 14 authorization/history/finding/export UI scenarios. The diagnostic-export case opened the real `NSSavePanel`, confirmed a user-selected destination, read the resulting JSON from disk, and verified the 2 MiB bound, redacted path mode, and no-upload declaration. That case also passed three consecutive focused repetitions. This qualifies the current-host signed-sandbox save path; it does not claim that a quarantined ad-hoc RC has completed the manual Gatekeeper exception on a clean account.
 
 Using the first App and then the independently built replacement under one disposable Bundle ID, fresh launch, graceful same-build restart, and replacement launch all passed. No directory was selected. macOS containermanager privacy denied both direct deletion and the system `trash` operation for the approximately 32 KiB disposable container, so cleanup is recorded as blocked rather than passed. The exact current-host residual is:
 
 ```text
-~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260810152354p52734
+~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260812183820p22237
 ```
 
 Removing it requires a separate, explicit user-authorized Full Disk Access action. It contains qualification data only; no monitored directory was modified.
@@ -133,4 +137,4 @@ If a replacement build requires directory reselection, the GitHub Release notes 
 
 ## Public-release blockers
 
-This tester channel does not close Developer ID signing, notarization/stapling, a quarantined clean-Mac download test, macOS 15.6 runtime qualification, the complete replacement matrix, ADR-003/ADR-004 review, or the explicit release decision gate.
+This tester channel does not close Developer ID signing, notarization/stapling, a quarantined clean-account **Open Anyway** launch, macOS 15.6 runtime qualification, bookmark continuity across an independently built replacement, the complete permission/replacement matrix, ADR-003/ADR-004/ADR-006 review, license/notices/SBOM approval, manual accessibility/usability review, or the explicit release decision gate.

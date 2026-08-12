@@ -2,7 +2,7 @@
 
 状态：**打包契约已实现；尚未具备公开分发资格**
 
-最近更新：2026-08-10
+最近更新：2026-08-13
 
 英文事实源：[release-candidate-checklist.md](release-candidate-checklist.md)。本文是便于中文阅读的对应译文；如两者存在差异，以英文文档为工程事实源，并应在同一次变更中修正译文。
 
@@ -98,23 +98,27 @@ make qualify-release-candidate \
 
 | 场景 | 期望结果 | 当前资格状态 |
 |---|---|---|
-| 从挂载 DMG 全新复制 | 只在完成明确披露的单 App Gatekeeper 例外后启动；不伪造历史 | 未完成 |
-| 同构建退出并重启 | 相同 bundle identity 无需再次选择即可精确恢复有效 bookmark | 对打包 RC 未完成 |
-| 使用另一次独立构建的 RC 替换“应用程序”副本 | App 可启动；原 bookmark 要么精确恢复，要么明确提示重新授权 | 未完成；不能假设 ad-hoc designated requirement 连续 |
+| 从挂载 DMG 全新复制 | 只在完成明确披露的单 App Gatekeeper 例外后启动；不伪造历史 | `0.1.0-rc.3` 已通过只读挂载、复制、quarantine 和预期 Gatekeeper 拒绝；干净账户的**仍要打开**启动仍未完成 |
+| 同构建退出并重启 | 相同 bundle identity 无需再次选择即可精确恢复有效 bookmark | 一次性身份下的进程重启已通过；打包 bookmark 连续性仍未完成 |
+| 使用另一次独立构建的 RC 替换“应用程序”副本 | App 可启动；原 bookmark 要么精确恢复，要么明确提示重新授权 | 独立二进制的进程替换已通过；打包 bookmark 连续性仍未完成，不能从 ad-hoc 签名推断 |
 | stale 或已撤销授权 | 不静默刷新或扩大 scope；必须由用户再次选择 | 确定性 fixture 已通过；真实 RC 条件未完成 |
 | 权限被拒绝 | 保留已有可信状态或显示不可用；不能在能力不完整时开始扫描 | 对打包 RC 未完成 |
 | 外置卷缺席，随后同一 Volume UUID 返回 | 缺席时显示不可用；相同身份返回后恢复精确授权 | 早期签名沙盒 smoke 已通过；新 RC 行未完成 |
 | 同名但不同 Volume UUID 的替换卷 | 旧授权不得转移 | 原生生命周期已通过；打包 UI 行未完成 |
 | 数据库/Schema 替换 | 迁移备份与恢复符合 released-schema fixture，不静默重建 | 确定性测试已通过；打包升级行未完成 |
 
-### 当前主机非交互证据（2026-08-10）
+### 当前主机候选证据（2026-08-13）
 
-从干净 commit `f2119be3fe0ed05e98ef5ec3656e6f7ccbe1d860` 独立生成了两份 `0.1.0-rc.1` 产物。两次运行的签名、entitlement、架构、部署目标、DMG、manifest 与 checksum 校验都通过。与预期相同，两份可执行文件和 DMG 的哈希不同；各自 manifest 记录自己的真实值，且没有声称字节完全一致。`spctl` 对 ad-hoc 未公证 App 返回 3 和 `rejected`。
+在 macOS 26.6.1、Xcode 26.1.1 上，从干净 commit `d4f6cde5ffd328e21156b084fe761eb13aa09699` 独立生成了两份 `0.1.0-rc.3` 产物。两次运行的签名、精确 entitlement、架构、部署目标、DMG、manifest 与 checksum 校验都通过。两份独立可执行文件的 SHA-256 分别为 `6f24fa09d1b02c6d96605f0043afbd053385a2504dc40e73a35bbba6351bb359` 和 `bd00c70c98cec6d4a7237a98f731b333ae946eb6aece583cdd7cdc51a9eba725`；主 DMG 的 SHA-256 为 `781fcacc98c9e53513876a524349541142bb02fd1c864eb9b451219745b84368`。各自 manifest 记录自己的真实值，且没有声称字节完全一致。
+
+主 DMG 以只读方式挂载，内容精确为 `SpaceTrace.app`、指向 `/Applications` 的符号链接和 `READ-ME-FIRST.txt`。带合成下载 quarantine 属性的复制 App 仍通过严格代码签名校验。`spctl` 返回 3 和 `rejected`；`syspolicy_check distribution` 返回 70，并独立报告 ad-hoc 签名与缺失公证票据。可执行文件和 `Info.plist` 都记录 macOS 15.6 最低版本。这些检查证明当前主机上的产物与信任边界，但不能替代干净账户的**仍要打开**启动或 macOS 15.6 运行资格。
+
+使用 Apple 身份签名的 Xcode 沙盒 runner 完成了全部 14 个授权、历史、发现和导出 UI 场景。诊断导出场景打开真实 `NSSavePanel`、确认用户选择的保存位置、从磁盘读取结果 JSON，并验证 2 MiB 上限、路径脱敏模式和不自动上传声明；该场景还连续聚焦运行 3 次通过。这证明当前主机签名沙盒保存路径，但不声称 quarantined ad-hoc RC 已在干净账户完成人工 Gatekeeper 例外。
 
 在同一个一次性 Bundle ID 下，先使用第一份 App，再使用独立构建的替换 App；全新启动、同构建正常重启和替换后启动均通过。流程没有选择目录。macOS containermanager 隐私保护同时拒绝直接删除和系统 `trash` 对约 32 KiB 一次性容器的操作，因此清理记录为阻塞而不是通过。当前主机的精确残留为：
 
 ```text
-~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260810152354p52734
+~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260812183820p22237
 ```
 
 删除它需要另一次由用户明确授权 Full Disk Access 的操作。该容器只含资格测试数据，没有修改任何被监控目录。
@@ -130,4 +134,4 @@ make qualify-release-candidate \
 
 ## 公开发布阻塞项
 
-这个测试渠道不会关闭 Developer ID 签名、公证/票据附加、带 quarantine 的干净 Mac 下载测试、macOS 15.6 真实运行、完整替换矩阵、ADR-003/ADR-004 评审或明确发布决策门禁。
+这个测试渠道不会关闭 Developer ID 签名、公证/票据附加、带 quarantine 的干净账户**仍要打开**启动、macOS 15.6 真实运行、独立构建替换后的 bookmark 连续性、完整权限/替换矩阵、ADR-003/ADR-004/ADR-006 评审、许可证/notices/SBOM 批准、人工无障碍/可用性复核或明确发布决策门禁。

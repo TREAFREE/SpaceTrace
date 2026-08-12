@@ -7,6 +7,10 @@ import SpaceTraceApplication
 @main
 enum SpaceTracePersistenceBenchmark {
     static func main() async throws {
+        if CommandLine.arguments.contains("--historical-corrections") {
+            try await runV12CorrectionPrototype()
+            return
+        }
         if CommandLine.arguments.contains("--mode") {
             try await runV11Prototype()
             return
@@ -72,6 +76,80 @@ enum SpaceTracePersistenceBenchmark {
             ),
             options: .atomic
         )
+    }
+
+    private static func runV12CorrectionPrototype() async throws {
+        let arguments = CommandLine.arguments
+        let sampleCounts: [Int]
+        if let sampleText = value(after: "--directory-samples", in: arguments),
+           let samples = Int(sampleText),
+           samples == 500_000 || samples == 1_000_000 {
+            sampleCounts = [samples]
+        } else if arguments.contains("--directory-samples") {
+            throw BenchmarkError.arguments
+        } else {
+            sampleCounts = [500_000, 1_000_000]
+        }
+
+        let scenarios: [SQLiteHistoricalCorrectionPrototypeScenario]
+        if let scenarioText = value(after: "--scenario", in: arguments) {
+            guard let scenario = SQLiteHistoricalCorrectionPrototypeScenario(rawValue: scenarioText) else {
+                throw BenchmarkError.arguments
+            }
+            scenarios = [scenario]
+        } else {
+            scenarios = SQLiteHistoricalCorrectionPrototypeScenario.allCases
+        }
+
+        var results: [SQLiteHistoricalCorrectionPrototypeResult] = []
+        for samples in sampleCounts {
+            for scenario in scenarios {
+                let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+                    "SpaceTrace-v12-\(samples)-\(scenario.rawValue)-\(UUID().uuidString)",
+                    isDirectory: true
+                )
+                try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: root) }
+                let databaseURL = root.appendingPathComponent("SpaceTrace.sqlite")
+                let repository = try SQLiteEventJournalRepository(databaseURL: databaseURL)
+                try await repository.close()
+                let result = try SQLiteHistoricalCorrectionSchema.runPrototype(
+                    databaseURL: databaseURL,
+                    directorySamples: samples,
+                    scenario: scenario
+                )
+                try enforceV12CorrectionGate(result)
+                results.append(result)
+            }
+        }
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(results).write(
+            to: FileManager.default.temporaryDirectory.appendingPathComponent(
+                "SpaceTrace-v12-historical-corrections.json"
+            ),
+            options: .atomic
+        )
+    }
+
+    private static func enforceV12CorrectionGate(
+        _ result: SQLiteHistoricalCorrectionPrototypeResult
+    ) throws {
+        let hasExpectedCorrectionShape = result.scenario == .correctionChurn
+            ? result.correctingProjectionCount > 0 && result.correctedFindingCount > 0
+            : result.correctingProjectionCount == 0 && result.correctedFindingCount == 0
+        guard result.integrityCheck == "ok",
+              result.foreignKeyViolationCount == 0,
+              result.secureDeleteEnabled,
+              result.reconciliationRevisionCount >= result.retainedV11Nodes * 9 / 10,
+              hasExpectedCorrectionShape,
+              result.checkpointedBytes < 250_000_000,
+              result.terminalRevisionP95Milliseconds <= 500,
+              result.terminalProjectionP95Milliseconds <= 500
+        else {
+            throw BenchmarkError.gate("v12-\(result.requestedDirectorySamples)-\(result.scenario.rawValue)")
+        }
     }
 
     private static func runV11Prototype() async throws {

@@ -9,8 +9,16 @@
 修订、已注册更正输入、线性更正投影 work/checkpoint、完整替换的
 finding/rank/reason，以及 current-effective 查询索引。完整的成对校准现在会在
 同一个事务里写入校准修订、当前真值、v11 frame、scan 完成状态、dirty
-compare-and-delete 和旧物化缓存。它仍不表示注册式更正投影事务、状态/查询 UI、
-macOS 15.6 资格、签名、公证或发布分发已经完成。
+compare-and-delete 和旧物化缓存。它仍不表示状态/查询 UI、macOS 15.6 资格、
+签名、公证或发布分发已经完成。
+
+注册式同帧更正事务现已实现，并由封闭的源码注册表和 package 级应用层授权器
+保护。授权器与 SQLite 都会重新读取不可变前驱和准确的完整 frame 对；SQLite
+会重新运行选定实现，比较完整结果与规范摘要，并在一个原子事务中提交输入、
+work、替换 finding/rank/reason 和 checkpoint。模拟 COMMIT 成功但 ACK 丢失后的
+同 request ID 重试会返回原更正；字段变化、partial/unavailable 证据、语义 no-op、
+生成器不一致和 checkpoint 故障均封闭失败。在具体更正算法及其规范输入 fixture
+通过源码评审前，生产注册表有意不提供任何更正 tuple；运行时不能任意注册实现。
 
 原型复用 v11 不可变观测节点及其两种度量端点。一条紧凑记录同时表示一次完整
 节点观测的小时与日修订；不同的公开修订 ID 由数据库分配的 node ID 加桶判别码
@@ -87,5 +95,6 @@ WAL 截断后为 0 字节。最大的最终场景为 237,023,232 字节，相对
 - dirty revision 竞争失败，以及 superseded、partial、cancelled、failed、
   history-disabled 或已经过期的扫描都不会写入修订。保留事务会先原子删除整个
   同桶链及其 dependent correcting-projection 图，再删除 v11 节点。
-- 注册式更正投影事务以及剩余查询/状态接入门禁仍未完成；本阶段本身尚未完成
-  FR-004。
+- 注册式更正投影事务已实现，并通过严格并发的 Application/SQLite 测试。剩余的
+  current-effective/审计查询、耐久状态、恢复/保留接入、UI 和受控 5 GiB 资格仍
+  未完成；本阶段本身尚未完成 FR-004。

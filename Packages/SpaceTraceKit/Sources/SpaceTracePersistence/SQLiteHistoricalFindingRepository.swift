@@ -2928,7 +2928,7 @@ private extension SQLiteEventJournalRepository {
     }
 }
 
-private enum HistoricalSQLValue {
+enum HistoricalSQLValue {
     case integer(Int64)
     case text(String)
     case blob(Data)
@@ -2994,7 +2994,7 @@ private struct ReconciliationStoredRow {
     }
 }
 
-private struct HistoricalProjectionExpectedFindingRow {
+struct HistoricalProjectionExpectedFindingRow {
     let ordinal: Int
     let findingKeyDigest: Data
     let draftDigest: Data
@@ -3192,7 +3192,7 @@ private func historicalOptionalData(
     return try historicalData(statement, column, "historical_optional_blob")
 }
 
-private func historicalOptionalInteger(
+func historicalOptionalInteger(
     _ statement: OpaquePointer,
     _ column: Int32
 ) throws -> Int64? {
@@ -3201,6 +3201,103 @@ private func historicalOptionalInteger(
         throw SQLiteEventJournalError.corruptStoredValue(field: "historical_optional_integer")
     }
     return sqlite3_column_int64(statement, column)
+}
+
+// Narrow cross-file adapters used by the schema-v12 correction lane. The
+// underlying v11 helpers remain file-private so the rest of Persistence does
+// not acquire a second general-purpose SQLite API.
+extension SQLiteEventJournalRepository {
+    func correctionReadFrame(
+        sequence: ObservationCommitSequence
+    ) throws -> HistoricalFindingObservationFrame? {
+        try readHistoricalFrame(sequence: sequence)
+    }
+
+    func correctionReadProjectionWork(
+        id: HistoricalProjectionWorkID
+    ) throws -> HistoricalProjectionWork? {
+        try readHistoricalProjectionWork(id: id)
+    }
+
+    func correctionValidateRootProjection(id: Int64) throws {
+        _ = try rehydratedHistoricalProjection(id: id)
+    }
+
+    func correctionExpectedRows(
+        work: HistoricalProjectionWork,
+        result: HistoricalFindingGenerationResult
+    ) throws -> [HistoricalProjectionExpectedFindingRow] {
+        try historicalProjectionExpectedRows(work: work, result: result)
+    }
+
+    func correctionTopologicalDrafts(
+        _ drafts: [HistoricalFindingDraft]
+    ) throws -> [HistoricalFindingDraft] {
+        try historicalTopologicalDrafts(drafts)
+    }
+
+    func correctionReasonCode(_ reason: HistoricalFindingReason) throws -> Int64 {
+        try historicalReasonCode(reason)
+    }
+
+    static func correctionMilliseconds(_ date: Date) -> Int64 {
+        historicalMilliseconds(date)
+    }
+
+    func correctionExecute(
+        _ sql: String,
+        integers: [Int64] = [],
+        blobs: [Data] = []
+    ) throws {
+        try historicalExecute(sql, integers: integers, blobs: blobs)
+    }
+
+    func correctionExecuteNullable(
+        _ sql: String,
+        values: [HistoricalSQLValue]
+    ) throws {
+        try historicalExecuteNullable(sql, values: values)
+    }
+
+    func correctionSingleInt(
+        _ sql: String,
+        integers: [Int64] = [],
+        blobs: [Data] = []
+    ) throws -> Int64 {
+        try historicalSingleInt(sql, integers: integers, blobs: blobs)
+    }
+
+    func correctionOptionalInt(
+        _ sql: String,
+        integers: [Int64] = [],
+        blobs: [Data] = []
+    ) throws -> Int64? {
+        try historicalOptionalInt(sql, integers: integers, blobs: blobs)
+    }
+
+    func correctionRows<Result>(
+        _ sql: String,
+        integers: [Int64] = [],
+        blobs: [Data] = [],
+        map: (OpaquePointer) throws -> Result
+    ) throws -> [Result] {
+        try historicalRows(sql, integers: integers, blobs: blobs, map: map)
+    }
+
+    func correctionAppendBigEndian<T: FixedWidthInteger>(
+        _ value: T,
+        to data: inout Data
+    ) {
+        appendHistoricalBigEndian(value, to: &data)
+    }
+}
+
+func correctionData(
+    _ statement: OpaquePointer,
+    _ column: Int32,
+    _ field: String
+) throws -> Data {
+    try historicalData(statement, column, field)
 }
 
 private func historicalText(

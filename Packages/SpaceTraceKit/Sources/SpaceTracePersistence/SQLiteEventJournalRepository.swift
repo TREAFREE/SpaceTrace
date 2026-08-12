@@ -17,6 +17,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
     var injectedFailurePoint: SQLiteEventJournalTestFailurePoint?
     var historicalStartupMaintenancePending = true
     let now: @Sendable () -> Date
+    let historicalProjectionCorrectionRegistry: HistoricalProjectionCorrectionRegistry
 
     public init(databaseURL: URL) throws {
         try self.init(databaseURL: databaseURL, failurePoint: nil)
@@ -26,6 +27,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         databaseURL: URL,
         failurePoint: SQLiteEventJournalTestFailurePoint?,
         now: @escaping @Sendable () -> Date = { Date() },
+        historicalProjectionCorrectionRegistry: HistoricalProjectionCorrectionRegistry = .production,
         historicalStoreGenerationProvider: @escaping @Sendable () throws -> [UInt8] = {
             Array(try SQLiteHistoricalFindingCodec.randomStoreGeneration())
         }
@@ -64,6 +66,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         connection = Mutex(openedDatabase)
         injectedFailurePoint = failurePoint
         self.now = now
+        self.historicalProjectionCorrectionRegistry = historicalProjectionCorrectionRegistry
         if let migrationBackupURL {
             try? FileManager.default.removeItem(at: migrationBackupURL)
         }
@@ -4398,6 +4401,8 @@ enum SQLiteEventJournalTestFailurePoint: Sendable, Equatable {
     case afterHistoricalRetentionCommitBeforeCheckpoint
     case forceHistoricalRetentionSQLiteFull
     case forceHistoricalFindingKeyDigestCollision
+    case beforeHistoricalCorrectionCheckpoint
+    case afterHistoricalCorrectionCommitBeforeReturningReceipt
 }
 
 public enum SQLiteEventJournalError: Error, Sendable, Equatable {
@@ -4425,6 +4430,9 @@ public enum SQLiteEventJournalError: Error, Sendable, Equatable {
     case historicalProjectionWorkMismatch
     case historicalProjectionResultMismatch
     case historicalProjectionImmutableConflict
+    case historicalCorrectionTargetNotFound
+    case historicalCorrectionResultMismatch
+    case historicalCorrectionImmutableConflict
     case historicalRetractionTargetNotFound
     case historicalRetractionExpectedDigestMismatch
     case historicalRetractionImmutableConflict

@@ -12,9 +12,20 @@ complete replacement findings/ranks/reasons, and current-effective query
 indexes. Complete paired calibration now appends reconciliation revisions in
 the same transaction as current truth, v11 frames, scan completion, the dirty
 compare-and-delete, and the legacy materialized cache. It does not claim that
-registered correcting-projection transactions, status/query UI integration,
-macOS 15.6 qualification, signing, notarization, or release distribution is
-complete.
+status/query UI integration, macOS 15.6 qualification, signing, notarization,
+or release distribution is complete.
+
+The registered same-frame correction transaction is now implemented behind a
+closed source registry and a package-scoped Application authorizer. Both the
+authorizer and SQLite reload the immutable predecessor and exact complete
+frame pair; SQLite reruns the selected implementation, compares the complete
+result and canonical digest, and atomically commits input, work, replacement
+findings/ranks/reasons, and checkpoint. Request-ID retries after simulated
+commit acknowledgement loss return the original correction, while changed
+fields, partial/unavailable evidence, semantic no-ops, generator mismatch, and
+checkpoint failure fail closed. The production registry deliberately contains
+no correction tuple until a concrete correction algorithm and canonical input
+fixture receive source review; arbitrary runtime registration is unavailable.
 
 The prototype reuses immutable v11 observation nodes and their two metric
 endpoints. One compact row represents the hourly and daily revisions for one
@@ -107,6 +118,7 @@ truthfully and are not constrained by that long-lived storage gate.
   already-expired scans append no revision. Retention removes an entire
   same-bucket chain and any dependent correcting-projection graph atomically
   before deleting v11 nodes.
-- Registered correcting-projection transactions and the remaining query/status
-  integration gates are still incomplete; this stage alone does not complete
-  FR-004.
+- Registered correcting-projection transactions are implemented and covered by
+  strict-concurrency Application/SQLite tests. Current-effective/audit queries,
+  durable status, recovery/retention integration, UI, and the controlled 5 GiB
+  qualification remain open; this stage alone does not complete FR-004.

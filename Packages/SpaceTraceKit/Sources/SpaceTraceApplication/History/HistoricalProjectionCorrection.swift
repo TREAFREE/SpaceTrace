@@ -33,6 +33,21 @@ public struct HistoricalCorrectionInputFormatVersion:
     }
 }
 
+public struct HistoricalCorrectingProjectionRecordID:
+    Sendable, Equatable, Hashable, Comparable
+{
+    public let rawValue: Int64
+
+    public init(_ rawValue: Int64) throws(HistoricalProjectionCorrectionModelError) {
+        guard rawValue > 0 else { throw .invalidCorrectingProjectionRecordID(rawValue) }
+        self.rawValue = rawValue
+    }
+
+    public static func < (lhs: Self, rhs: Self) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
 /// Semantic implementation identity frozen for one projection. Schema-v11
 /// projections legitimately have no correction-input identity; schema-v12
 /// correcting projections carry both the format and digest.
@@ -168,6 +183,7 @@ public enum HistoricalProjectionCorrectionModelError: Error, Sendable, Equatable
     case invalidRequestIDLength(Int)
     case invalidDigestLength(Int)
     case invalidCorrectionInputFormatVersion(Int)
+    case invalidCorrectingProjectionRecordID(Int64)
     case incompleteCorrectionInputIdentity
     case nonIncreasingFramePair
     case unsupportedMetric

@@ -11,17 +11,21 @@ extension NativeVolumeMonitoringRuntime: VolumeMonitoringRuntime {}
 public actor NativeMonitoringApplicationLifecycle {
     private let catalog: any RestorableWatchedScopeCatalog
     private let runtime: any VolumeMonitoringRuntime
+    private let historicalFindingProjector: (any HistoricalFindingProjecting)?
     private var monitoringTask: Task<Void, Never>?
+    private var historicalProjectionTask: Task<Void, Never>?
     private var operationEpoch: UInt64 = 0
     private var currentState: NativeMonitoringApplicationState = .stopped
     private var lastReport: WatchedScopeRestorationReport?
 
     public init(
         catalog: any RestorableWatchedScopeCatalog,
-        runtime: any VolumeMonitoringRuntime
+        runtime: any VolumeMonitoringRuntime,
+        historicalFindingProjector: (any HistoricalFindingProjecting)? = nil
     ) {
         self.catalog = catalog
         self.runtime = runtime
+        self.historicalFindingProjector = historicalFindingProjector
     }
 
     @discardableResult
@@ -51,6 +55,11 @@ public actor NativeMonitoringApplicationLifecycle {
         }
 
         lastReport = report
+        if let historicalFindingProjector {
+            historicalProjectionTask = Task {
+                _ = try? await historicalFindingProjector.projectPending(limit: 100)
+            }
+        }
         guard report.configuredScopeCount > 0 else {
             currentState = .idleWithoutConfiguredScopes
             return report
@@ -76,8 +85,12 @@ public actor NativeMonitoringApplicationLifecycle {
         currentState = .stopping
         let task = monitoringTask
         monitoringTask = nil
+        let historicalProjectionTask = historicalProjectionTask
+        self.historicalProjectionTask = nil
         task?.cancel()
+        historicalProjectionTask?.cancel()
         await task?.value
+        await historicalProjectionTask?.value
         await catalog.releaseAll()
         currentState = .stopped
     }

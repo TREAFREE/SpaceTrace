@@ -511,13 +511,10 @@ public struct HistoricalFindingQueryLimit: Sendable, Equatable, Hashable {
     }
 }
 
-/// Public history persistence boundary. Evidence invalidation is intentionally
-/// absent: ordinary app, UI, classifier, and cleanup callers cannot request it.
-public protocol HistoricalFindingPersistenceRepository: EventJournalRepository {
-    func finalizeCalibrationWithHistoricalFrames(
-        _ request: HistoricalCalibrationFinalizationRequest
-    ) async throws -> HistoricalCalibrationFinalizationOutcome
-
+/// The narrow persistence seam needed by the recoverable projection lifecycle.
+/// Keeping it separate lets the pure application service be tested without an
+/// event-journal or SQLite implementation.
+public protocol HistoricalFindingProjectionRepository: Sendable {
     func historicalObservationFrame(
         sequence: ObservationCommitSequence
     ) async throws -> HistoricalFindingObservationFrame?
@@ -528,6 +525,17 @@ public protocol HistoricalFindingPersistenceRepository: EventJournalRepository {
         _ result: HistoricalFindingGenerationResult,
         for work: HistoricalProjectionWork
     ) async throws -> HistoricalProjectionCommitOutcome
+}
+
+/// Public history persistence boundary. Evidence invalidation is intentionally
+/// absent: ordinary app, UI, classifier, and cleanup callers cannot request it.
+public protocol HistoricalFindingPersistenceRepository:
+    EventJournalRepository,
+    HistoricalFindingProjectionRepository
+{
+    func finalizeCalibrationWithHistoricalFrames(
+        _ request: HistoricalCalibrationFinalizationRequest
+    ) async throws -> HistoricalCalibrationFinalizationOutcome
 
     func historicalFindingAuditRecord(
         id: HistoricalFindingRecordID

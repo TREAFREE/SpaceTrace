@@ -2,7 +2,7 @@
 
 ## 状态
 
-schema v11 持久化切片已在当前开发主机上实现并通过验证。本文覆盖的 schema、迁移、repository 事务、撤回、保留、恢复夹具以及当前主机规模基准由此收口。但这**不代表** SpaceTrace 已具备发布资格：生产扫描器取证、旧 finalization 路径替换、投影器调度、finding UI、最低系统资格、辅助功能/可用性证据以及分发信任仍未完成。
+schema v11 持久化切片已在当前开发主机上实现并通过验证。本文覆盖的 schema、迁移、repository 事务、撤回、保留、恢复夹具、当前主机规模基准，以及启动时有界恢复 projector work 由此收口。但这**不代表** SpaceTrace 已具备发布资格：生产扫描器取证、旧 finalization 路径替换、生产环境创建 projector work、finding UI、最低系统资格、辅助功能/可用性证据以及分发信任仍未完成。
 
 ADR-004 与 ADR-006 继续保持**提议中（Proposed）**。实现门禁通过只是供评审使用的证据，不等于维护者已经接受 ADR。
 
@@ -76,7 +76,7 @@ History Off 与 Clear History 不同。History Off 会跨重启保持，删除�
 本切片不声称：
 
 - 生产扫描器已经采集合格的目录对象身份、reuse guard、link ambiguity、显式 absence、完整直接子级覆盖或冻结分类；
-- 正在运行的 App 已用 paired v11 finalization 替换旧路径，或已经调度/重启 projector；
+- 正在运行的 App 已用 paired v11 finalization 替换旧路径，并能为已经接入的启动恢复 projector 创建权威 work；
 - 已有 replacement/supersession；v11 只支持证据失效；
 - 概览或菜单栏已经展示 finding、不确定性、撤回、History Off 或 baseline-unavailable 状态；
 - 当前 24 known/8 Unknown 分类语料已经满足独立 60 案例门禁；

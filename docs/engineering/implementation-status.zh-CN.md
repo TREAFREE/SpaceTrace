@@ -81,7 +81,7 @@
 
 ## 明确不作出的声明
 
-- 面向用户的多目录权限列表、批量基线、启动卷容量历史、版本/Schema 元数据、重启恢复、电源/温度/睡眠感知、schema v10 概览/菜单栏历史、纯分类器/finding 投影以及 schema v11 持久化切片均已实现。生产扫描器身份/absence/coverage 采集、paired-v11 finalization 与 projector 调度、replacement/supersession 以及 finding/History-Off UI 尚未接入。24 known/8 Unknown 语料仍低于 PRD 门禁；APFS 唯一块核算、真正枚举器内存中点续扫和用户控制的脱敏导出也仍未完成。
+- 面向用户的多目录权限列表、批量基线、启动卷容量历史、版本/Schema 元数据、重启恢复、电源/温度/睡眠感知、schema v10 概览/菜单栏历史、纯分类器/finding 投影、schema v11 持久化切片，以及启动时有界恢复 pending projector work 均已实现。生产扫描器身份/absence/coverage 采集与 paired-v11 finalization 尚未接入，因此生产环境暂时不会创建新的 projector work；replacement/supersession 与 finding/History-Off UI 也仍未完成。24 known/8 Unknown 语料仍低于 PRD 门禁；APFS 唯一块核算、真正枚举器内存中点续扫和用户控制的脱敏导出也仍未完成。
 - 修正后的当前主机运行关闭了提交 `ed0d660` 的 ad-hoc 24 小时进程/耐久门禁。Activity Monitor 的 CPU、唤醒、内存、I/O 与 thermal 区间仍只是能耗相关证据，不是直接瓦特/焦耳测量；该结果也不能证明普遍的系统调度到达保证、签名状态项交互矩阵、Apple 身份分发、Release Candidate 替换或 macOS 15.6 运行资格。
 - 用户主动基线调度会响应休眠、低电量模式、严重/危急温度，并观察当前供电来源。后台速率预算、系统负载调度以及架构中的 token bucket 尚未实现。硬链接去重受条目预算限制，但每次扫描运行期间仍保存在内存中。
 - 真实 sandbox Powerbox 展示以及 stale/身份失败的重新授权 UI 已实现；当前主机上的持久选择、同一 bundle 重启、明确 App 内移除和同镜像外置卷返回已经通过。真实 stale 证据、UI 流程中的不同 UUID 换卷子项、Apple 身份签名以及 macOS 15.6 运行矩阵仍未完成，或受到当前环境阻塞。
@@ -90,7 +90,7 @@
 - 不会依据 FSEvents 推断精确字节差值或进程归因。
 - 原生资格测试已经在开发主机上覆盖受控卸载、重挂和同名卷替换；但最老支持系统的真实运行、守护进程真实 `UserDropped`/`KernelDropped`、事件 ID 回绕、睡眠/唤醒以及权限撤销仍未完成资格验证；允许采用的证据边界记录在 [FSEvents 连续性丢失资格验证](fsevents-continuity-qualification.zh-CN.md) 中。
 - 启动后自动恢复已经有界且经过测试，但守护进程真实 drop/wrap 条件以及最老支持 macOS 上的恢复行为仍未完成资格验证。
-- 原生 SQLite 适配器现已覆盖 schema v11 不可变账本迁移/digest、原子备份/只读恢复、v10/v11 canary fixture、图保留/History Off、撤回/effective 查询及可复现的 50 万/100 万行当前主机 repository benchmark，但尚未接入生产 paired finalization/projector 生命周期。GRDB 等价、额外生产 artifact 恢复资格、公证及最低系统运行/性能仍未完成。
+- 原生 SQLite 适配器现已覆盖 schema v11 不可变账本迁移/digest、原子备份/只读恢复、v10/v11 canary fixture、图保留/History Off、撤回/effective 查询、可复现的 50 万/100 万行当前主机 repository benchmark，以及启动时恢复持久化 work 的有界应用 projector。生产 paired finalization 尚未接入，因此当前生命周期只会恢复已有 work，而不会消费生产扫描新生成的 frame。GRDB 等价、额外生产 artifact 恢复资格、公证及最低系统运行/性能仍未完成。
 - 尚未完成 macOS 15.6 真实运行资格验证；在较新主机上按 deployment target 编译不等于运行证据。
 - Full Disk Access、App Sandbox 移除、Developer ID 签名、公证、分发及更新行为均未改变，继续由相应的 Proposed 决策约束。
 

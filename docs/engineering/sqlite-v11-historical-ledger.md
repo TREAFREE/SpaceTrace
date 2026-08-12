@@ -2,7 +2,7 @@
 
 ## Status
 
-The schema-v11 persistence slice is implemented and verified on the current development host. This closes the schema, migration, repository transaction, retraction, retention, recovery-fixture, and current-host scale-benchmark work described here. It does **not** make SpaceTrace release-ready: production scanner capture, replacement of the legacy finalization path, projector scheduling, finding UI, minimum-OS qualification, accessibility/usability evidence, and distribution trust remain open.
+The schema-v11 persistence slice is implemented and verified on the current development host. This closes the schema, migration, repository transaction, retraction, retention, recovery-fixture, current-host scale-benchmark, and bounded launch-time projector-resumption work described here. It does **not** make SpaceTrace release-ready: production scanner capture, replacement of the legacy finalization path, production creation of projector work, finding UI, minimum-OS qualification, accessibility/usability evidence, and distribution trust remain open.
 
 ADR-004 and ADR-006 remain **Proposed**. Passing an implementation gate is evidence for review, not maintainer acceptance of an ADR.
 
@@ -76,7 +76,7 @@ The current-host gates pass: complete database below 250,000,000 bytes, peak RSS
 This slice does not claim that:
 
 - the production scanner captures qualified directory object identity, reuse guards, link ambiguity, explicit absence, complete direct-child coverage, or frozen attribution;
-- the running app uses paired v11 finalization instead of the legacy path, or schedules/restarts the projector;
+- the running app uses paired v11 finalization instead of the legacy path and therefore creates authoritative work for the already-connected launch-time projector;
 - replacement/supersession exists; v11 supports evidence invalidation only;
 - Overview or menu-bar UI presents findings, uncertainty, retractions, History Off, or baseline-unavailable state;
 - the current 24-known/8-Unknown classifier corpus satisfies the independent 60-case gate;

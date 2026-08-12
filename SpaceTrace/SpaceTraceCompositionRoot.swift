@@ -62,9 +62,13 @@ struct SpaceTraceCompositionRoot {
             repository: repository,
             scanner: scanner
         )
+        let historicalFindingProjector = HistoricalFindingProjector(
+            repository: repository
+        )
         let lifecycle = NativeMonitoringApplicationLifecycle(
             catalog: catalog,
-            runtime: runtime
+            runtime: runtime,
+            historicalFindingProjector: historicalFindingProjector
         )
         let baselineContextProvider = NativeAuthorizedBaselineScanContextProvider(
             catalog: catalog,

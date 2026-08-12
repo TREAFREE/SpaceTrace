@@ -7,6 +7,25 @@ import Testing
 
 @Suite("SQLite deterministic historical finding projections", .serialized)
 struct SQLiteHistoricalFindingProjectionTests {
+    @Test("The application projector resumes and commits pending SQLite work")
+    func applicationProjectorDrainsSQLiteWork() async throws {
+        let fixture = try HistoricalLedgerTestFixture()
+        defer { fixture.remove() }
+        let repository = try projectionRepository(for: fixture)
+        _ = try await prepareSimpleProjection(repository: repository)
+        let projector = HistoricalFindingProjector(repository: repository)
+
+        let run = try await projector.projectPending(limit: 10)
+
+        #expect(run.processedCount == 2)
+        #expect(run.newlyCommittedCount == 2)
+        #expect(run.alreadyCommittedCount == 0)
+        #expect(try fixture.count("historical_finding_projection") == 2)
+        #expect(try fixture.count("historical_projection_checkpoint") == 2)
+        #expect(try await repository.nextHistoricalProjectionWork() == nil)
+        try await repository.close()
+    }
+
     @Test("The lowest comparison sequence is projected and checkpointed atomically")
     func projectsLowestPendingWork() async throws {
         let fixture = try HistoricalLedgerTestFixture()

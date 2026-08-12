@@ -56,6 +56,36 @@ struct NativeMonitoringApplicationLifecycleTests {
         #expect(await lifecycle.state() == .stopped)
     }
 
+    @Test("Application startup resumes and shutdown cancels historical projection")
+    func ownsHistoricalProjectionLifecycle() async throws {
+        let scope = try WatchedScope(
+            id: WatchedScopeID("scope-primary"),
+            root: DirtyRegionPath("/Volumes/Test/Selected"),
+            mountPath: DirtyRegionPath("/Volumes/Test")
+        )
+        let catalog = RestorableCatalogFake(
+            report: WatchedScopeRestorationReport(
+                configuredScopeCount: 1,
+                scopes: [scope],
+                failures: []
+            )
+        )
+        let runtime = VolumeMonitoringRuntimeFake()
+        let projector = HistoricalFindingProjectingFake()
+        let lifecycle = NativeMonitoringApplicationLifecycle(
+            catalog: catalog,
+            runtime: runtime,
+            historicalFindingProjector: projector
+        )
+
+        _ = try await lifecycle.start()
+        await projector.waitUntilStarted()
+        #expect(await projector.receivedLimits == [100])
+
+        await lifecycle.stop()
+        #expect(await projector.wasCancelled)
+    }
+
     @Test("The application lifecycle rejects duplicate monitoring tasks")
     func rejectsDuplicateStart() async throws {
         let scope = try WatchedScope(
@@ -164,6 +194,33 @@ private actor FailingRestorableCatalogFake: RestorableWatchedScopeCatalog {
 
     func releaseAll() {
         releaseCount += 1
+    }
+}
+
+private actor HistoricalFindingProjectingFake: HistoricalFindingProjecting {
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private(set) var receivedLimits: [Int] = []
+    private(set) var wasCancelled = false
+
+    func projectPending(limit: Int) async throws -> HistoricalFindingProjectionRun {
+        receivedLimits.append(limit)
+        let waiters = startWaiters
+        startWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        do {
+            try await Task.sleep(for: .seconds(3_600))
+        } catch is CancellationError {
+            wasCancelled = true
+            throw CancellationError()
+        }
+        return .empty
+    }
+
+    func waitUntilStarted() async {
+        if receivedLimits.isEmpty == false { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
     }
 }
 

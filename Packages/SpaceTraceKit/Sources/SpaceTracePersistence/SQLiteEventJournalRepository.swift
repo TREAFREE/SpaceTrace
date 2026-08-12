@@ -15,6 +15,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
     /// serialized by the actor itself.
     private let connection: Mutex<OpaquePointer?>
     var injectedFailurePoint: SQLiteEventJournalTestFailurePoint?
+    var historicalStartupMaintenancePending = true
     let now: @Sendable () -> Date
 
     public init(databaseURL: URL) throws {
@@ -1011,14 +1012,57 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         _ = try applyRetention(referenceDate: referenceDate)
     }
 
-    /// Deletes only expired, replaceable history. Current directory truth,
-    /// unresolved dirty work, and the newest baseline for every scope are
-    /// deliberately outside the deletion set.
+    /// Applies the persisted history policy. This is the only entry point used
+    /// by background lifecycle work, so reopening a database can never reset a
+    /// user-selected History Off state back to the default window.
     public func applyRetention(
-        _ policy: SQLiteRetentionPolicy = .default,
         referenceDate: Date = Date()
     ) throws -> SQLiteRetentionReport {
-        let cutoff = Self.milliseconds(policy.cutoff(referenceDate: referenceDate))
+        try applyRetentionDays(
+            readHistoricalRetentionDays(),
+            referenceDate: referenceDate,
+            persistPolicy: false
+        )
+    }
+
+    /// Source-compatible bridge for callers that explicitly choose a positive
+    /// window. The supplied policy is persisted and scrubbed atomically; it is
+    /// intentionally not a default argument or a second source of truth.
+    public func applyRetention(
+        _ policy: SQLiteRetentionPolicy,
+        referenceDate: Date = Date()
+    ) throws -> SQLiteRetentionReport {
+        try applyRetentionDays(
+            policy.pathHistoryDays,
+            referenceDate: referenceDate,
+            persistPolicy: true
+        )
+    }
+
+    func setHistoricalPathHistoryPolicyAndScrub(
+        days: Int,
+        referenceDate: Date
+    ) throws -> SQLiteRetentionReport {
+        try applyRetentionDays(
+            days,
+            referenceDate: referenceDate,
+            persistPolicy: true
+        )
+    }
+
+    private func applyRetentionDays(
+        _ retentionDays: Int,
+        referenceDate: Date,
+        persistPolicy: Bool
+    ) throws -> SQLiteRetentionReport {
+        guard (0...SQLiteRetentionPolicy.maximumPathHistoryDays).contains(retentionDays) else {
+            throw SQLiteRetentionPolicyError.invalidPathHistoryDays(retentionDays)
+        }
+        let referenceMilliseconds = Self.milliseconds(referenceDate)
+        let durationMilliseconds = Int64(retentionDays) * 86_400_000
+        let (unboundedCutoff, cutoffOverflow) = referenceMilliseconds
+            .subtractingReportingOverflow(durationMilliseconds)
+        let cutoff = cutoffOverflow ? Int64.min : unboundedCutoff
         let hourlyCutoff = Self.milliseconds(
             referenceDate.addingTimeInterval(-7 * 86_400)
         )
@@ -1027,28 +1071,64 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         )
         try execute("BEGIN IMMEDIATE TRANSACTION", operation: "begin retention")
 
+        let report: SQLiteRetentionReport
         do {
-            let volumeHistory = try deleteExpiredStartupVolumeHistory(cutoff: cutoff)
-            let hourlyHistory = try deleteExpiredHourlyHistory(cutoff: hourlyCutoff)
-            let pathHistory = try deleteExpiredPathHistory(cutoff: cutoff)
-            let agedDirtyPaths = try ageDirtyPaths(cutoff: dirtyCutoff)
-            let deletedNodes = try deleteExpiredDeletedNodes(cutoff: cutoff)
+            if persistPolicy {
+                try updateHistoricalRetentionPolicy(
+                    days: retentionDays,
+                    updatedAt: max(0, Self.milliseconds(now()))
+                )
+            }
+            let historyDisabled = retentionDays == 0
+            let volumeHistory = historyDisabled
+                ? 0
+                : try deleteExpiredStartupVolumeHistory(cutoff: cutoff)
+            let directoryRows = try deleteHistoricalDirectoryRows(
+                historyDisabled: historyDisabled,
+                hourlyCutoff: hourlyCutoff,
+                pathCutoff: cutoff
+            )
+            let hourlyHistory = directoryRows.hourly
+            let pathHistory = directoryRows.all
+            let agedDirtyPaths = historyDisabled ? 0 : try ageDirtyPaths(cutoff: dirtyCutoff)
+            let deletedNodes = historyDisabled
+                ? try deleteAllDeletedNodes()
+                : try deleteExpiredDeletedNodes(cutoff: cutoff)
             try failIfRequested(at: .afterExpiredDeletedNodesBeforeBaselines)
-            let baselines = try deleteExpiredReplaceableBaselines(cutoff: cutoff)
-            let scanRuns = try deleteExpiredUnreferencedScanRuns(cutoff: cutoff)
+            let baselines = historyDisabled
+                ? try deleteAllAuthorizedBaselines()
+                : try deleteExpiredReplaceableBaselines(cutoff: cutoff)
+            let historicalRetention = try retainHistoricalLedger(
+                referenceMilliseconds: referenceMilliseconds,
+                retentionDays: retentionDays
+            )
+            try writeHistoricalRetentionPaddingIfRequested()
+            let scanRuns = historyDisabled
+                ? try deleteAllUnreferencedScanRuns()
+                : try deleteExpiredUnreferencedScanRuns(cutoff: cutoff)
             try execute("COMMIT TRANSACTION", operation: "commit retention")
-            return SQLiteRetentionReport(
+            report = SQLiteRetentionReport(
                 deletedNodeCount: deletedNodes,
                 baselineCount: baselines,
                 scanRunCount: scanRuns,
                 hourlyHistoryCount: hourlyHistory,
                 pathHistoryCount: pathHistory,
                 agedDirtyPathCount: agedDirtyPaths,
-                volumeHistoryCount: volumeHistory
+                volumeHistoryCount: volumeHistory,
+                historicalBatchCount: historicalRetention.batches,
+                rebasedComparisonCount: historicalRetention.rebasedComparisons
             )
         } catch {
             try rollback(after: error)
         }
+        try checkpointHistoricalScrub()
+        historicalStartupMaintenancePending = false
+        return report
+    }
+
+    func performHistoricalStartupMaintenanceIfNeeded() throws {
+        guard historicalStartupMaintenancePending else { return }
+        _ = try applyRetention(referenceDate: now())
     }
 
     /// Restricts this test database to its current page count so the next
@@ -1061,6 +1141,26 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         try execute(
             "PRAGMA max_page_count = \(pageCount)",
             operation: "constrain test database growth"
+        )
+    }
+
+    func allowDatabaseGrowthForTesting() throws {
+        try execute(
+            "PRAGMA max_page_count = 2147483646",
+            operation: "restore test database growth"
+        )
+    }
+
+    private func writeHistoricalRetentionPaddingIfRequested() throws {
+        guard injectedFailurePoint == .forceHistoricalRetentionSQLiteFull else { return }
+        injectedFailurePoint = nil
+        try execute(
+            "CREATE TABLE spacetrace_retention_full_probe(payload BLOB NOT NULL)",
+            operation: "create historical retention full probe"
+        )
+        try execute(
+            "INSERT INTO spacetrace_retention_full_probe(payload) VALUES(zeroblob(1048576))",
+            operation: "grow historical retention full probe"
         )
     }
 
@@ -3121,6 +3221,367 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         }
     }
 
+    func readHistoricalRetentionDays() throws -> Int {
+        try withStatement(
+            "SELECT path_history_days FROM historical_retention_policy WHERE singleton=1",
+            operation: "read historical retention policy"
+        ) { statement in
+            guard sqlite3_step(statement) == SQLITE_ROW else {
+                throw SQLiteEventJournalError.corruptStoredValue(
+                    field: "historical_retention_policy"
+                )
+            }
+            let value = sqlite3_column_int64(statement, 0)
+            guard (0...30).contains(value) else {
+                throw SQLiteEventJournalError.corruptStoredValue(
+                    field: "historical_retention_policy.path_history_days"
+                )
+            }
+            return Int(value)
+        }
+    }
+
+    private func updateHistoricalRetentionPolicy(days: Int, updatedAt: Int64) throws {
+        try withStatement(
+            "UPDATE historical_retention_policy SET path_history_days=?1,updated_at_ms=max(updated_at_ms,?2) WHERE singleton=1",
+            operation: "update historical retention policy"
+        ) { statement in
+            try check(
+                sqlite3_bind_int64(statement, 1, Int64(days)),
+                operation: "bind historical retention days"
+            )
+            try check(
+                sqlite3_bind_int64(statement, 2, updatedAt),
+                operation: "bind historical policy update time"
+            )
+            try stepExpectingDone(statement, operation: "update historical retention policy")
+            guard sqlite3_changes(try databaseHandle()) == 1 else {
+                throw SQLiteEventJournalError.corruptStoredValue(
+                    field: "historical_retention_policy"
+                )
+            }
+        }
+    }
+
+    private func deleteHistoricalDirectoryRows(
+        historyDisabled: Bool,
+        hourlyCutoff: Int64,
+        pathCutoff: Int64
+    ) throws -> (hourly: Int, all: Int) {
+        if historyDisabled {
+            let hourly = try deleteRows(
+                "DELETE FROM directory_history_sample WHERE bucket_kind='hourly' AND ?1=0",
+                cutoff: 0,
+                operation: "delete disabled hourly history"
+            )
+            let all = try deleteRows(
+                "DELETE FROM directory_history_sample WHERE ?1=0",
+                cutoff: 0,
+                operation: "delete disabled directory history"
+            )
+            return (hourly, all)
+        }
+        let hourly = try deleteExpiredHourlyHistory(cutoff: hourlyCutoff)
+        let all = try deleteExpiredPathHistory(cutoff: pathCutoff)
+        return (hourly, all)
+    }
+
+    private func deleteAllDeletedNodes() throws -> Int {
+        try deleteRows(
+            "DELETE FROM node_current WHERE deleted=1 AND ?1=0",
+            cutoff: 0,
+            operation: "delete disabled historical tombstones"
+        )
+    }
+
+    private func deleteAllAuthorizedBaselines() throws -> Int {
+        let count = try countRows(
+            in: "authorized_baseline_snapshot",
+            operation: "count disabled authorized baselines"
+        )
+        try execute(
+            "DELETE FROM authorized_baseline_snapshot",
+            operation: "delete disabled authorized baselines"
+        )
+        return count
+    }
+
+    private func deleteAllUnreferencedScanRuns() throws -> Int {
+        let database = try databaseHandle()
+        try execute(
+            """
+            DELETE FROM scan_run
+            WHERE NOT EXISTS(SELECT 1 FROM scan_node_stage s WHERE s.scan_run_id=scan_run.id)
+              AND NOT EXISTS(SELECT 1 FROM node_current n WHERE n.last_scan_run_id=scan_run.id)
+              AND NOT EXISTS(SELECT 1 FROM historical_observation_batch b WHERE b.scan_run_id=scan_run.id)
+              AND NOT EXISTS(SELECT 1 FROM historical_calibration_receipt r WHERE r.scan_run_id=scan_run.id)
+            """,
+            operation: "delete disabled unreferenced scan runs"
+        )
+        return Int(sqlite3_changes(database))
+    }
+
+    private func countRows(in table: String, operation: String) throws -> Int {
+        try withStatement("SELECT count(*) FROM \(table)", operation: operation) { statement in
+            guard sqlite3_step(statement) == SQLITE_ROW else {
+                throw SQLiteEventJournalError.corruptStoredValue(field: table)
+            }
+            return Int(sqlite3_column_int64(statement, 0))
+        }
+    }
+
+    /// Deletes a v11 graph only through its dependency roots. The temporary
+    /// key sets contain no path-bearing values and disappear with the
+    /// connection. Foreign keys stay deferred until the complete graph has
+    /// been removed, preserving all-or-nothing rollback on SQLITE_FULL or any
+    /// later validation failure.
+    private func retainHistoricalLedger(
+        referenceMilliseconds: Int64,
+        retentionDays: Int
+    ) throws -> (batches: Int, rebasedComparisons: Int) {
+        let duration = Int64(retentionDays) * 86_400_000
+        let retentionEventMilliseconds = max(0, referenceMilliseconds)
+        try execute("PRAGMA defer_foreign_keys=ON", operation: "defer retention foreign keys")
+        try execute(
+            "CREATE TEMP TABLE IF NOT EXISTS spacetrace_expired_batch(batch_id INTEGER PRIMARY KEY) WITHOUT ROWID",
+            operation: "create expired batch key set"
+        )
+        try execute(
+            "CREATE TEMP TABLE IF NOT EXISTS spacetrace_expired_work(work_id INTEGER PRIMARY KEY) WITHOUT ROWID",
+            operation: "create expired work key set"
+        )
+        try execute(
+            "CREATE TEMP TABLE IF NOT EXISTS spacetrace_rebased_sequence(sequence INTEGER PRIMARY KEY) WITHOUT ROWID",
+            operation: "create rebased sequence key set"
+        )
+        try execute("DELETE FROM spacetrace_rebased_sequence", operation: "clear rebased sequence key set")
+        try execute("DELETE FROM spacetrace_expired_work", operation: "clear expired work key set")
+        try execute("DELETE FROM spacetrace_expired_batch", operation: "clear expired batch key set")
+
+        let expiryPredicate: String
+        if retentionDays == 0 {
+            expiryPredicate = "1"
+        } else {
+            expiryPredicate = "c.expires_at_ms < \(referenceMilliseconds) OR c.retention_anchor_ms + \(duration) < \(referenceMilliseconds)"
+        }
+        try execute(
+            """
+            INSERT INTO spacetrace_expired_batch(batch_id)
+            SELECT DISTINCT f.batch_id
+            FROM historical_observation_frame f
+            JOIN historical_observation_frame_commit c ON c.frame_id=f.frame_id
+            WHERE \(expiryPredicate)
+            """,
+            operation: "select expired historical batches"
+        )
+        try execute(
+            """
+            INSERT INTO spacetrace_expired_work(work_id)
+            SELECT DISTINCT w.work_id
+            FROM historical_projection_work w
+            JOIN historical_observation_frame_commit bc ON bc.sequence=w.baseline_sequence
+            JOIN historical_observation_frame bf ON bf.frame_id=bc.frame_id
+            JOIN historical_observation_frame_commit cc ON cc.sequence=w.comparison_sequence
+            JOIN historical_observation_frame cf ON cf.frame_id=cc.frame_id
+            WHERE bf.batch_id IN (SELECT batch_id FROM spacetrace_expired_batch)
+               OR cf.batch_id IN (SELECT batch_id FROM spacetrace_expired_batch)
+            """,
+            operation: "select expired historical projection work"
+        )
+        try execute(
+            """
+            INSERT INTO spacetrace_rebased_sequence(sequence)
+            SELECT w.comparison_sequence
+            FROM historical_projection_work w
+            JOIN historical_observation_frame_commit cc ON cc.sequence=w.comparison_sequence
+            JOIN historical_observation_frame cf ON cf.frame_id=cc.frame_id
+            WHERE w.work_id IN (SELECT work_id FROM spacetrace_expired_work)
+              AND cf.batch_id NOT IN (SELECT batch_id FROM spacetrace_expired_batch)
+            """,
+            operation: "select retained rebased comparisons"
+        )
+
+        let expiredBatchCount = try countRows(
+            in: "spacetrace_expired_batch",
+            operation: "count expired historical batches"
+        )
+        if expiredBatchCount > 0 {
+            try upsertHistoricalRetentionGap(
+                reasonCode: 1,
+                count: expiredBatchCount,
+                at: retentionEventMilliseconds
+            )
+        }
+        let rebasedCount = try countRows(
+            in: "spacetrace_rebased_sequence",
+            operation: "count retained rebased comparisons"
+        )
+        if rebasedCount > 0 {
+            try upsertHistoricalRetentionGap(
+                reasonCode: 2,
+                count: rebasedCount,
+                at: retentionEventMilliseconds
+            )
+        }
+
+        try execute(
+            "DELETE FROM historical_finding_retraction WHERE retracted_finding_id IN (SELECT finding_id FROM historical_finding WHERE projection_id IN (SELECT projection_id FROM historical_finding_projection WHERE work_id IN (SELECT work_id FROM spacetrace_expired_work)))",
+            operation: "delete expired historical retractions"
+        )
+        try execute(
+            "DELETE FROM historical_finding_positive_rank WHERE projection_id IN (SELECT projection_id FROM historical_finding_projection WHERE work_id IN (SELECT work_id FROM spacetrace_expired_work))",
+            operation: "delete expired historical ranks"
+        )
+        try execute(
+            "DELETE FROM historical_finding_reason_count WHERE projection_id IN (SELECT projection_id FROM historical_finding_projection WHERE work_id IN (SELECT work_id FROM spacetrace_expired_work))",
+            operation: "delete expired historical reasons"
+        )
+        try execute(
+            "DELETE FROM historical_finding WHERE projection_id IN (SELECT projection_id FROM historical_finding_projection WHERE work_id IN (SELECT work_id FROM spacetrace_expired_work))",
+            operation: "delete expired historical findings"
+        )
+        try execute(
+            "DELETE FROM historical_projection_checkpoint WHERE work_id IN (SELECT work_id FROM spacetrace_expired_work)",
+            operation: "delete expired historical projection checkpoints"
+        )
+        try execute(
+            "DELETE FROM historical_finding_projection WHERE work_id IN (SELECT work_id FROM spacetrace_expired_work)",
+            operation: "delete expired historical projections"
+        )
+        try execute(
+            "DELETE FROM historical_projection_work WHERE work_id IN (SELECT work_id FROM spacetrace_expired_work)",
+            operation: "delete expired historical work"
+        )
+        try execute(
+            """
+            INSERT OR IGNORE INTO historical_observation_baseline_checkpoint(
+                frame_sequence,checkpoint_kind,committed_at_ms
+            )
+            SELECT sequence,2,\(retentionEventMilliseconds)
+            FROM spacetrace_rebased_sequence
+            """,
+            operation: "mark retained comparisons rebased"
+        )
+        try failIfRequested(at: .afterHistoricalRetentionFindingsBeforeFrames)
+        try execute(
+            "DELETE FROM historical_observation_baseline_checkpoint WHERE frame_sequence IN (SELECT c.sequence FROM historical_observation_frame_commit c JOIN historical_observation_frame f ON f.frame_id=c.frame_id WHERE f.batch_id IN (SELECT batch_id FROM spacetrace_expired_batch))",
+            operation: "delete expired historical baseline checkpoints"
+        )
+        if retentionDays == 0 {
+            try execute("DELETE FROM historical_calibration_receipt", operation: "delete disabled main receipts")
+        } else {
+            try execute(
+                "DELETE FROM historical_calibration_receipt WHERE (outcome=1 AND (logical_sequence IN (SELECT c.sequence FROM historical_observation_frame_commit c JOIN historical_observation_frame f ON f.frame_id=c.frame_id WHERE f.batch_id IN (SELECT batch_id FROM spacetrace_expired_batch)) OR allocated_sequence IN (SELECT c.sequence FROM historical_observation_frame_commit c JOIN historical_observation_frame f ON f.frame_id=c.frame_id WHERE f.batch_id IN (SELECT batch_id FROM spacetrace_expired_batch)))) OR (outcome=2 AND expires_at_ms < \(referenceMilliseconds))",
+                operation: "delete expired main receipts"
+            )
+        }
+        try execute(
+            "DELETE FROM historical_disabled_calibration_receipt WHERE expires_at_ms < \(referenceMilliseconds)",
+            operation: "delete expired disabled receipts"
+        )
+        try execute(
+            "DELETE FROM historical_observation_frame_commit WHERE frame_id IN (SELECT frame_id FROM historical_observation_frame WHERE batch_id IN (SELECT batch_id FROM spacetrace_expired_batch))",
+            operation: "delete expired historical frame commits"
+        )
+        try execute(
+            "DELETE FROM historical_endpoint_stable_identity WHERE node_id IN (SELECT node_id FROM historical_observation_node WHERE batch_id IN (SELECT batch_id FROM spacetrace_expired_batch))",
+            operation: "delete expired stable evidence"
+        )
+        try execute(
+            "DELETE FROM historical_metric_endpoint WHERE node_id IN (SELECT node_id FROM historical_observation_node WHERE batch_id IN (SELECT batch_id FROM spacetrace_expired_batch))",
+            operation: "delete expired metric endpoints"
+        )
+        try execute(
+            "DELETE FROM historical_observation_node WHERE batch_id IN (SELECT batch_id FROM spacetrace_expired_batch)",
+            operation: "delete expired historical nodes"
+        )
+        try execute(
+            "DELETE FROM historical_observation_frame WHERE batch_id IN (SELECT batch_id FROM spacetrace_expired_batch)",
+            operation: "delete expired historical frames"
+        )
+        try execute(
+            "DELETE FROM historical_observation_batch WHERE batch_id IN (SELECT batch_id FROM spacetrace_expired_batch)",
+            operation: "delete expired historical batches"
+        )
+        try failIfRequested(at: .afterHistoricalRetentionFramesBeforeDictionaries)
+        try execute(
+            "DELETE FROM historical_location WHERE NOT EXISTS(SELECT 1 FROM historical_observation_node n WHERE n.location_key=historical_location.location_key)",
+            operation: "delete orphan historical locations"
+        )
+        try execute(
+            "DELETE FROM frozen_attribution_decision WHERE NOT EXISTS(SELECT 1 FROM historical_observation_node n WHERE n.classification_decision_id=frozen_attribution_decision.decision_id)",
+            operation: "delete orphan historical attribution decisions"
+        )
+        try execute(
+            "DELETE FROM historical_subject WHERE NOT EXISTS(SELECT 1 FROM historical_observation_node n WHERE n.subject_key=historical_subject.subject_key) AND NOT EXISTS(SELECT 1 FROM historical_observation_batch b WHERE b.root_subject_key=historical_subject.subject_key)",
+            operation: "delete orphan historical subjects"
+        )
+        try execute(
+            "DELETE FROM historical_scope WHERE NOT EXISTS(SELECT 1 FROM historical_observation_batch b WHERE b.scope_key=historical_scope.scope_key) AND NOT EXISTS(SELECT 1 FROM historical_subject s WHERE s.scope_key=historical_scope.scope_key) AND NOT EXISTS(SELECT 1 FROM historical_location l WHERE l.scope_key=historical_scope.scope_key)",
+            operation: "delete orphan historical scopes"
+        )
+        return (expiredBatchCount, rebasedCount)
+    }
+
+    private func upsertHistoricalRetentionGap(
+        reasonCode: Int,
+        count: Int,
+        at milliseconds: Int64
+    ) throws {
+        let existing = try withStatement(
+            "SELECT occurrence_count FROM historical_path_free_gap WHERE reason_code=?1",
+            operation: "read path-free historical retention gap"
+        ) { statement -> Int64 in
+            try check(sqlite3_bind_int64(statement, 1, Int64(reasonCode)), operation: "bind existing retention gap reason")
+            switch sqlite3_step(statement) {
+            case SQLITE_ROW:
+                return sqlite3_column_int64(statement, 0)
+            case SQLITE_DONE:
+                return 0
+            case let code:
+                throw sqliteFailure(operation: "read path-free historical retention gap", code: code)
+            }
+        }
+        let (total, overflow) = existing.addingReportingOverflow(Int64(count))
+        guard overflow == false, total > 0 else {
+            throw SQLiteEventJournalError.corruptStoredValue(
+                field: "historical_path_free_gap.occurrence_count"
+            )
+        }
+        try withStatement(
+            """
+            INSERT INTO historical_path_free_gap(
+                reason_code,first_recorded_at_ms,last_recorded_at_ms,occurrence_count
+            ) VALUES(?1,?2,?2,?3)
+            ON CONFLICT(reason_code) DO UPDATE SET
+                last_recorded_at_ms=excluded.last_recorded_at_ms,
+                occurrence_count=?4
+            """,
+            operation: "record path-free historical retention gap"
+        ) { statement in
+            try check(sqlite3_bind_int64(statement, 1, Int64(reasonCode)), operation: "bind retention gap reason")
+            try check(sqlite3_bind_int64(statement, 2, milliseconds), operation: "bind retention gap time")
+            try check(sqlite3_bind_int64(statement, 3, Int64(count)), operation: "bind retention gap count")
+            try check(sqlite3_bind_int64(statement, 4, total), operation: "bind total retention gap count")
+            try stepExpectingDone(statement, operation: "record path-free historical retention gap")
+        }
+    }
+
+    private func checkpointHistoricalScrub() throws {
+        try withStatement(
+            "PRAGMA wal_checkpoint(TRUNCATE)",
+            operation: "checkpoint historical scrub"
+        ) { statement in
+            guard sqlite3_step(statement) == SQLITE_ROW else {
+                throw SQLiteEventJournalError.historicalScrubPending
+            }
+            guard sqlite3_column_int(statement, 0) == 0,
+                  sqlite3_column_int(statement, 1) == 0 else {
+                throw SQLiteEventJournalError.historicalScrubPending
+            }
+        }
+    }
+
     private func deleteExpiredStartupVolumeHistory(cutoff: Int64) throws -> Int {
         try deleteRows(
             """
@@ -3275,6 +3736,14 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 AND NOT EXISTS (
                     SELECT 1 FROM node_current
                     WHERE node_current.last_scan_run_id = scan_run.id
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM historical_observation_batch
+                    WHERE historical_observation_batch.scan_run_id = scan_run.id
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM historical_calibration_receipt
+                    WHERE historical_calibration_receipt.scan_run_id = scan_run.id
                 )
             """
         return try deleteRows(
@@ -3780,6 +4249,9 @@ enum SQLiteEventJournalTestFailurePoint: Sendable, Equatable {
     case afterHistoricalProjectionCommitBeforeReturningReceipt
     case beforeHistoricalRetractionCommit
     case afterHistoricalRetractionCommitBeforeReturningReceipt
+    case afterHistoricalRetentionFindingsBeforeFrames
+    case afterHistoricalRetentionFramesBeforeDictionaries
+    case forceHistoricalRetentionSQLiteFull
     case forceHistoricalFindingKeyDigestCollision
 }
 
@@ -3811,6 +4283,7 @@ public enum SQLiteEventJournalError: Error, Sendable, Equatable {
     case historicalRetractionTargetNotFound
     case historicalRetractionExpectedDigestMismatch
     case historicalRetractionImmutableConflict
+    case historicalScrubPending
     case invalidCursorEncoding(field: String, actualByteCount: Int)
     case corruptStoredValue(field: String)
     case sqliteFailure(operation: String, code: Int32, message: String)

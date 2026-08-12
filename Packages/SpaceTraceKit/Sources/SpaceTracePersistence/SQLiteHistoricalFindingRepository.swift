@@ -6,8 +6,48 @@ import SpaceTraceAttribution
 import SpaceTraceDomain
 
 extension SQLiteEventJournalRepository {
+    public func historicalPathHistoryPolicy() throws -> HistoricalPathHistoryPolicy {
+        try HistoricalPathHistoryPolicy(retentionDays: readHistoricalRetentionDays())
+    }
+
+    public func setHistoricalPathHistoryPolicy(
+        _ policy: HistoricalPathHistoryPolicy
+    ) throws {
+        _ = try setHistoricalPathHistoryPolicyAndScrub(
+            days: policy.retentionDays,
+            referenceDate: now()
+        )
+    }
+
+    public func historicalPathHistoryAvailability(
+        for scopeID: ScopeID
+    ) throws -> HistoricalPathHistoryAvailability {
+        try performHistoricalStartupMaintenanceIfNeeded()
+        guard try readHistoricalRetentionDays() > 0 else { return .historyDisabled }
+        let scope = Data(scopeID.rawValue.utf8)
+        let available = try historicalOptionalInt(
+            """
+            SELECT 1
+            FROM historical_observation_baseline_checkpoint checkpoint
+            JOIN historical_observation_frame_commit commit_row
+              ON commit_row.sequence=checkpoint.frame_sequence
+            JOIN historical_observation_frame frame ON frame.frame_id=commit_row.frame_id
+            JOIN historical_observation_batch batch ON batch.batch_id=frame.batch_id
+            JOIN historical_scope scope ON scope.scope_key=batch.scope_key
+            WHERE scope.scope_id=?
+              AND commit_row.committed_at_ms >= (
+                  SELECT updated_at_ms FROM historical_retention_policy WHERE singleton=1
+              )
+            LIMIT 1
+            """,
+            blobs: [scope]
+        )
+        return available == nil ? .baselineUnavailable : .available
+    }
+
     public func nextHistoricalProjectionWork() throws -> HistoricalProjectionWork? {
-        try readNextHistoricalProjectionWork()
+        try performHistoricalStartupMaintenanceIfNeeded()
+        return try readNextHistoricalProjectionWork()
     }
 
     public func commitHistoricalProjection(
@@ -96,6 +136,7 @@ extension SQLiteEventJournalRepository {
     public func historicalFindingAuditRecord(
         id: HistoricalFindingRecordID
     ) throws -> HistoricalFindingAuditRecord? {
+        try performHistoricalStartupMaintenanceIfNeeded()
         guard let finding = try rehydratedHistoricalFinding(id: id) else {
             return nil
         }
@@ -116,6 +157,7 @@ extension SQLiteEventJournalRepository {
         through comparisonSequence: ObservationCommitSequence,
         limit: HistoricalFindingQueryLimit
     ) throws -> [EffectiveHistoricalFinding] {
+        try performHistoricalStartupMaintenanceIfNeeded()
         let scopeBytes = try SQLiteHistoricalFindingCodec.encodeUTF8(
             scopeID.rawValue,
             field: "scope_id",
@@ -285,7 +327,8 @@ extension SQLiteEventJournalRepository {
     public func historicalObservationFrame(
         sequence: ObservationCommitSequence
     ) throws -> HistoricalFindingObservationFrame? {
-        try readHistoricalFrame(sequence: sequence)
+        try performHistoricalStartupMaintenanceIfNeeded()
+        return try readHistoricalFrame(sequence: sequence)
     }
 
     func finalizeCalibrationPrimitive(
@@ -300,9 +343,25 @@ extension SQLiteEventJournalRepository {
         }
 
         let requestDigest = try historicalRequest.map(canonicalHistoricalRequestDigest)
+        let disabledRequestDigest = historicalRequest.map(canonicalDisabledHistoricalRequestDigest)
         try execute("BEGIN IMMEDIATE TRANSACTION", operation: "begin calibration finalization")
         var responseLossAfterCommit = false
         do {
+            if let historicalRequest,
+               let disabledRequestDigest,
+               try validateDisabledReceiptIfPresent(
+                   request: historicalRequest,
+                   expectedDigest: disabledRequestDigest
+               ) {
+                try execute(
+                    "COMMIT TRANSACTION",
+                    operation: "commit idempotent disabled historical finalization"
+                )
+                return HistoricalCalibrationPrimitiveResult(
+                    legacyPublished: true,
+                    historicalOutcome: .historyDisabled
+                )
+            }
             let context = try readScanRun(runID)
             if let historicalRequest,
                let requestDigest,
@@ -340,12 +399,13 @@ extension SQLiteEventJournalRepository {
                 )
             }
 
+            let retentionDays = try readHistoricalRetentionDays()
             let durableWork = try readExactHistoricalDirtyWork(
                 streamID: streamID,
                 path: workItem.region.path
             )
             guard durableWork?.revision == workItem.revision else {
-                if let requestDigest {
+                if retentionDays > 0, let requestDigest {
                     try insertSupersededReceipt(
                         runID: runID,
                         digest: requestDigest
@@ -365,10 +425,18 @@ extension SQLiteEventJournalRepository {
 
             var historicalOutcome: HistoricalCalibrationFinalizationOutcome?
             if let historicalRequest, let requestDigest {
-                historicalOutcome = try persistHistoricalFrames(
-                    request: historicalRequest,
-                    requestDigest: requestDigest
-                )
+                if retentionDays == 0 {
+                    try insertDisabledReceipt(
+                        request: historicalRequest,
+                        digest: canonicalDisabledHistoricalRequestDigest(historicalRequest)
+                    )
+                    historicalOutcome = .historyDisabled
+                } else {
+                    historicalOutcome = try persistHistoricalFrames(
+                        request: historicalRequest,
+                        requestDigest: requestDigest
+                    )
+                }
             }
             try markMissingDirectoriesDeleted(
                 streamID: streamID,
@@ -376,7 +444,9 @@ extension SQLiteEventJournalRepository {
                 runID: runID
             )
             try publishStagedDirectories(streamID: streamID, runID: runID)
-            try recordDirectoryHistory(streamID: streamID, runID: runID, observedAt: now())
+            if retentionDays > 0 {
+                try recordDirectoryHistory(streamID: streamID, runID: runID, observedAt: now())
+            }
             guard try resolve(workItem, for: streamID) else {
                 throw SQLiteEventJournalError.dirtyRevisionChangedDuringFinalization
             }
@@ -403,7 +473,10 @@ extension SQLiteEventJournalRepository {
     }
 }
 
-extension SQLiteEventJournalRepository: HistoricalFindingIntegrityReconciliationRepository {}
+extension SQLiteEventJournalRepository:
+    HistoricalFindingPersistenceRepository,
+    HistoricalFindingIntegrityReconciliationRepository
+{}
 
 struct HistoricalCalibrationPrimitiveResult {
     let legacyPublished: Bool
@@ -1078,6 +1151,29 @@ private extension SQLiteEventJournalRepository {
         )
     }
 
+    func insertDisabledReceipt(
+        request: HistoricalCalibrationFinalizationRequest,
+        digest: Data
+    ) throws {
+        if try validateDisabledReceiptIfPresent(
+            request: request,
+            expectedDigest: digest
+        ) {
+            return
+        }
+        let committedAt = Self.historicalMilliseconds(now())
+        let expiresAt = try addingSevenDays(committedAt)
+        try historicalExecuteNullable(
+            "INSERT INTO historical_disabled_calibration_receipt(receipt_id,request_format_version,canonical_request_sha256,committed_at_ms,expires_at_ms) VALUES(?,1,?,?,?)",
+            values: [
+                .blob(Data(request.disabledReceiptIDBytes)),
+                .blob(digest),
+                .integer(committedAt),
+                .integer(expiresAt),
+            ]
+        )
+    }
+
     func insertHistoricalBaselineCheckpoints(
         logicalSequence: ObservationCommitSequence,
         allocatedSequence: ObservationCommitSequence,
@@ -1109,6 +1205,24 @@ private extension SQLiteEventJournalRepository {
 }
 
 private extension SQLiteEventJournalRepository {
+    func validateDisabledReceiptIfPresent(
+        request: HistoricalCalibrationFinalizationRequest,
+        expectedDigest: Data
+    ) throws -> Bool {
+        var storedDigest: Data?
+        _ = try historicalRows(
+            "SELECT canonical_request_sha256 FROM historical_disabled_calibration_receipt WHERE receipt_id=?",
+            blobs: [Data(request.disabledReceiptIDBytes)]
+        ) { statement in
+            storedDigest = try historicalData(statement, 0, "disabled_receipt.digest")
+        }
+        guard let storedDigest else { return false }
+        guard storedDigest == expectedDigest else {
+            throw SQLiteEventJournalError.historicalImmutableRequestConflict
+        }
+        return true
+    }
+
     func readTerminalHistoricalOutcome(
         request: HistoricalCalibrationFinalizationRequest,
         expectedDigest: Data,
@@ -1165,13 +1279,20 @@ private extension SQLiteEventJournalRepository {
         scopeID: ScopeID
     ) throws -> (logical: ObservationCommitSequence, allocated: ObservationCommitSequence)? {
         let scope = Data(scopeID.rawValue.utf8)
-        let sql = "SELECT l.sequence,a.sequence FROM historical_observation_batch b JOIN historical_observation_frame lf ON lf.batch_id=b.batch_id AND lf.metric=1 JOIN historical_observation_frame af ON af.batch_id=b.batch_id AND af.metric=2 JOIN historical_observation_frame_commit l ON l.frame_id=lf.frame_id JOIN historical_observation_frame_commit a ON a.frame_id=af.frame_id JOIN historical_scope s ON s.scope_key=b.scope_key WHERE s.scope_id=? ORDER BY l.sequence DESC LIMIT 1"
+        let retentionDays = try readHistoricalRetentionDays()
+        let currentMilliseconds = max(0, Self.historicalMilliseconds(now()))
+        let retentionDuration = Int64(retentionDays) * 86_400_000
+        let sql = "SELECT l.sequence,a.sequence FROM historical_observation_batch b JOIN historical_observation_frame lf ON lf.batch_id=b.batch_id AND lf.metric=1 JOIN historical_observation_frame af ON af.batch_id=b.batch_id AND af.metric=2 JOIN historical_observation_frame_commit l ON l.frame_id=lf.frame_id JOIN historical_observation_frame_commit a ON a.frame_id=af.frame_id JOIN historical_scope s ON s.scope_key=b.scope_key WHERE s.scope_id=?1 AND l.expires_at_ms>=?2 AND a.expires_at_ms>=?2 AND l.retention_anchor_ms+?3>=?2 AND a.retention_anchor_ms+?3>=?2 ORDER BY l.sequence DESC LIMIT 1"
         var statement: OpaquePointer?
         let database = try databaseHandle()
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
               let statement else { throw historicalSQLiteError("prepare latest frames") }
         defer { sqlite3_finalize(statement) }
         try bindHistoricalBlob(scope, statement, 1)
+        guard sqlite3_bind_int64(statement, 2, currentMilliseconds) == SQLITE_OK,
+              sqlite3_bind_int64(statement, 3, retentionDuration) == SQLITE_OK else {
+            throw historicalSQLiteError("bind latest frame retention window")
+        }
         let step = sqlite3_step(statement)
         if step == SQLITE_DONE { return nil }
         guard step == SQLITE_ROW else { throw historicalSQLiteError("read latest frames") }
@@ -1485,6 +1606,35 @@ private extension SQLiteEventJournalRepository {
                 append(Data([0]))
             }
         }
+        return Data(SHA256.hash(data: bytes))
+    }
+
+    /// History Off retains only bounded, path-free idempotency evidence. Its
+    /// digest intentionally excludes run/stream/path/candidate and every
+    /// unconstrained string. The receipt key already identifies the run; the
+    /// remaining scalar fields detect materially different retries without
+    /// retaining a path-derived hash.
+    func canonicalDisabledHistoricalRequestDigest(
+        _ request: HistoricalCalibrationFinalizationRequest
+    ) -> Data {
+        var bytes = Data("SpaceTrace.HistoricalCalibrationDisabledRequest.v1".utf8)
+        func append(_ value: UInt64) {
+            var bigEndian = value.bigEndian
+            withUnsafeBytes(of: &bigEndian) { bytes.append(contentsOf: $0) }
+        }
+        append(1)
+        append(0)
+        append(request.workItem.revision.rawValue)
+        append(request.workItem.region.reasons.rawValue)
+        if let cursor = request.workItem.region.maximumCursor {
+            append(1)
+            append(cursor.rawValue)
+        } else {
+            append(0)
+        }
+        append(request.report.coverage == .complete ? 1 : 2)
+        append(UInt64(bitPattern: request.report.entriesVisited))
+        append(UInt64(bitPattern: request.report.directoriesStaged))
         return Data(SHA256.hash(data: bytes))
     }
 

@@ -191,6 +191,22 @@ hdiutil attach -quiet -readonly -nobrowse -mountpoint "$mounted_path" "$dmg_path
 [[ -L "$mounted_path/Applications" ]]
 [[ -f "$mounted_path/READ-ME-FIRST.txt" ]]
 cmp "$notices_path" "$mounted_path/THIRD-PARTY-NOTICES.txt"
+dmg_entries=("${(@f)$(find "$mounted_path" -mindepth 1 -maxdepth 1 -exec basename {} \; | sort)}")
+expected_dmg_entries=(
+    Applications
+    READ-ME-FIRST.txt
+    SpaceTrace.app
+    THIRD-PARTY-NOTICES.txt
+)
+[[ "${(j:\n:)dmg_entries}" == "${(j:\n:)expected_dmg_entries}" ]] || {
+    print -u2 "error: mounted DMG contents differ from the contract"
+    exit 1
+}
+if : >"$mounted_path/.write-probe" 2>/dev/null; then
+    rm -f -- "$mounted_path/.write-probe"
+    print -u2 "error: release DMG unexpectedly accepted a write"
+    exit 1
+fi
 hdiutil detach "$mounted_path" >/dev/null
 mounted_path=""
 

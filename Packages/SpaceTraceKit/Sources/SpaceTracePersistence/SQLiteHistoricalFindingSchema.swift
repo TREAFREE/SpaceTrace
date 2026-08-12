@@ -35,6 +35,11 @@ public struct SQLiteHistoricalPrototypeResult: Sendable, Codable, Equatable {
     public let checkpointedBytes: Int64
     public let peakResidentBytes: Int64
     public let insertionMilliseconds: Double
+    public let endpointWriteP95Milliseconds: Double
+    public let findingWriteP95Milliseconds: Double
+    public let pendingWorkP95Milliseconds: Double
+    public let effectiveTop10P95Milliseconds: Double
+    public let legacyTop100P95Milliseconds: Double
     public let retentionMilliseconds: Double
     public let maintenanceMilliseconds: Double
     public let integrityCheck: String
@@ -51,6 +56,10 @@ public struct SQLiteHistoricalPrototypeResult: Sendable, Codable, Equatable {
 /// complete schema digest and the released one-million-sample workload passes.
 @_spi(Benchmark)
 public enum SQLiteHistoricalFindingSchema {
+    private static let pendingWorkBenchmarkSQL = "SELECT w.work_id,w.baseline_sequence,w.comparison_sequence FROM historical_projection_work w LEFT JOIN historical_projection_checkpoint c ON c.work_id=w.work_id WHERE c.work_id IS NULL ORDER BY w.comparison_sequence,w.work_id LIMIT 1"
+    private static let effectiveTop10BenchmarkSQL = "SELECT f.finding_id,w.comparison_sequence,r.rank FROM historical_finding f JOIN historical_finding_projection p ON p.projection_id=f.projection_id JOIN historical_projection_work w ON w.work_id=p.work_id JOIN historical_observation_node n ON n.node_id=f.baseline_node_id JOIN historical_observation_batch b ON b.batch_id=n.batch_id LEFT JOIN historical_finding_positive_rank r ON r.finding_id=f.finding_id LEFT JOIN historical_finding_retraction x ON x.retracted_finding_id=f.finding_id WHERE b.scope_key=1 AND x.retraction_sequence IS NULL ORDER BY w.comparison_sequence DESC,CASE WHEN r.rank IS NULL THEN 1 ELSE 0 END,r.rank,f.finding_id LIMIT 10"
+    private static let legacyTop100BenchmarkSQL = "SELECT path,SUM(logical_delta) AS delta FROM directory_history_sample INDEXED BY directory_history_growth WHERE stream_id='v11-overlap' AND bucket_kind='daily' AND (path='/Fixtures/Legacy' OR (path>='/Fixtures/Legacy/' AND path<'/Fixtures/Legacy0')) AND bucket_start_ms>2211732000000 AND bucket_start_ms<=2212336800000 AND logical_delta IS NOT NULL GROUP BY path HAVING SUM(logical_delta)>0 ORDER BY delta DESC,path LIMIT 100"
+
     static let prototypeObjectNames: Set<String> = Set(
         prototypeTableNames + prototypeIndexNames + prototypeTriggerNames
     )
@@ -81,6 +90,22 @@ public enum SQLiteHistoricalFindingSchema {
     /// connection handle to the benchmark executable.
     @_spi(Benchmark)
     public static func runPrototype(
+        databaseURL: URL,
+        directorySamples: Int,
+        scenario: SQLiteHistoricalPrototypeScenario
+    ) throws -> SQLiteHistoricalPrototypeResult {
+        try runRepositoryBenchmark(
+            databaseURL: databaseURL,
+            directorySamples: directorySamples,
+            scenario: scenario
+        )
+    }
+
+    /// Exercises the released schema through one persistence-owned benchmark
+    /// operation. The executable receives metrics only; SQL and the SQLite
+    /// connection remain private to the persistence target.
+    @_spi(Benchmark)
+    public static func runRepositoryBenchmark(
         databaseURL: URL,
         directorySamples: Int,
         scenario: SQLiteHistoricalPrototypeScenario
@@ -122,6 +147,24 @@ public enum SQLiteHistoricalFindingSchema {
         try retainPrototypeWindow(database, expiredBatchIDs: counts.expiredBatchIDs)
         let retentionMilliseconds = elapsedMilliseconds(since: retentionStarted)
 
+        let pendingWorkP95Milliseconds = try queryP95(
+            database,
+            sql: pendingWorkBenchmarkSQL,
+            expectedRowCount: 1
+        )
+        let effectiveTop10P95Milliseconds = try queryP95(
+            database,
+            sql: effectiveTop10BenchmarkSQL,
+            expectedRowCount: scenario == .twoPercentChurn ? 10 : 0
+        )
+        let legacyTop100P95Milliseconds = try queryP95(
+            database,
+            sql: legacyTop100BenchmarkSQL,
+            expectedRowCount: scenario == .legacyOverlap
+                ? min(100, (directorySamples / 2) / 25)
+                : 0
+        )
+
         let maintenanceStarted = ContinuousClock.now
         try execute(database, "PRAGMA wal_checkpoint(TRUNCATE)")
         let maintenanceMilliseconds = elapsedMilliseconds(since: maintenanceStarted)
@@ -159,6 +202,11 @@ public enum SQLiteHistoricalFindingSchema {
             checkpointedBytes: componentBytes.main + componentBytes.wal + componentBytes.shm,
             peakResidentBytes: Int64(usage.ru_maxrss),
             insertionMilliseconds: insertionMilliseconds,
+            endpointWriteP95Milliseconds: percentile(counts.endpointWriteSamples, 0.95),
+            findingWriteP95Milliseconds: percentile(counts.findingWriteSamples, 0.95),
+            pendingWorkP95Milliseconds: pendingWorkP95Milliseconds,
+            effectiveTop10P95Milliseconds: effectiveTop10P95Milliseconds,
+            legacyTop100P95Milliseconds: legacyTop100P95Milliseconds,
             retentionMilliseconds: retentionMilliseconds,
             maintenanceMilliseconds: maintenanceMilliseconds,
             integrityCheck: integrity,
@@ -882,6 +930,8 @@ public enum SQLiteHistoricalFindingSchema {
         let subjectCount: Int
         let insertedNodeCount: Int
         let expiredBatchIDs: [Int64]
+        let endpointWriteSamples: [Double]
+        let findingWriteSamples: [Double]
     }
 
     private static func seedPrototype(
@@ -1002,6 +1052,8 @@ public enum SQLiteHistoricalFindingSchema {
         var expiredBatchIDs: [Int64] = []
         var insertedNodeCount = 0
         var findingOrdinalByProjection: [Int64: Int] = [:]
+        var endpointWriteSamples: [Double] = []
+        var findingWriteSamples: [Double] = []
 
         for observationDay in 0..<30 {
             let retainedDay = observationDay >= 5
@@ -1041,7 +1093,11 @@ public enum SQLiteHistoricalFindingSchema {
                     var rootNodeID: Int64 = 0
                     var currentNodeIDs = Array(repeating: Int64(0), count: nodesPerScope)
                     var movedGlobalSubjects: [Int] = []
+                    var endpointChunkStarted = ContinuousClock.now
                     for localOffset in 0..<nodesPerScope {
+                        if localOffset.isMultiple(of: 500) {
+                            endpointChunkStarted = .now
+                        }
                         let globalIndex = scopeOffset * nodesPerScope + localOffset
                         let subjectKey = globalIndex + 1
                         let isRoot = localOffset == 0
@@ -1121,6 +1177,12 @@ public enum SQLiteHistoricalFindingSchema {
                                 ])
                             }
                         }
+                        if (localOffset + 1).isMultiple(of: 500)
+                            || localOffset + 1 == nodesPerScope {
+                            endpointWriteSamples.append(
+                                elapsedMilliseconds(since: endpointChunkStarted)
+                            )
+                        }
                     }
                     insertedNodeCount += nodesPerScope
                     let expiry = observedAt + 2_592_000_000
@@ -1155,6 +1217,9 @@ public enum SQLiteHistoricalFindingSchema {
                                 .integer(observedAt + 2_000),
                             ])
                             let workID = sqlite3_last_insert_rowid(database)
+                            let leavePending = observationDay == 29
+                                && scopeOffset == 0 && metric == 1
+                            if leavePending { continue }
                             try insertProjection.run([
                                 .integer(workID), .blob(prototypeDigest(workID + 10_000_000)),
                                 .integer(observedAt + 2_000),
@@ -1162,7 +1227,11 @@ public enum SQLiteHistoricalFindingSchema {
                             let projectionID = sqlite3_last_insert_rowid(database)
                             if churn {
                                 var ordinal = findingOrdinalByProjection[projectionID, default: 0]
-                                for globalIndex in movedGlobalSubjects {
+                                var findingChunkStarted = ContinuousClock.now
+                                for (findingOffset, globalIndex) in movedGlobalSubjects.enumerated() {
+                                    if findingOffset.isMultiple(of: 500) {
+                                        findingChunkStarted = .now
+                                    }
                                     let localIndex = globalIndex - scopeOffset * nodesPerScope
                                     let baselineNodeID = previousNodeIDs[globalIndex + 1]
                                     let comparisonNodeID = currentNodeIDs[localIndex]
@@ -1175,6 +1244,12 @@ public enum SQLiteHistoricalFindingSchema {
                                         .integer(observedAt - dayMilliseconds + 2_592_000_000),
                                     ])
                                     ordinal += 1
+                                    if (findingOffset + 1).isMultiple(of: 500)
+                                        || findingOffset + 1 == movedGlobalSubjects.count {
+                                        findingWriteSamples.append(
+                                            elapsedMilliseconds(since: findingChunkStarted)
+                                        )
+                                    }
                                 }
                                 findingOrdinalByProjection[projectionID] = ordinal
                             }
@@ -1201,7 +1276,9 @@ public enum SQLiteHistoricalFindingSchema {
             scopeCount: scopeCount,
             subjectCount: nodesPerDay,
             insertedNodeCount: insertedNodeCount,
-            expiredBatchIDs: expiredBatchIDs
+            expiredBatchIDs: expiredBatchIDs,
+            endpointWriteSamples: endpointWriteSamples,
+            findingWriteSamples: findingWriteSamples
         )
     }
 
@@ -1286,7 +1363,7 @@ public enum SQLiteHistoricalFindingSchema {
     ) throws {
         let statement = try PrototypeStatement(
             database,
-            "INSERT INTO directory_history_sample(stream_id,path,bucket_kind,bucket_start_ms,logical_bytes,logical_delta,allocated_bytes,descendant_count,coverage,scan_run_id) VALUES('v11-overlap',?,'daily',?,?,0,?,0,'complete','v11-overlap')"
+            "INSERT INTO directory_history_sample(stream_id,path,bucket_kind,bucket_start_ms,logical_bytes,logical_delta,allocated_bytes,descendant_count,coverage,scan_run_id) VALUES('v11-overlap',?,'daily',?,?,100,?,0,'complete','v11-overlap')"
         )
         for offset in 0..<count {
             let day = offset % 25
@@ -1346,14 +1423,18 @@ public enum SQLiteHistoricalFindingSchema {
 
     private static func prototypeQueryPlans(_ database: OpaquePointer) throws -> [String] {
         let queries = [
-            "EXPLAIN QUERY PLAN SELECT node_id,state_kind,bytes FROM historical_metric_endpoint WHERE frame_id=1 ORDER BY node_id",
-            "EXPLAIN QUERY PLAN SELECT finding_id FROM historical_finding WHERE baseline_node_id=1 AND baseline_metric=1",
-            "EXPLAIN QUERY PLAN SELECT batch_id FROM historical_observation_batch WHERE scope_key=1 ORDER BY batch_id DESC",
+            ("frame-endpoints", "SELECT node_id,state_kind,bytes FROM historical_metric_endpoint WHERE frame_id=1 ORDER BY node_id"),
+            ("finding-endpoint", "SELECT finding_id FROM historical_finding WHERE baseline_node_id=1 AND baseline_metric=1"),
+            ("scope-batches", "SELECT batch_id FROM historical_observation_batch WHERE scope_key=1 ORDER BY batch_id DESC"),
+            ("pending-work", pendingWorkBenchmarkSQL),
+            ("effective-top10", effectiveTop10BenchmarkSQL),
+            ("legacy-top100", legacyTop100BenchmarkSQL),
         ]
-        return try queries.flatMap { sql -> [String] in
-            let statement = try PrototypeStatement(database, sql)
+        return try queries.flatMap { query -> [String] in
+            let (label, sql) = query
+            let statement = try PrototypeStatement(database, "EXPLAIN QUERY PLAN \(sql)")
             var rows: [String] = []
-            while try statement.step() { rows.append(statement.text(at: 3)) }
+            while try statement.step() { rows.append("\(label): \(statement.text(at: 3))") }
             return rows
         }
     }
@@ -1377,6 +1458,30 @@ public enum SQLiteHistoricalFindingSchema {
         return count
     }
 
+    private static func queryP95(
+        _ database: OpaquePointer,
+        sql: String,
+        expectedRowCount: Int,
+        repetitions: Int = 25
+    ) throws -> Double {
+        var samples: [Double] = []
+        samples.reserveCapacity(repetitions)
+        let statement = try PrototypeStatement(database, sql)
+        for _ in 0..<repetitions {
+            statement.resetForReuse()
+            let started = ContinuousClock.now
+            var rowCount = 0
+            while try statement.step() { rowCount += 1 }
+            guard rowCount == expectedRowCount else {
+                throw SQLiteHistoricalFindingSchemaError.sqlite(
+                    "benchmark query returned \(rowCount) rows; expected \(expectedRowCount)"
+                )
+            }
+            samples.append(elapsedMilliseconds(since: started))
+        }
+        return percentile(samples, 0.95)
+    }
+
     private static func databaseBytes(_ url: URL) throws -> Int64 {
         let values = try databaseComponentBytes(url)
         return values.main + values.wal + values.shm
@@ -1398,6 +1503,13 @@ public enum SQLiteHistoricalFindingSchema {
         let duration = start.duration(to: .now)
         return Double(duration.components.seconds) * 1_000
             + Double(duration.components.attoseconds) / 1_000_000_000_000_000
+    }
+
+    private static func percentile(_ values: [Double], _ quantile: Double) -> Double {
+        guard values.isEmpty == false else { return 0 }
+        let ordered = values.sorted()
+        let rawIndex = Int((Double(ordered.count) * quantile).rounded(.up)) - 1
+        return ordered[min(ordered.count - 1, max(0, rawIndex))]
     }
 
     private static func prototypeRunID(day: Int, scope: Int) -> String {
@@ -1492,6 +1604,11 @@ private final class PrototypeStatement {
         throw SQLiteHistoricalFindingSchemaError.sqlite(
             String(cString: sqlite3_errmsg(database))
         )
+    }
+
+    func resetForReuse() {
+        sqlite3_reset(statement)
+        sqlite3_clear_bindings(statement)
     }
 
     func integer(at column: Int32) -> Int64 {

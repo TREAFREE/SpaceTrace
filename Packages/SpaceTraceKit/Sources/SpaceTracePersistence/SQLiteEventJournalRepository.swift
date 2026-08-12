@@ -736,7 +736,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                     THEN 'complete'
                     ELSE 'partial'
                 END AS interval_coverage
-            FROM directory_history_sample
+            FROM directory_history_sample INDEXED BY directory_history_growth
             WHERE stream_id = ?1 AND bucket_kind = ?2
                 AND (
                     path = ?3

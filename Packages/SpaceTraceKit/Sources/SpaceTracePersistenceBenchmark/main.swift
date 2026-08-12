@@ -76,7 +76,8 @@ enum SpaceTracePersistenceBenchmark {
 
     private static func runV11Prototype() async throws {
         let arguments = CommandLine.arguments
-        guard value(after: "--mode", in: arguments) == "v11-prototype",
+        let mode = value(after: "--mode", in: arguments)
+        guard mode == "v11-repository" || mode == "v11-prototype",
               let sampleText = value(after: "--directory-samples", in: arguments),
               let directorySamples = Int(sampleText),
               directorySamples == 500_000 || directorySamples == 1_000_000,
@@ -105,7 +106,7 @@ enum SpaceTracePersistenceBenchmark {
             let repository = try SQLiteEventJournalRepository(databaseURL: databaseURL)
             try await repository.close()
             results.append(
-                try SQLiteHistoricalFindingSchema.runPrototype(
+                try SQLiteHistoricalFindingSchema.runRepositoryBenchmark(
                     databaseURL: databaseURL,
                     directorySamples: directorySamples,
                     scenario: scenario
@@ -116,10 +117,30 @@ enum SpaceTracePersistenceBenchmark {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(results).write(
             to: FileManager.default.temporaryDirectory.appendingPathComponent(
-                "SpaceTrace-v11-prototype-\(directorySamples).json"
+                "SpaceTrace-v11-\(mode == "v11-repository" ? "repository" : "prototype")-\(directorySamples).json"
             ),
             options: .atomic
         )
+        try enforceV11Gates(results)
+    }
+
+    private static func enforceV11Gates(
+        _ results: [SQLiteHistoricalPrototypeResult]
+    ) throws {
+        for result in results {
+            guard result.integrityCheck == "ok",
+                  result.foreignKeyViolationCount == 0,
+                  result.checkpointedBytes < 250_000_000,
+                  result.peakResidentBytes < 150_000_000,
+                  result.endpointWriteP95Milliseconds <= 100,
+                  result.findingWriteP95Milliseconds <= 100,
+                  result.pendingWorkP95Milliseconds <= 500,
+                  result.effectiveTop10P95Milliseconds <= 500,
+                  result.legacyTop100P95Milliseconds <= 500
+            else {
+                throw BenchmarkError.gate(result.scenario.rawValue)
+            }
+        }
     }
 
     private static func value(after option: String, in arguments: [String]) -> String? {
@@ -249,4 +270,5 @@ private enum BenchmarkError: Error {
     case arguments
     case sqlite(String)
     case queryResult
+    case gate(String)
 }

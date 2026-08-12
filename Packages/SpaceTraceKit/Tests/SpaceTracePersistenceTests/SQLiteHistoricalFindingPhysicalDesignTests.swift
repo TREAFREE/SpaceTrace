@@ -31,6 +31,7 @@ struct SQLiteHistoricalFindingPhysicalDesignTests {
             )
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
         #expect(source.contains("public static func runPrototype("))
+        #expect(source.contains("public static func runRepositoryBenchmark("))
         #expect(source.contains("public struct SQLiteHistoricalPrototypeResult"))
         #expect(source.contains("public static func installPrototype") == false)
         #expect(source.contains("public let database") == false)
@@ -61,8 +62,13 @@ struct SQLiteHistoricalFindingPhysicalDesignTests {
         #expect(result.integrityCheck == "ok")
         #expect(result.foreignKeyViolationCount == 0)
         #expect(result.secureDeleteEnabled)
+        #expect(result.endpointWriteP95Milliseconds > 0)
+        #expect(result.pendingWorkP95Milliseconds > 0)
+        #expect(result.effectiveTop10P95Milliseconds > 0)
+        #expect(result.legacyTop100P95Milliseconds > 0)
         #expect(result.queryPlans.isEmpty == false)
         #expect(result.queryPlans.joined(separator: " ").contains("historical_metric_endpoint_frame"))
+        #expect(result.queryPlans.joined(separator: " ").contains("directory_history_growth"))
         #expect(result.objectSizes.contains { $0.name == "historical_node_parent" && $0.bytes > 0 })
     }
 
@@ -94,6 +100,11 @@ struct SQLiteHistoricalFindingPhysicalDesignTests {
         #expect(result.removedV11Nodes == expectedV11 / 5)
         #expect(result.retainedLegacyRows == (scenario == .legacyOverlap ? 1_250 : 0))
         #expect((result.findingCount > 0) == (scenario == .twoPercentChurn))
+        #expect((result.findingWriteP95Milliseconds > 0) == (scenario == .twoPercentChurn))
+        #expect(result.endpointWriteP95Milliseconds > 0)
+        #expect(result.pendingWorkP95Milliseconds > 0)
+        #expect(result.effectiveTop10P95Milliseconds > 0)
+        #expect(result.legacyTop100P95Milliseconds > 0)
         #expect(result.integrityCheck == "ok")
         #expect(result.foreignKeyViolationCount == 0)
     }

@@ -7,7 +7,7 @@ import Synchronization
 /// A dependency-free SQLite prototype for ADR-004. The actor is the sole
 /// owner of the connection and serializes every transaction and query.
 public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGenerationRepository, WatchedScopeBookmarkRepository, AuthorizedBaselineSnapshotRepository, DirectoryHistoryRepository, StartupVolumeCapacityHistoryRepository, StorageHistoryRetentionApplying {
-    public static let currentSchemaVersion = 11
+    public static let currentSchemaVersion = 12
     private static let schemaVersion = Int32(currentSchemaVersion)
 
     /// `Mutex` makes the non-Sendable C handle safe to release from the
@@ -1314,7 +1314,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 try migrateToVersionNine(database, failurePoint: failurePoint)
             case 8:
                 try migrateToVersionNine(database, failurePoint: failurePoint)
-            case 9, 10:
+            case 9, 10, 11:
                 break
             default:
                 throw SQLiteEventJournalError.unsupportedSchemaVersion(currentVersion)
@@ -1333,18 +1333,33 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                     requireFrozenSchemaDigest: currentVersion == 0 || currentVersion == 10
                 )
             }
+            if currentVersion < 12 {
+                try migrateToVersionTwelve(
+                    database,
+                    failurePoint: failurePoint
+                )
+            }
         } catch SQLiteEventJournalError.injectedFailure {
-            guard case let .beforeMigrationCommit(version)? = failurePoint else {
+            let targetVersion: Int32
+            switch failurePoint {
+            case let .beforeMigrationCommit(version)?:
+                targetVersion = version
+            case .afterV12SchemaInstall?, .afterV12MigrationRecord?:
+                targetVersion = 12
+            default:
                 throw SQLiteEventJournalError.injectedFailure
             }
             throw SQLiteEventJournalError.migrationFailed(
                 fromVersion: currentVersion,
-                targetVersion: version
+                targetVersion: targetVersion
             )
         }
 
         do {
-            try SQLiteHistoricalFindingCodec.validateInstalledV11(database: database)
+            try SQLiteHistoricalFindingCodec.validateInstalledV12(
+                database: database,
+                frozenSchemaDigest: SQLiteHistoricalCorrectionSchema.frozenSchemaDigest
+            )
             try SQLiteArtifactValidator.validateOpenedDatabase(database)
         } catch {
             throw SQLiteEventJournalError.databaseCorrupt
@@ -1366,6 +1381,53 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         )
         try recoverInterruptedCalibrationRuns(database)
         return migrationBackupURL
+    }
+
+    private static func migrateToVersionTwelve(
+        _ database: OpaquePointer,
+        failurePoint: SQLiteEventJournalTestFailurePoint?
+    ) throws {
+        try execute(
+            on: database,
+            "BEGIN IMMEDIATE TRANSACTION",
+            operation: "begin schema migration v12"
+        )
+        do {
+            try SQLiteHistoricalCorrectionSchema.installFrozenV12(on: database)
+            if failurePoint == .afterV12SchemaInstall {
+                throw SQLiteEventJournalError.injectedFailure
+            }
+            let digest = try SQLiteHistoricalFindingCodec.schemaObjectDigest(database: database)
+            let digestHex = digest.map { String(format: "%02x", $0) }.joined()
+            try execute(
+                on: database,
+                "INSERT INTO schema_migration(version,applied_at_ms,checksum) VALUES(12,CAST(strftime('%s','now') AS INTEGER)*1000,'\(digestHex)'); PRAGMA user_version=12",
+                operation: "record schema migration version 12"
+            )
+            if failurePoint == .afterV12MigrationRecord {
+                throw SQLiteEventJournalError.injectedFailure
+            }
+            try failMigrationIfRequested(version: 12, failurePoint: failurePoint)
+            try execute(
+                on: database,
+                "COMMIT TRANSACTION",
+                operation: "commit schema migration v12"
+            )
+        } catch let migrationError {
+            do {
+                try execute(
+                    on: database,
+                    "ROLLBACK TRANSACTION",
+                    operation: "roll back schema migration v12"
+                )
+            } catch let rollbackError {
+                throw SQLiteEventJournalError.rollbackFailed(
+                    original: String(describing: migrationError),
+                    rollback: String(describing: rollbackError)
+                )
+            }
+            throw migrationError
+        }
     }
 
     private static func migrateToVersionEleven(
@@ -4255,6 +4317,8 @@ enum SQLiteEventJournalTestFailurePoint: Sendable, Equatable {
     case afterRecoveryWorkBeforeCheckpointInvalidation
     case afterExpiredDeletedNodesBeforeBaselines
     case beforeMigrationCommit(version: Int32)
+    case afterV12SchemaInstall
+    case afterV12MigrationRecord
     case afterHistoricalDictionaries
     case afterHistoricalBatch
     case afterHistoricalNodes

@@ -22,6 +22,17 @@
       "seed": "spacetrace-released-v11-20260812",
       "semanticSHA256": "f9b1394b6e1ee144548d8ad5179cd5ba8917891fe13064ab9493e463ed1a9414",
       "schemaObjectSHA256": "8d5d1cb9d992ba944ad67c4100a56a6c8e521fe3bf6ef02b27a620f9e1ba08f7"
+    },
+    {
+      "schemaVersion": 12,
+      "relativePath": "v12/SpaceTrace.sqlite",
+      "sha256": "360a23821d8cb5b37a56047052b8d45ab0b80daae9d554d1f3aec0109bcb4e42",
+      "generatorPath": "Scripts/Fixtures/generate-released-schema-v12-fixture.sh",
+      "generatorSHA256": "b1c6c60d6c71bf57c0f96c4208fcf67945c42563d554f93119a8ea371541ac38",
+      "generatorVersion": 1,
+      "seed": "spacetrace-released-v12-20260813",
+      "semanticSHA256": "ac6fdb5e1edfaabce652bd3a67a180e2fa1d6a918d25d4b1277068816e48131f",
+      "schemaObjectSHA256": "9f401f317d53a3c9c8f71fc7e0afdd2bfe043604c720edacf83cfd4f5ecbee0f"
     }
   ]
 }

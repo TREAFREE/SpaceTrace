@@ -4,12 +4,12 @@ Last updated: 2026-08-13
 
 ## Scope
 
-This evidence freezes the provisional physical layout for ADR-008 before any
-production migration raises `PRAGMA user_version` to 12. It extends the released
+This evidence freezes the physical layout selected for ADR-008. Production now
+migrates fresh and v11 stores to `PRAGMA user_version` 12. The layout extends the released
 v11 immutable observation ledger with compact reconciliation revisions,
 registered correction input, linear correcting-projection work/checkpoints,
 complete replacement findings/ranks/reasons, and current-effective query
-indexes. It does not claim that migration, repository transactions, recovery,
+indexes. It does not claim that revision/correction transactions, recovery,
 retention, UI integration, macOS 15.6 qualification, signing, notarization, or
 release distribution is complete.
 
@@ -85,6 +85,16 @@ truthfully and are not constrained by that long-lived storage gate.
   finding ordinals, rank ordinals, and reason cardinality are complete.
 - Unknown codes, cross-frame findings, stale digests, branches, self-links,
   incomplete checkpoint graphs, and post-checkpoint child writes fail closed.
-- Schema v12 migration must use these exact SQL objects and digest or revisit
-  this evidence before implementation. The current production schema remains
-  v11 until the separate migration and released-fixture task passes.
+- Production migration uses an atomic pre-migration backup, preserves every
+  v11 value, invents no revision/correction edge, and validates the complete
+  schema digest
+  `04fba44ae486b4d2f54324bd2068838675162103846d58abfd89fbdebcd059cf`
+  before serving writes.
+- Legacy `directory_history_sample` rows remain an explicitly lossy legacy
+  baseline; migration never re-labels them as immutable v12 revisions.
+- The deterministic released v12 fixture contains two complete paired
+  observations, four revisions, one committed original projection, and one
+  checkpointed empty correcting projection. Its generator, bytes, semantics,
+  and schema-object digest are independently revalidated byte-for-byte.
+- Calibration publication and registered correcting-projection transactions
+  remain later gates; installing schema v12 alone does not complete FR-004.

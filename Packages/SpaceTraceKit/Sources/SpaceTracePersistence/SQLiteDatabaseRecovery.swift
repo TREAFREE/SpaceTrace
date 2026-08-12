@@ -427,7 +427,7 @@ struct SQLiteArtifactValidator {
         )
         guard versions == expectedVersions else { throw SQLiteEventJournalError.databaseCorrupt }
         if schemaVersion == Int32(SQLiteEventJournalRepository.currentSchemaVersion) {
-            try SQLiteHistoricalFindingCodec.validateInstalledV11(database: database)
+            try SQLiteHistoricalCorrectionRepository.validateInstalledSchema(database: database)
             guard try singleInteger(
                 database,
                 sql: "SELECT count(*) FROM frozen_attribution_decision WHERE length(canonical_payload)>65536"

@@ -3,19 +3,19 @@ import SQLite3
 import Testing
 @_spi(Benchmark) @testable import SpaceTracePersistence
 
-@Suite("SQLite v11 historical-ledger migration", .serialized)
+@Suite("SQLite v11/v12 historical-ledger migration", .serialized)
 struct SQLiteHistoricalFindingMigrationTests {
-    @Test("A fresh store installs the frozen v11 ledger and connection policy")
+    @Test("A fresh store installs the frozen v11 ledger inside current v12")
     func freshStoreInstallsV11() async throws {
         let fixture = try MigrationDatabase()
         defer { fixture.remove() }
 
         let repository = try SQLiteEventJournalRepository(databaseURL: fixture.databaseURL)
-        #expect(SQLiteEventJournalRepository.currentSchemaVersion == 11)
+        #expect(SQLiteEventJournalRepository.currentSchemaVersion == 12)
         #expect(try await repository.secureDeleteEnabledForTesting())
         try await repository.close()
 
-        #expect(try fixture.int("PRAGMA user_version") == 11)
+        #expect(try fixture.int("PRAGMA user_version") == 12)
         #expect(try fixture.int("PRAGMA auto_vacuum") == 1)
         #expect(try fixture.int("SELECT path_history_days FROM historical_retention_policy WHERE singleton=1") == 30)
         #expect(try fixture.data("SELECT store_generation FROM historical_store_identity WHERE singleton=1")?.count == 16)
@@ -25,7 +25,7 @@ struct SQLiteHistoricalFindingMigrationTests {
         #expect(try fixture.historicalObjectNames() == SQLiteHistoricalFindingSchema.frozenObjectNames)
     }
 
-    @Test("A populated v10 store migrates without manufacturing v11 evidence")
+    @Test("A populated v10 store migrates without manufacturing v11/v12 evidence")
     func populatedV10MigratesWithoutBackfill() async throws {
         let fixture = try MigrationDatabase()
         defer { fixture.remove() }
@@ -34,11 +34,12 @@ struct SQLiteHistoricalFindingMigrationTests {
         let repository = try SQLiteEventJournalRepository(databaseURL: fixture.databaseURL)
         try await repository.close()
 
-        #expect(try fixture.int("PRAGMA user_version") == 11)
+        #expect(try fixture.int("PRAGMA user_version") == 12)
         #expect(try fixture.int("SELECT count(*) FROM directory_history_sample") == 1)
         #expect(try fixture.int("SELECT count(*) FROM historical_observation_batch") == 0)
         #expect(try fixture.int("SELECT count(*) FROM historical_observation_node") == 0)
         #expect(try fixture.int("SELECT count(*) FROM historical_finding") == 0)
+        #expect(try fixture.int("SELECT count(*) FROM historical_reconciliation_revision") == 0)
         #expect(try fixture.int("SELECT count(*) FROM node_current") == 0)
     }
 
@@ -305,12 +306,13 @@ struct SQLiteHistoricalFindingMigrationTests {
         let database = try fixture.open(SQLITE_OPEN_READONLY)
         defer { sqlite3_close_v2(database) }
         let digest = try SQLiteHistoricalFindingCodec.schemaObjectDigest(database: database)
-        #expect(digest == SQLiteHistoricalFindingSchema.frozenSchemaDigest)
+        #expect(digest == SQLiteHistoricalCorrectionSchema.frozenSchemaDigest)
         #expect(digest.count == 32)
-        #expect(try fixture.text("SELECT checksum FROM schema_migration WHERE version=11") == digest.map { String(format: "%02x", $0) }.joined())
+        #expect(try fixture.text("SELECT checksum FROM schema_migration WHERE version=11") == SQLiteHistoricalFindingSchema.frozenSchemaDigest.map { String(format: "%02x", $0) }.joined())
+        #expect(try fixture.text("SELECT checksum FROM schema_migration WHERE version=12") == digest.map { String(format: "%02x", $0) }.joined())
     }
 
-    @Test("Reopen rejects a v11 schema object drift before serving writes")
+    @Test("Reopen rejects a v12 schema object drift before serving writes")
     func reopenRejectsSchemaDrift() async throws {
         let fixture = try MigrationDatabase()
         defer { fixture.remove() }
@@ -324,8 +326,8 @@ struct SQLiteHistoricalFindingMigrationTests {
     }
 }
 
-/// Older-version fixtures bootstrap through today's schema, then remove only
-/// the v11 graph. Centralizing that teardown prevents test fixtures from
+/// Older-version fixtures bootstrap through today's schema, then remove the
+/// v12 and v11 graphs. Centralizing that teardown prevents test fixtures from
 /// teaching production migration to accept a lower `user_version` alongside
 /// already-present v11 tables.
 func removeV11SchemaForLegacyMigrationFixture(at databaseURL: URL) throws {
@@ -340,11 +342,13 @@ func removeV11SchemaForLegacyMigrationFixture(at databaseURL: URL) throws {
     }
     defer { sqlite3_close_v2(database) }
     try MigrationDatabase.executeForFixture(database, "PRAGMA foreign_keys=OFF")
+    let removableObjects = SQLiteHistoricalFindingSchema.frozenObjectNames
+        .union(SQLiteHistoricalCorrectionSchema.prototypeObjectNames)
     let objects = try MigrationDatabase.rowsForFixture(
         database,
         "SELECT type,name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'"
     ).filter { row in
-        row.count == 2 && SQLiteHistoricalFindingSchema.frozenObjectNames.contains(row[1])
+        row.count == 2 && removableObjects.contains(row[1])
     }.sorted { lhs, rhs in
         let priority = ["trigger": 1, "index": 2, "table": 3]
         let left = priority[lhs[0], default: 4]
@@ -360,7 +364,7 @@ func removeV11SchemaForLegacyMigrationFixture(at databaseURL: URL) throws {
     }
     try MigrationDatabase.executeForFixture(
         database,
-        "DELETE FROM schema_migration WHERE version=11"
+        "DELETE FROM schema_migration WHERE version IN (11,12)"
     )
 }
 
@@ -387,11 +391,13 @@ private final class MigrationDatabase {
         let database = try open(SQLITE_OPEN_READWRITE)
         defer { sqlite3_close_v2(database) }
         try Self.execute(database, "PRAGMA foreign_keys=OFF")
+        let removableObjects = SQLiteHistoricalFindingSchema.frozenObjectNames
+            .union(SQLiteHistoricalCorrectionSchema.prototypeObjectNames)
         let objects = try Self.rows(
             database,
             "SELECT type,name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'"
         ).filter { row in
-            row.count == 2 && SQLiteHistoricalFindingSchema.frozenObjectNames.contains(row[1])
+            row.count == 2 && removableObjects.contains(row[1])
         }.sorted { lhs, rhs in
             let priority = ["trigger": 1, "index": 2, "table": 3]
             let left = priority[lhs[0], default: 4]
@@ -408,7 +414,7 @@ private final class MigrationDatabase {
         try Self.execute(
             database,
             """
-            DELETE FROM schema_migration WHERE version=11;
+            DELETE FROM schema_migration WHERE version IN (11,12);
             PRAGMA user_version=10;
             INSERT INTO directory_history_sample(
                 stream_id,path,bucket_kind,bucket_start_ms,logical_bytes,

@@ -4,10 +4,10 @@
 
 ## 范围
 
-这份证据在任何生产迁移把 `PRAGMA user_version` 提升到 12 之前，冻结
-ADR-008 的暂定物理结构。它在已发布的 v11 不可变观测账本上增加紧凑的校准
+这份证据冻结 ADR-008 选定的物理结构。生产仓库现在会把新库和 v11 库迁移至
+`PRAGMA user_version` 12。该结构在已发布的 v11 不可变观测账本上增加紧凑的校准
 修订、已注册更正输入、线性更正投影 work/checkpoint、完整替换的
-finding/rank/reason，以及 current-effective 查询索引。它不表示迁移、仓库事务、
+finding/rank/reason，以及 current-effective 查询索引。它不表示修订/更正事务、
 恢复、保留策略、UI 接入、macOS 15.6 资格、签名、公证或发布分发已经完成。
 
 原型复用 v11 不可变观测节点及其两种度量端点。一条紧凑记录同时表示一次完整
@@ -71,5 +71,13 @@ WAL 截断后为 0 字节。最大的最终场景为 237,023,232 字节，相对
   数量均完整的原子 checkpoint。
 - 未知 code、跨帧 finding、陈旧 digest、分支、自链接、不完整 checkpoint 图和
   checkpoint 后追加子记录都会封闭失败。
-- schema v12 迁移必须使用这些准确 SQL 对象和 digest，否则必须先重新评审本证据。
-  在独立迁移与 released fixture 任务通过前，当前生产 schema 仍保持 v11。
+- 生产迁移使用原子迁移前备份，保留每一个 v11 值，不伪造任何修订/更正边，
+  并在对外提供写入前校验完整 schema digest
+  `04fba44ae486b4d2f54324bd2068838675162103846d58abfd89fbdebcd059cf`。
+- 旧的 `directory_history_sample` 记录仍然是明确标记的有损旧基线；迁移不会
+  把它们重新包装成不可变 v12 修订。
+- 确定性 released v12 fixture 包含两组完整双指标观测、4 条修订、1 个已提交原始投影
+  和 1 个已 checkpoint 的空结果更正投影。门禁会独立逐字节复核 generator、
+  fixture、语义与 schema-object digest。
+- 校准发布与注册式更正投影事务仍是后续门禁；仅安装 schema v12 不代表
+  FR-004 已完成。

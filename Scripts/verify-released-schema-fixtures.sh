@@ -35,8 +35,8 @@ jq -e '
     type == "object" and
     (keys == ["fixtures", "formatVersion"]) and
     (.formatVersion | type == "number" and . == 2 and floor == .) and
-    (.fixtures | type == "array" and length == 2) and
-    ([.fixtures[].schemaVersion] == [10, 11]) and
+    (.fixtures | type == "array" and length == 3) and
+    ([.fixtures[].schemaVersion] == [10, 11, 12]) and
     all(.fixtures[];
         type == "object" and
         (keys == [
@@ -123,16 +123,21 @@ typeset -A expected_byte_digest expected_generator_digest expected_seed
 typeset -A expected_semantic_digest expected_schema_digest
 expected_byte_digest[10]=f410f4d3aee861a09f1128661a98082cc19c53bc9662cbde761409506dfa5dec
 expected_byte_digest[11]=5a471cf3f76622411b8fed60043fe837b4bdc4f3a0b811a20818aa84b6ca2945
+expected_byte_digest[12]=360a23821d8cb5b37a56047052b8d45ab0b80daae9d554d1f3aec0109bcb4e42
 expected_generator_digest[10]=2145d8b0a04ee446be7072c26798ec4605122074d2b3a5c08e92c502a491eebe
 expected_generator_digest[11]=4ad02a80505b0ccc00ea4998c3cea28d8589bf26044ec772e0b981b22c84abf8
+expected_generator_digest[12]=b1c6c60d6c71bf57c0f96c4208fcf67945c42563d554f93119a8ea371541ac38
 expected_seed[10]=spacetrace-released-v10-20260812
 expected_seed[11]=spacetrace-released-v11-20260812
+expected_seed[12]=spacetrace-released-v12-20260813
 expected_semantic_digest[10]=9489396aeb50cf8c369a61051201078ce0f858033a4f66a46de6be3fe8356c5b
 expected_semantic_digest[11]=f9b1394b6e1ee144548d8ad5179cd5ba8917891fe13064ab9493e463ed1a9414
+expected_semantic_digest[12]=ac6fdb5e1edfaabce652bd3a67a180e2fa1d6a918d25d4b1277068816e48131f
 expected_schema_digest[10]=f9a79fcd1b5ad9912fb9e796ed7f66358c18092fb665071ec937283f050e02e3
 expected_schema_digest[11]=8d5d1cb9d992ba944ad67c4100a56a6c8e521fe3bf6ef02b27a620f9e1ba08f7
+expected_schema_digest[12]=9f401f317d53a3c9c8f71fc7e0afdd2bfe043604c720edacf83cfd4f5ecbee0f
 
-for version in 10 11; do
+for version in 10 11 12; do
     entry=$(jq -c --argjson version "$version" \
         '.fixtures[] | select(.schemaVersion == $version)' "$manifest_path")
     [[ -n "$entry" ]] || fail "manifest omits schema v$version"
@@ -203,5 +208,15 @@ done
     "SELECT checksum FROM schema_migration WHERE version=11") == \
     38821bf16852476d4457a4921462257b5b194a1fe5703de02d1ee4f8c63e5371 ]] || \
     fail "v11 repository schema digest is not frozen"
+[[ $(sqlite3 -readonly "file:$fixture_root/v12/SpaceTrace.sqlite?immutable=1" \
+    'SELECT count(*) FROM historical_reconciliation_revision') -eq 4 ]] || \
+    fail "v12 fixture revision chain is not populated"
+[[ $(sqlite3 -readonly "file:$fixture_root/v12/SpaceTrace.sqlite?immutable=1" \
+    'SELECT count(*) FROM historical_projection_correction_checkpoint') -eq 1 ]] || \
+    fail "v12 fixture correcting projection is not committed"
+[[ $(sqlite3 -readonly "file:$fixture_root/v12/SpaceTrace.sqlite?immutable=1" \
+    "SELECT checksum FROM schema_migration WHERE version=12") == \
+    04fba44ae486b4d2f54324bd2068838675162103846d58abfd89fbdebcd059cf ]] || \
+    fail "v12 repository schema digest is not frozen"
 
 echo "Released-schema fixtures are reproducible and valid."

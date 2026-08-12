@@ -14,6 +14,8 @@ enum SQLiteHistoricalFindingCodecError: Error, Sendable, Equatable {
     case invalidEndpointShape
     case invalidAttributionShape
     case invalidReasonCode
+    case invalidCorrectionVersion
+    case invalidCorrectionCount
     case invalidSchemaDigest
     case sqlite
 }
@@ -30,6 +32,67 @@ enum SQLiteHistoricalFindingCodec {
     static let maximumCanonicalPayloadBytes = 65_536
     static let maximumFrameNodeCount = 50_000
     static let maximumFrameDecodedEvidenceBytes = 16 * 1_024 * 1_024
+
+    static func validateCorrectionRequestID(_ value: Data) throws -> Data {
+        guard value.count == 16 else {
+            throw SQLiteHistoricalFindingCodecError.byteLengthOutOfRange
+        }
+        return value
+    }
+
+    static func validateCorrectionDigest(_ value: Data) throws -> Data {
+        guard value.count == 32 else {
+            throw SQLiteHistoricalFindingCodecError.byteLengthOutOfRange
+        }
+        return value
+    }
+
+    static func encodeCorrectionPayload(_ value: String) throws -> Data {
+        try encodeUTF8(
+            value,
+            field: "correction_payload",
+            maximumBytes: maximumCanonicalPayloadBytes
+        )
+    }
+
+    static func decodeCorrectionPayload(_ value: Data) throws -> String {
+        try decodeUTF8(
+            value,
+            field: "correction_payload",
+            maximumBytes: maximumCanonicalPayloadBytes
+        )
+    }
+
+    static func validateCorrectionVersions(
+        requestFormat: Int64,
+        algorithm: Int64,
+        rankingPolicy: Int64,
+        inputFormat: Int64,
+        resultFormat: Int64
+    ) throws {
+        guard requestFormat == 1,
+              algorithm > 0,
+              rankingPolicy > 0,
+              inputFormat > 0,
+              resultFormat == 1 else {
+            throw SQLiteHistoricalFindingCodecError.invalidCorrectionVersion
+        }
+    }
+
+    static func validateCorrectionCounts(
+        findings: Int64,
+        rankedPositive: Int64,
+        reasons: Int64,
+        truncatedPositive: Int64
+    ) throws {
+        guard (0...50_000).contains(findings),
+              (0...100).contains(rankedPositive),
+              rankedPositive <= findings,
+              (0...38).contains(reasons),
+              truncatedPositive >= 0 else {
+            throw SQLiteHistoricalFindingCodecError.invalidCorrectionCount
+        }
+    }
 
     static func randomStoreGeneration() throws -> Data {
         var generator = SystemRandomNumberGenerator()
@@ -236,6 +299,43 @@ enum SQLiteHistoricalFindingCodec {
             sql: "SELECT checksum FROM schema_migration WHERE version=11"
         )
         guard storedChecksum == expectedChecksum else {
+            throw SQLiteHistoricalFindingCodecError.invalidSchemaDigest
+        }
+
+        let generation = try readSingleBlob(
+            database,
+            sql: "SELECT store_generation FROM historical_store_identity WHERE singleton=1 AND format_version=1"
+        )
+        try validateStoreGeneration(generation)
+        guard try readSingleInteger(
+            database,
+            sql: "SELECT count(*) FROM historical_retention_policy WHERE singleton=1"
+        ) == 1 else {
+            throw SQLiteHistoricalFindingCodecError.invalidSchemaDigest
+        }
+    }
+
+    static func validateInstalledV12(
+        database: OpaquePointer,
+        frozenSchemaDigest: Data
+    ) throws {
+        let digest = try schemaObjectDigest(database: database)
+        let expectedChecksum = digest.map { String(format: "%02x", $0) }.joined()
+        let storedChecksum = try readSingleText(
+            database,
+            sql: "SELECT checksum FROM schema_migration WHERE version=12"
+        )
+        guard storedChecksum == expectedChecksum else {
+            throw SQLiteHistoricalFindingCodecError.invalidSchemaDigest
+        }
+        let sourceV11Checksum = try readSingleText(
+            database,
+            sql: "SELECT checksum FROM schema_migration WHERE version=11"
+        )
+        let frozenV11Checksum = SQLiteHistoricalFindingSchema.frozenSchemaDigest
+            .map { String(format: "%02x", $0) }
+            .joined()
+        guard sourceV11Checksum != frozenV11Checksum || digest == frozenSchemaDigest else {
             throw SQLiteHistoricalFindingCodecError.invalidSchemaDigest
         }
 

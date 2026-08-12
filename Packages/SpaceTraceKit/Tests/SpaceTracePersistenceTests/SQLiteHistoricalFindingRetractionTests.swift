@@ -334,14 +334,25 @@ struct SQLiteHistoricalFindingRetractionTests {
         try await repository.close()
     }
 
-    @Test("v11 exposes no replacement or successor schema surface")
+    @Test("The immutable v11 base tables expose no replacement or successor columns")
     func schemaHasNoReplacementSurface() throws {
         let fixture = try HistoricalLedgerTestFixture()
         defer { fixture.remove() }
         let repository = try retractionRepository(for: fixture)
         _ = repository
         let forbidden = try fixture.int(
-            "SELECT count(*) FROM sqlite_schema WHERE lower(sql) LIKE '%successor%' OR lower(sql) LIKE '%supersession%' OR lower(sql) LIKE '%replacement%'"
+            """
+            SELECT count(*)
+            FROM sqlite_schema
+            WHERE name IN (
+                'historical_finding','historical_finding_projection',
+                'historical_finding_retraction','historical_projection_work',
+                'historical_projection_checkpoint'
+            )
+              AND (lower(sql) LIKE '%successor%'
+                OR lower(sql) LIKE '%supersession%'
+                OR lower(sql) LIKE '%replacement%')
+            """
         )
         #expect(forbidden == 0)
     }

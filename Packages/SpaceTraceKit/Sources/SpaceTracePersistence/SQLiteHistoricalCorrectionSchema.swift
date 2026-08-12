@@ -43,6 +43,14 @@ public struct SQLiteHistoricalCorrectionPrototypeResult: Sendable, Codable, Equa
 /// million-row ledger.
 @_spi(Benchmark)
 public enum SQLiteHistoricalCorrectionSchema {
+    /// SHA-256 over the complete frozen schema-v12 object graph.
+    static let frozenSchemaDigest = Data([
+        0x04, 0xFB, 0xA4, 0x4A, 0xE4, 0x86, 0xB4, 0xD2,
+        0xF5, 0x43, 0x24, 0xBD, 0x20, 0x68, 0x83, 0x86,
+        0x75, 0x16, 0x21, 0x03, 0x84, 0x6D, 0x58, 0xAB,
+        0xFD, 0x89, 0xFB, 0xDE, 0xBC, 0xD0, 0x59, 0xCF,
+    ])
+
     static func materializedRevisionID(nodeID: Int64, bucketCode: Int64) throws -> Int64 {
         guard nodeID > 0, nodeID <= Int64.max / 2, bucketCode == 1 || bucketCode == 2 else {
             throw SQLiteHistoricalCorrectionSchemaError.invalidRevisionIdentity
@@ -90,6 +98,10 @@ public enum SQLiteHistoricalCorrectionSchema {
     static func installPrototype(on database: OpaquePointer) throws {
         try correctionSchemaExecute(database, "PRAGMA foreign_keys=ON")
         try correctionSchemaExecute(database, schemaSQL)
+    }
+
+    static func installFrozenV12(on database: OpaquePointer) throws {
+        try installPrototype(on: database)
     }
 
     static func prototypeObjectDigest(database: OpaquePointer) throws -> Data {
@@ -187,7 +199,12 @@ public enum SQLiteHistoricalCorrectionSchema {
             database,
             "PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON; PRAGMA cache_size=-8192; PRAGMA temp_store=FILE; PRAGMA mmap_size=0; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;"
         )
-        try installPrototype(on: database)
+        if try correctionScalarInt(
+            database,
+            "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='historical_reconciliation_revision'"
+        ) == 0 {
+            try installPrototype(on: database)
+        }
 
         let started = ContinuousClock.now
         try correctionSchemaExecute(database, "BEGIN IMMEDIATE")

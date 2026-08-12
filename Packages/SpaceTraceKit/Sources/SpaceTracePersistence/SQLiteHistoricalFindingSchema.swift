@@ -62,10 +62,10 @@ public enum SQLiteHistoricalFindingSchema {
     /// SHA-256 over the exact v11 `sqlite_schema` object graph plus the legacy
     /// schema it extends. The codec defines the canonical byte framing.
     static let frozenSchemaDigest = Data([
-        0x9A, 0x48, 0x40, 0xB4, 0x0E, 0x7C, 0x73, 0x18,
-        0x37, 0x22, 0x84, 0x7C, 0xF9, 0x86, 0x85, 0x18,
-        0x61, 0x97, 0x8C, 0x59, 0x34, 0x18, 0xD7, 0x91,
-        0x0B, 0x02, 0xB2, 0x05, 0xC7, 0xEF, 0xE9, 0x91,
+        0x38, 0x82, 0x1B, 0xF1, 0x68, 0x52, 0x47, 0x6D,
+        0x44, 0x57, 0xA4, 0x92, 0x14, 0x62, 0x25, 0x7B,
+        0x5B, 0x19, 0x4A, 0x1F, 0xE5, 0x70, 0x3D, 0xE0,
+        0x2D, 0x1E, 0xE4, 0xF8, 0xC6, 0x3E, 0x53, 0x71,
     ])
 
     static func installPrototype(on database: OpaquePointer) throws {
@@ -790,14 +790,38 @@ public enum SQLiteHistoricalFindingSchema {
               AND (
                 (NEW.kind=1 AND baseline.state_kind=2 AND comparison.state_kind=1
                     AND bn.location_key=cn.location_key
-                    AND NEW.inclusive_delta_bytes>0 AND NEW.ranking_contribution_bytes IS NOT NULL)
+                    AND NEW.inclusive_delta_bytes>0
+                    AND NEW.ranking_contribution_bytes=NEW.inclusive_delta_bytes)
                 OR (NEW.kind=2 AND baseline.state_kind=1 AND comparison.state_kind=1
-                    AND bn.location_key=cn.location_key AND NEW.inclusive_delta_bytes<0)
+                    AND NEW.inclusive_delta_bytes<0
+                    AND (
+                        (bn.location_key=cn.location_key AND NEW.movement_ancestor_finding_id IS NULL)
+                        OR (bn.location_key!=cn.location_key AND NEW.movement_ancestor_finding_id IS NOT NULL
+                            AND bs.identity_basis=1 AND bstable.node_id IS NOT NULL
+                            AND cstable.node_id IS NOT NULL AND bstable.guard_kind=cstable.guard_kind
+                            AND bstable.generation_token_utf8 IS cstable.generation_token_utf8
+                            AND bstable.birth_seconds IS cstable.birth_seconds
+                            AND bstable.birth_nanoseconds IS cstable.birth_nanoseconds
+                            AND bstable.node_kind=cstable.node_kind
+                            AND bstable.link_status=1 AND cstable.link_status=1)
+                    ))
                 OR (NEW.kind=3 AND baseline.state_kind=1 AND comparison.state_kind=2
                     AND bn.location_key=cn.location_key
-                    AND NEW.inclusive_delta_bytes<0 AND NEW.ranking_contribution_bytes IS NULL)
+                    AND NEW.inclusive_delta_bytes<0
+                    AND NEW.ranking_contribution_bytes=NEW.inclusive_delta_bytes)
                 OR (NEW.kind=4 AND baseline.state_kind=1 AND comparison.state_kind=1
-                    AND bn.location_key=cn.location_key AND NEW.inclusive_delta_bytes>0)
+                    AND NEW.inclusive_delta_bytes>0
+                    AND (
+                        (bn.location_key=cn.location_key AND NEW.movement_ancestor_finding_id IS NULL)
+                        OR (bn.location_key!=cn.location_key AND NEW.movement_ancestor_finding_id IS NOT NULL
+                            AND bs.identity_basis=1 AND bstable.node_id IS NOT NULL
+                            AND cstable.node_id IS NOT NULL AND bstable.guard_kind=cstable.guard_kind
+                            AND bstable.generation_token_utf8 IS cstable.generation_token_utf8
+                            AND bstable.birth_seconds IS cstable.birth_seconds
+                            AND bstable.birth_nanoseconds IS cstable.birth_nanoseconds
+                            AND bstable.node_kind=cstable.node_kind
+                            AND bstable.link_status=1 AND cstable.link_status=1)
+                    ))
                 OR (NEW.kind=5 AND baseline.state_kind=1 AND comparison.state_kind=1
                     AND bn.location_key!=cn.location_key AND NEW.ranking_contribution_bytes IS NULL
                     AND bs.identity_basis=1 AND bstable.node_id IS NOT NULL

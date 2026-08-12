@@ -6,6 +6,93 @@ import SpaceTraceAttribution
 import SpaceTraceDomain
 
 extension SQLiteEventJournalRepository {
+    public func nextHistoricalProjectionWork() throws -> HistoricalProjectionWork? {
+        try readNextHistoricalProjectionWork()
+    }
+
+    public func commitHistoricalProjection(
+        _ result: HistoricalFindingGenerationResult,
+        for work: HistoricalProjectionWork
+    ) throws -> HistoricalProjectionCommitOutcome {
+        let resultDigest = try canonicalHistoricalProjectionDigest(result)
+        try execute(
+            "BEGIN IMMEDIATE TRANSACTION",
+            operation: "begin historical projection"
+        )
+        var responseLossAfterCommit = false
+        do {
+            let existingProjectionID = try historicalOptionalInt(
+                "SELECT projection_id FROM historical_finding_projection WHERE work_id=?",
+                integers: [work.recordID.rawValue]
+            )
+            let storedWork = try readHistoricalProjectionWork(id: work.recordID)
+                .unwrap(field: "historical_projection_work")
+            guard storedWork == work else {
+                throw existingProjectionID == nil
+                    ? SQLiteEventJournalError.historicalProjectionWorkMismatch
+                    : SQLiteEventJournalError.historicalProjectionImmutableConflict
+            }
+            let baseline = try readHistoricalFrame(sequence: work.baselineSequence)
+                .unwrap(field: "historical_projection_baseline")
+            let comparison = try readHistoricalFrame(sequence: work.comparisonSequence)
+                .unwrap(field: "historical_projection_comparison")
+            let regenerated = try HistoricalFindingGenerator().generate(
+                baseline: baseline,
+                comparison: comparison,
+                positiveLimit: work.positiveLimit
+            )
+            guard regenerated == result else {
+                throw existingProjectionID == nil
+                    ? SQLiteEventJournalError.historicalProjectionResultMismatch
+                    : SQLiteEventJournalError.historicalProjectionImmutableConflict
+            }
+
+            if let projectionID = existingProjectionID {
+                try validateStoredHistoricalProjection(
+                    projectionID: projectionID,
+                    work: work,
+                    result: regenerated,
+                    resultDigest: resultDigest
+                )
+                try execute(
+                    "COMMIT TRANSACTION",
+                    operation: "commit idempotent historical projection"
+                )
+                return .alreadyCommitted(
+                    try HistoricalProjectionRecordID(projectionID)
+                )
+            }
+
+            let projectionID = try insertHistoricalProjection(
+                work: work,
+                result: regenerated,
+                resultDigest: resultDigest
+            )
+            try validateStoredHistoricalProjection(
+                projectionID: projectionID,
+                work: work,
+                result: regenerated,
+                resultDigest: resultDigest
+            )
+            try execute(
+                "COMMIT TRANSACTION",
+                operation: "commit historical projection"
+            )
+            if injectedFailurePoint == .afterHistoricalProjectionCommitBeforeReturningReceipt {
+                injectedFailurePoint = nil
+                responseLossAfterCommit = true
+            }
+            if responseLossAfterCommit {
+                throw SQLiteEventJournalError.injectedFailure
+            }
+            return .newlyCommitted(try HistoricalProjectionRecordID(projectionID))
+        } catch SQLiteEventJournalError.injectedFailure where responseLossAfterCommit {
+            throw SQLiteEventJournalError.injectedFailure
+        } catch {
+            try rollback(after: error)
+        }
+    }
+
     public func finalizeCalibrationWithHistoricalFrames(
         _ request: HistoricalCalibrationFinalizationRequest
     ) throws -> HistoricalCalibrationFinalizationOutcome {
@@ -1228,6 +1315,493 @@ private extension SQLiteEventJournalRepository {
         return Data(SHA256.hash(data: bytes))
     }
 
+    func readNextHistoricalProjectionWork() throws -> HistoricalProjectionWork? {
+        let sql = "SELECT w.work_id,w.baseline_sequence,w.comparison_sequence,w.algorithm_version,w.ranking_policy_version,w.positive_limit FROM historical_projection_work w LEFT JOIN historical_projection_checkpoint c ON c.work_id=w.work_id WHERE c.work_id IS NULL ORDER BY w.comparison_sequence,w.work_id LIMIT 1"
+        let rows = try historicalRows(sql) { statement in
+            try makeHistoricalProjectionWork(statement)
+        }
+        return rows.first
+    }
+
+    func readHistoricalProjectionWork(
+        id: HistoricalProjectionWorkID
+    ) throws -> HistoricalProjectionWork? {
+        let sql = "SELECT work_id,baseline_sequence,comparison_sequence,algorithm_version,ranking_policy_version,positive_limit FROM historical_projection_work WHERE work_id=?"
+        return try historicalRows(sql, integers: [id.rawValue]) { statement in
+            try makeHistoricalProjectionWork(statement)
+        }.first
+    }
+
+    func makeHistoricalProjectionWork(
+        _ statement: OpaquePointer
+    ) throws -> HistoricalProjectionWork {
+        do {
+            return try HistoricalProjectionWork(
+                recordID: HistoricalProjectionWorkID(sqlite3_column_int64(statement, 0)),
+                baselineSequence: ObservationCommitSequence(sqlite3_column_int64(statement, 1)),
+                comparisonSequence: ObservationCommitSequence(sqlite3_column_int64(statement, 2)),
+                algorithmVersion: HistoricalFindingAlgorithmVersion(
+                    Int(sqlite3_column_int(statement, 3))
+                ),
+                rankingPolicyVersion: HistoricalFindingRankingPolicyVersion(
+                    Int(sqlite3_column_int(statement, 4))
+                ),
+                positiveLimit: Int(sqlite3_column_int64(statement, 5))
+            )
+        } catch {
+            throw SQLiteEventJournalError.corruptStoredValue(
+                field: "historical_projection_work"
+            )
+        }
+    }
+
+    func canonicalHistoricalProjectionDigest(
+        _ result: HistoricalFindingGenerationResult
+    ) throws -> Data {
+        try canonicalHistoricalDigest(
+            result,
+            domain: "SpaceTrace.HistoricalFindingGenerationResult.v1"
+        )
+    }
+
+    func insertHistoricalProjection(
+        work: HistoricalProjectionWork,
+        result: HistoricalFindingGenerationResult,
+        resultDigest: Data
+    ) throws -> Int64 {
+        let committedAt = Self.historicalMilliseconds(now())
+        try historicalExecuteNullable(
+            "INSERT INTO historical_finding_projection(work_id,format_version,canonical_result_sha256,truncated_positive_count,committed_at_ms) VALUES(?,1,?,?,?)",
+            values: [
+                .integer(work.recordID.rawValue),
+                .blob(resultDigest),
+                .integer(Int64(result.suppressionSummary.truncatedPositiveCount)),
+                .integer(committedAt),
+            ]
+        )
+        let projectionID = sqlite3_last_insert_rowid(try databaseHandle())
+        let expectedRows = try historicalProjectionExpectedRows(
+            work: work,
+            result: result
+        )
+        let rowByKey = Dictionary(uniqueKeysWithValues: expectedRows.map { ($0.draft.key, $0) })
+        let orderedDrafts = try historicalTopologicalDrafts(result.batch.findings)
+        var findingIDByKey: [HistoricalFindingKey: Int64] = [:]
+
+        for draft in orderedDrafts {
+            let row = try rowByKey[draft.key].unwrap(field: "historical_finding_row")
+            if try historicalOptionalInt(
+                "SELECT finding_id FROM historical_finding WHERE finding_key_sha256=?",
+                blobs: [row.findingKeyDigest]
+            ) != nil {
+                throw SQLiteEventJournalError.historicalProjectionImmutableConflict
+            }
+            let movementAncestorID: Int64?
+            switch draft.movementContext {
+            case .none:
+                movementAncestorID = nil
+            case .inheritedFromAncestor(let ancestorKey):
+                movementAncestorID = try findingIDByKey[ancestorKey].unwrap(
+                    field: "historical_movement_ancestor"
+                )
+            }
+            try historicalExecuteNullable(
+                "INSERT INTO historical_finding(projection_id,ordinal,finding_key_sha256,draft_sha256,baseline_node_id,baseline_metric,comparison_node_id,comparison_metric,kind,inclusive_delta_bytes,ranking_contribution_bytes,movement_ancestor_finding_id,expires_at_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                values: [
+                    .integer(projectionID),
+                    .integer(Int64(row.ordinal)),
+                    .blob(row.findingKeyDigest),
+                    .blob(row.draftDigest),
+                    .integer(row.baselineNodeID),
+                    .integer(row.metricCode),
+                    .integer(row.comparisonNodeID),
+                    .integer(row.metricCode),
+                    .integer(row.kindCode),
+                    .integer(row.inclusiveDeltaBytes),
+                    row.rankingContributionBytes.map(HistoricalSQLValue.integer) ?? .null,
+                    movementAncestorID.map(HistoricalSQLValue.integer) ?? .null,
+                    .integer(row.expiresAtMilliseconds),
+                ]
+            )
+            findingIDByKey[draft.key] = sqlite3_last_insert_rowid(try databaseHandle())
+        }
+
+        for (offset, key) in result.batch.rankedPositiveFindingKeys.enumerated() {
+            let findingID = try findingIDByKey[key].unwrap(field: "historical_rank_finding")
+            try historicalExecute(
+                "INSERT INTO historical_finding_positive_rank(projection_id,rank,finding_id) VALUES(?,?,?)",
+                integers: [projectionID, Int64(offset + 1), findingID]
+            )
+        }
+        try insertHistoricalReasonCounts(
+            result.suppressionSummary.findingSuppressions,
+            category: 1,
+            projectionID: projectionID
+        )
+        try insertHistoricalReasonCounts(
+            result.suppressionSummary.rankingExclusions,
+            category: 2,
+            projectionID: projectionID
+        )
+        try insertHistoricalReasonCounts(
+            result.suppressionSummary.collapses,
+            category: 3,
+            projectionID: projectionID
+        )
+
+        if injectedFailurePoint == .beforeHistoricalProjectionCheckpoint {
+            injectedFailurePoint = nil
+            throw SQLiteEventJournalError.injectedFailure
+        }
+        try historicalExecute(
+            "INSERT INTO historical_projection_checkpoint(work_id,committed_at_ms) VALUES(?,?)",
+            integers: [work.recordID.rawValue, committedAt]
+        )
+        return projectionID
+    }
+
+    func insertHistoricalReasonCounts(
+        _ counts: [HistoricalFindingReasonCount],
+        category: Int64,
+        projectionID: Int64
+    ) throws {
+        for value in counts {
+            try historicalExecute(
+                "INSERT INTO historical_finding_reason_count(projection_id,category,reason_code,count) VALUES(?,?,?,?)",
+                integers: [
+                    projectionID,
+                    category,
+                    try historicalReasonCode(value.reason),
+                    Int64(value.count),
+                ]
+            )
+        }
+    }
+
+    func historicalProjectionExpectedRows(
+        work: HistoricalProjectionWork,
+        result: HistoricalFindingGenerationResult
+    ) throws -> [HistoricalProjectionExpectedFindingRow] {
+        let expiresAt = try historicalSingleInt(
+            "SELECT min(b.expires_at_ms,c.expires_at_ms) FROM historical_projection_work w JOIN historical_observation_frame_commit b ON b.sequence=w.baseline_sequence JOIN historical_observation_frame_commit c ON c.sequence=w.comparison_sequence WHERE w.work_id=?",
+            integers: [work.recordID.rawValue]
+        )
+        return try result.batch.findings.enumerated().map { ordinal, draft in
+            let metricCode = try historicalMetricCode(draft.evidence.metric)
+            let baselineNodeID = try historicalNodeID(
+                endpointID: draft.evidence.baselineEndpointID,
+                sequence: work.baselineSequence,
+                metricCode: metricCode
+            )
+            let comparisonNodeID = try historicalNodeID(
+                endpointID: draft.evidence.comparisonEndpointID,
+                sequence: work.comparisonSequence,
+                metricCode: metricCode
+            )
+            let findingKeyDigest: Data
+            if injectedFailurePoint == .forceHistoricalFindingKeyDigestCollision {
+                findingKeyDigest = Data(repeating: 0xA5, count: 32)
+            } else {
+                findingKeyDigest = try canonicalHistoricalDigest(
+                    draft.key,
+                    domain: "SpaceTrace.HistoricalFindingKey.v1"
+                )
+            }
+            return HistoricalProjectionExpectedFindingRow(
+                ordinal: ordinal,
+                findingKeyDigest: findingKeyDigest,
+                draftDigest: try canonicalHistoricalDigest(
+                    draft,
+                    domain: "SpaceTrace.HistoricalFindingDraft.v1"
+                ),
+                baselineNodeID: baselineNodeID,
+                comparisonNodeID: comparisonNodeID,
+                metricCode: metricCode,
+                kindCode: historicalFindingKindCode(draft.kind),
+                inclusiveDeltaBytes: draft.inclusiveDelta.bytes,
+                rankingContributionBytes: draft.rankingContribution?.bytes,
+                movementAncestorKey: draft.movementContext?.ancestorKey,
+                expiresAtMilliseconds: expiresAt,
+                draft: draft
+            )
+        }
+    }
+
+    func validateStoredHistoricalProjection(
+        projectionID: Int64,
+        work: HistoricalProjectionWork,
+        result: HistoricalFindingGenerationResult,
+        resultDigest: Data
+    ) throws {
+        let headers = try historicalRows(
+            "SELECT work_id,format_version,canonical_result_sha256,truncated_positive_count FROM historical_finding_projection WHERE projection_id=?",
+            integers: [projectionID]
+        ) { statement in
+            (
+                sqlite3_column_int64(statement, 0),
+                sqlite3_column_int64(statement, 1),
+                try historicalData(statement, 2, "projection.digest"),
+                sqlite3_column_int64(statement, 3)
+            )
+        }
+        guard let header = headers.first,
+              headers.count == 1,
+              header.0 == work.recordID.rawValue,
+              header.1 == 1,
+              header.2 == resultDigest,
+              header.3 == Int64(result.suppressionSummary.truncatedPositiveCount)
+        else {
+            throw SQLiteEventJournalError.historicalProjectionImmutableConflict
+        }
+        guard try historicalSingleInt(
+            "SELECT count(*) FROM historical_projection_checkpoint WHERE work_id=?",
+            integers: [work.recordID.rawValue]
+        ) == 1 else {
+            throw SQLiteEventJournalError.historicalProjectionImmutableConflict
+        }
+
+        let expectedRows = try historicalProjectionExpectedRows(
+            work: work,
+            result: result
+        )
+        let actualRows = try historicalRows(
+            "SELECT finding_id,ordinal,finding_key_sha256,draft_sha256,baseline_node_id,baseline_metric,comparison_node_id,comparison_metric,kind,inclusive_delta_bytes,ranking_contribution_bytes,movement_ancestor_finding_id,expires_at_ms FROM historical_finding WHERE projection_id=? ORDER BY ordinal",
+            integers: [projectionID]
+        ) { statement in
+            HistoricalProjectionStoredFindingRow(
+                findingID: sqlite3_column_int64(statement, 0),
+                ordinal: Int(sqlite3_column_int64(statement, 1)),
+                findingKeyDigest: try historicalData(statement, 2, "finding.key_digest"),
+                draftDigest: try historicalData(statement, 3, "finding.draft_digest"),
+                baselineNodeID: sqlite3_column_int64(statement, 4),
+                baselineMetricCode: sqlite3_column_int64(statement, 5),
+                comparisonNodeID: sqlite3_column_int64(statement, 6),
+                comparisonMetricCode: sqlite3_column_int64(statement, 7),
+                kindCode: sqlite3_column_int64(statement, 8),
+                inclusiveDeltaBytes: sqlite3_column_int64(statement, 9),
+                rankingContributionBytes: try historicalOptionalInteger(statement, 10),
+                movementAncestorFindingID: try historicalOptionalInteger(statement, 11),
+                expiresAtMilliseconds: sqlite3_column_int64(statement, 12)
+            )
+        }
+        guard actualRows.count == expectedRows.count else {
+            throw SQLiteEventJournalError.historicalProjectionImmutableConflict
+        }
+        var actualIDByKeyDigest: [Data: Int64] = [:]
+        for row in actualRows {
+            guard actualIDByKeyDigest.updateValue(
+                row.findingID,
+                forKey: row.findingKeyDigest
+            ) == nil else {
+                throw SQLiteEventJournalError.historicalProjectionImmutableConflict
+            }
+        }
+        let expectedByKey = Dictionary(uniqueKeysWithValues: expectedRows.map {
+            ($0.draft.key, $0)
+        })
+        for (expected, actual) in zip(expectedRows, actualRows) {
+            let expectedAncestorID: Int64?
+            if let ancestorKey = expected.movementAncestorKey {
+                let ancestor = try expectedByKey[ancestorKey].unwrap(
+                    field: "historical_expected_ancestor"
+                )
+                expectedAncestorID = try actualIDByKeyDigest[ancestor.findingKeyDigest].unwrap(
+                    field: "historical_stored_ancestor"
+                )
+            } else {
+                expectedAncestorID = nil
+            }
+            guard actual.matches(expected, movementAncestorFindingID: expectedAncestorID) else {
+                throw SQLiteEventJournalError.historicalProjectionImmutableConflict
+            }
+        }
+
+        let expectedRanks = try result.batch.rankedPositiveFindingKeys.enumerated().map {
+            offset, key -> HistoricalProjectionStoredRank in
+            let expected = try expectedByKey[key].unwrap(field: "historical_expected_rank")
+            return HistoricalProjectionStoredRank(
+                rank: offset + 1,
+                findingID: try actualIDByKeyDigest[expected.findingKeyDigest].unwrap(
+                    field: "historical_stored_rank"
+                )
+            )
+        }
+        let actualRanks = try historicalRows(
+            "SELECT rank,finding_id FROM historical_finding_positive_rank WHERE projection_id=? ORDER BY rank",
+            integers: [projectionID]
+        ) { statement in
+            HistoricalProjectionStoredRank(
+                rank: Int(sqlite3_column_int64(statement, 0)),
+                findingID: sqlite3_column_int64(statement, 1)
+            )
+        }
+        guard actualRanks == expectedRanks else {
+            throw SQLiteEventJournalError.historicalProjectionImmutableConflict
+        }
+
+        let expectedReasons = try historicalExpectedReasonRows(
+            result.suppressionSummary,
+            projectionID: projectionID
+        )
+        let actualReasons = try historicalRows(
+            "SELECT projection_id,category,reason_code,count FROM historical_finding_reason_count WHERE projection_id=? ORDER BY category,reason_code",
+            integers: [projectionID]
+        ) { statement in
+            HistoricalProjectionStoredReason(
+                projectionID: sqlite3_column_int64(statement, 0),
+                category: sqlite3_column_int64(statement, 1),
+                reasonCode: sqlite3_column_int64(statement, 2),
+                count: sqlite3_column_int64(statement, 3)
+            )
+        }
+        guard actualReasons == expectedReasons else {
+            throw SQLiteEventJournalError.historicalProjectionImmutableConflict
+        }
+    }
+
+    func historicalExpectedReasonRows(
+        _ summary: HistoricalFindingSuppressionSummary,
+        projectionID: Int64
+    ) throws -> [HistoricalProjectionStoredReason] {
+        var rows: [HistoricalProjectionStoredReason] = []
+        for (category, counts) in [
+            (Int64(1), summary.findingSuppressions),
+            (Int64(2), summary.rankingExclusions),
+            (Int64(3), summary.collapses),
+        ] {
+            for value in counts {
+                rows.append(
+                    HistoricalProjectionStoredReason(
+                        projectionID: projectionID,
+                        category: category,
+                        reasonCode: try historicalReasonCode(value.reason),
+                        count: Int64(value.count)
+                    )
+                )
+            }
+        }
+        return rows.sorted {
+            if $0.category != $1.category { return $0.category < $1.category }
+            return $0.reasonCode < $1.reasonCode
+        }
+    }
+
+    func historicalTopologicalDrafts(
+        _ drafts: [HistoricalFindingDraft]
+    ) throws -> [HistoricalFindingDraft] {
+        let draftByKey = Dictionary(uniqueKeysWithValues: drafts.map { ($0.key, $0) })
+        var stateByKey: [HistoricalFindingKey: HistoricalProjectionVisitState] = [:]
+        var result: [HistoricalFindingDraft] = []
+        result.reserveCapacity(drafts.count)
+
+        for startingDraft in drafts {
+            if stateByKey[startingDraft.key] == .visited { continue }
+            var chain: [HistoricalFindingDraft] = []
+            var current = startingDraft
+            while true {
+                switch stateByKey[current.key] {
+                case .visited:
+                    break
+                case .visiting:
+                    throw SQLiteEventJournalError.historicalProjectionResultMismatch
+                case .none:
+                    stateByKey[current.key] = .visiting
+                    chain.append(current)
+                    guard let ancestorKey = current.movementContext?.ancestorKey else {
+                        break
+                    }
+                    guard let ancestor = draftByKey[ancestorKey] else {
+                        throw SQLiteEventJournalError.historicalProjectionResultMismatch
+                    }
+                    current = ancestor
+                    continue
+                }
+                break
+            }
+            while let draft = chain.popLast() {
+                stateByKey[draft.key] = .visited
+                result.append(draft)
+            }
+        }
+        guard result.count == drafts.count else {
+            throw SQLiteEventJournalError.historicalProjectionResultMismatch
+        }
+        return result
+    }
+
+    func historicalNodeID(
+        endpointID: ObservationEndpointID,
+        sequence: ObservationCommitSequence,
+        metricCode: Int64
+    ) throws -> Int64 {
+        let components = endpointID.rawValue.split(
+            separator: ":",
+            omittingEmptySubsequences: false
+        )
+        let generation = try historicalStoreGeneration().bytes.map {
+            String(format: "%02x", $0)
+        }.joined()
+        guard components.count == 4,
+              components[0] == "st11",
+              components[1] == Substring(generation),
+              components[3] == Substring(String(format: "%02lld", metricCode)),
+              components[2].count == 16,
+              let unsignedNodeID = UInt64(components[2], radix: 16),
+              unsignedNodeID <= UInt64(Int64.max),
+              unsignedNodeID > 0 else {
+            throw SQLiteEventJournalError.historicalProjectionResultMismatch
+        }
+        let nodeID = Int64(unsignedNodeID)
+        guard try historicalSingleInt(
+            "SELECT count(*) FROM historical_metric_endpoint e JOIN historical_observation_node n ON n.node_id=e.node_id JOIN historical_observation_frame f ON f.batch_id=n.batch_id AND f.metric=e.metric JOIN historical_observation_frame_commit c ON c.frame_id=f.frame_id WHERE e.node_id=? AND e.metric=? AND c.sequence=?",
+            integers: [nodeID, metricCode, sequence.rawValue]
+        ) == 1 else {
+            throw SQLiteEventJournalError.historicalProjectionResultMismatch
+        }
+        return nodeID
+    }
+
+    func canonicalHistoricalDigest<Value: Encodable>(
+        _ value: Value,
+        domain: String
+    ) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let payload = try encoder.encode(value)
+        var canonical = Data(domain.utf8)
+        canonical.append(0)
+        var length = UInt64(payload.count).bigEndian
+        withUnsafeBytes(of: &length) { canonical.append(contentsOf: $0) }
+        canonical.append(payload)
+        return Data(SHA256.hash(data: canonical))
+    }
+
+    func historicalMetricCode(_ metric: StorageMetric) throws -> Int64 {
+        switch metric {
+        case .logical: 1
+        case .allocated: 2
+        case .volumeAvailable:
+            throw SQLiteEventJournalError.historicalProjectionResultMismatch
+        }
+    }
+
+    func historicalFindingKindCode(_ kind: HistoricalFindingKind) -> Int64 {
+        switch kind {
+        case .appearance: 1
+        case .decrease: 2
+        case .disappearance: 3
+        case .growth: 4
+        case .move: 5
+        }
+    }
+
+    func historicalReasonCode(_ reason: HistoricalFindingReason) throws -> Int64 {
+        guard let index = historicalFindingReasonWireOrder.firstIndex(of: reason) else {
+            throw SQLiteEventJournalError.historicalProjectionResultMismatch
+        }
+        return Int64(index + 1)
+    }
+
     func historicalStoreGeneration() throws -> HistoricalStoreGeneration {
         let data = try historicalSingleData(
             "SELECT store_generation FROM historical_store_identity WHERE singleton=1"
@@ -1388,6 +1962,121 @@ private struct HistoricalFrameHeader {
     let batchID: Int64
 }
 
+private struct HistoricalProjectionExpectedFindingRow {
+    let ordinal: Int
+    let findingKeyDigest: Data
+    let draftDigest: Data
+    let baselineNodeID: Int64
+    let comparisonNodeID: Int64
+    let metricCode: Int64
+    let kindCode: Int64
+    let inclusiveDeltaBytes: Int64
+    let rankingContributionBytes: Int64?
+    let movementAncestorKey: HistoricalFindingKey?
+    let expiresAtMilliseconds: Int64
+    let draft: HistoricalFindingDraft
+}
+
+private struct HistoricalProjectionStoredFindingRow {
+    let findingID: Int64
+    let ordinal: Int
+    let findingKeyDigest: Data
+    let draftDigest: Data
+    let baselineNodeID: Int64
+    let baselineMetricCode: Int64
+    let comparisonNodeID: Int64
+    let comparisonMetricCode: Int64
+    let kindCode: Int64
+    let inclusiveDeltaBytes: Int64
+    let rankingContributionBytes: Int64?
+    let movementAncestorFindingID: Int64?
+    let expiresAtMilliseconds: Int64
+
+    func matches(
+        _ expected: HistoricalProjectionExpectedFindingRow,
+        movementAncestorFindingID expectedAncestorID: Int64?
+    ) -> Bool {
+        ordinal == expected.ordinal
+            && findingKeyDigest == expected.findingKeyDigest
+            && draftDigest == expected.draftDigest
+            && baselineNodeID == expected.baselineNodeID
+            && baselineMetricCode == expected.metricCode
+            && comparisonNodeID == expected.comparisonNodeID
+            && comparisonMetricCode == expected.metricCode
+            && kindCode == expected.kindCode
+            && inclusiveDeltaBytes == expected.inclusiveDeltaBytes
+            && rankingContributionBytes == expected.rankingContributionBytes
+            && movementAncestorFindingID == expectedAncestorID
+            && expiresAtMilliseconds == expected.expiresAtMilliseconds
+    }
+}
+
+private struct HistoricalProjectionStoredRank: Equatable {
+    let rank: Int
+    let findingID: Int64
+}
+
+private struct HistoricalProjectionStoredReason: Equatable {
+    let projectionID: Int64
+    let category: Int64
+    let reasonCode: Int64
+    let count: Int64
+}
+
+private enum HistoricalProjectionVisitState {
+    case visiting
+    case visited
+}
+
+private let historicalFindingReasonWireOrder: [HistoricalFindingReason] = [
+    .frameRootSubjectMismatch,
+    .frameScopeMismatch,
+    .frameVolumeMismatch,
+    .frameMountGenerationMismatch,
+    .frameCoverageEpochMismatch,
+    .frameMetricMismatch,
+    .framePathSemanticsMismatch,
+    .frameMeasurementSemanticsMismatch,
+    .frameNonIncreasingSequence,
+    .missingBaselineEndpoint,
+    .missingComparisonEndpoint,
+    .endpointScopeMismatch,
+    .endpointVolumeMismatch,
+    .endpointMountGenerationMismatch,
+    .endpointCoverageEpochMismatch,
+    .endpointSubjectMismatch,
+    .endpointIdentityBasisMismatch,
+    .endpointMetricMismatch,
+    .endpointPathSemanticsMismatch,
+    .endpointMeasurementSemanticsMismatch,
+    .endpointNonIncreasingSequence,
+    .endpointIncompleteCoverage,
+    .endpointUnavailable,
+    .endpointLocationChangedWithoutStableIdentity,
+    .endpointLocationChangedWithoutTwoPresentEndpoints,
+    .stableIdentityEvidenceMissing,
+    .stableIdentityReuseGuardMismatch,
+    .stableIdentityNodeKindMismatch,
+    .stableIdentityLinkSetNotUnique,
+    .moveParentEvidenceIncomplete,
+    .rankingIncompleteDirectChildren,
+    .rankingIncompleteChildMeasurement,
+    .rankingKindIneligible,
+    .rankingNonPositiveContribution,
+    .collapsedImplicitDescendantMove,
+    .collapsedInheritedMoveFacet,
+    .coveredByAncestorAppearance,
+    .coveredByAncestorDisappearance,
+]
+
+private extension HistoricalFindingMovementContext {
+    var ancestorKey: HistoricalFindingKey {
+        switch self {
+        case .inheritedFromAncestor(let ancestorKey): ancestorKey
+        }
+    }
+}
+
 private let historicalSQLiteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 private func bindHistoricalBlob(
@@ -1428,6 +2117,17 @@ private func historicalOptionalData(
 ) throws -> Data? {
     if sqlite3_column_type(statement, column) == SQLITE_NULL { return nil }
     return try historicalData(statement, column, "historical_optional_blob")
+}
+
+private func historicalOptionalInteger(
+    _ statement: OpaquePointer,
+    _ column: Int32
+) throws -> Int64? {
+    if sqlite3_column_type(statement, column) == SQLITE_NULL { return nil }
+    guard sqlite3_column_type(statement, column) == SQLITE_INTEGER else {
+        throw SQLiteEventJournalError.corruptStoredValue(field: "historical_optional_integer")
+    }
+    return sqlite3_column_int64(statement, column)
 }
 
 private func historicalText(

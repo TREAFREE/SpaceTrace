@@ -211,6 +211,11 @@ Commit: `实现注册式同证据更正投影`
 
 ## Task 7: Add current-effective/audit queries and durable status
 
+**Precondition discovered during Task 7:** schema v12 stores corrected findings
+in a distinct ID namespace but has no corrected-finding retraction target.
+Implement ADR-009 as an additive v13 migration before these queries; do not
+rewrite the frozen v12 fixture or coerce corrected IDs into v11 IDs.
+
 **Files:**
 
 - Extend historical overview/audit repository ports and SQLite queries
@@ -223,6 +228,9 @@ Commit: `实现注册式同证据更正投影`
 - Audit returns every predecessor, correction edge, original finding, digest, and independent retraction in canonical order.
 - Limits apply after graph reconstruction/validation, never before.
 - A retracted terminal finding remains hidden; replacing a projection never deletes/revives an unrelated retracted predecessor finding.
+- Original and corrected raw IDs may collide numerically but remain distinct
+  typed identities; corrected-finding invalidation is append-only and belongs
+  to the terminal corrected projection.
 - Per-scope status exposes exact last successful sequence/time and pending state from durable dirty work.
 - Restart, permission loss, unavailable volume, partial scan, failure, History Off, baseline unavailable, and fresh-baseline recovery remain typed.
 

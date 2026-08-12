@@ -12,6 +12,8 @@ Related requirements: FR-004, FR-005, FR-006, FR-007, FR-012, FR-013, NFR-001, N
 
 Amends: [ADR-006](ADR-006-immutable-observations-and-findings.md) after acceptance
 
+Corrected-finding identity and invalidation follow-up: [ADR-009](ADR-009-corrected-finding-identity-and-invalidation.md)
+
 ## Context
 
 FSEvents tells SpaceTrace that an area may be stale; it does not provide byte deltas or a trusted event sequence. SpaceTrace therefore publishes current directory truth and audit-grade historical findings only after a complete calibration scan. The scan is bounded, dirty work is durable, and schema v11 preserves complete immutable observation frames and findings.
@@ -119,7 +121,7 @@ Projection replacement is a linear append-only chain:
 - cycles, branches, self-links, cross-scope links, and cross-metric links are rejected;
 - the entire chain uses one retention anchor and one expiry boundary derived from the original observation pair.
 
-The current-effective view resolves the terminal projection and returns only its findings and ranks, minus any independent evidence-invalidated retractions attached to that terminal projection. The audit view returns every unchanged projection, finding, correction edge, frozen input digest, and retraction in chain order.
+The current-effective view resolves the terminal projection and returns only its findings and ranks, minus any independent evidence-invalidated retractions attached to that terminal projection. Schema v11 retractions cover original findings; ADR-009 adds the distinct schema-v13 target needed for corrected findings without rewriting frozen v12. The audit view returns every unchanged projection, finding, correction edge, frozen input digest, and retraction in chain order.
 
 Schema v12 does not claim a historical “what the app believed before correction” query unless a caller explicitly requests the audit chain. A comparison-sequence limit is still an observation-time bound, not a correction-time snapshot.
 

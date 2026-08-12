@@ -12,6 +12,8 @@
 
 接受后修订：[ADR-006](ADR-006-immutable-observations-and-findings.zh-CN.md)
 
+更正 finding 身份与失效记录的后续决策：[ADR-009](ADR-009-corrected-finding-identity-and-invalidation.zh-CN.md)
+
 ## 背景
 
 FSEvents 只能告诉 SpaceTrace 某个区域可能已经过期；它不提供字节差值，也不提供可信的精确事件序列。因此，SpaceTrace 只有在完整校准扫描之后，才会发布当前目录事实和审计级历史 finding。扫描受预算限制，脏工作是持久化的，schema v11 会保存完整、不可变的观测帧与 finding。
@@ -119,7 +121,7 @@ Application 为每个受支持的更正版本组合维护封闭注册表。Persi
 - 环、分支、自链接、跨 scope 链接和跨 metric 链接全部拒绝；
 - 整条链使用由原始观测帧对确定的同一个保留锚点与过期边界。
 
-当前有效视图解析终端投影，只返回该投影的 finding 与排名，并排除附着于该终端投影的独立证据失效撤回。审计视图按链顺序返回所有未修改的投影、finding、更正边、冻结输入摘要和撤回。
+当前有效视图解析终端投影，只返回该投影的 finding 与排名，并排除附着于该终端投影的独立证据失效撤回。Schema v11 撤回覆盖原始 finding；ADR-009 增加 schema v13 的独立目标，以便在不重写冻结 v12 的前提下覆盖 corrected finding。审计视图按链顺序返回所有未修改的投影、finding、更正边、冻结输入摘要和撤回。
 
 除非调用方显式请求审计链，否则 schema v12 不声称提供“更正前应用当时相信什么”的历史查询。comparison-sequence 上限仍然是观测时间边界，而不是更正时间快照。
 

@@ -12,6 +12,7 @@ This directory records durable technical, data, permission, distribution, and se
 | [ADR-006](ADR-006-immutable-observations-and-findings.md) | Immutable observation endpoints, explicit absence, proven moves, exclusive ranking, and append-only finding projection | Proposed; pure contracts, schema-v11, production disappearance/APFS move integration, and bounded Overview implemented; adoption, manual UI qualification, and release gates pending |
 | [ADR-007](ADR-007-user-initiated-diagnostic-export.md) | User-initiated, previewed diagnostic export with default redaction and a narrow save capability | Accepted; deterministic and cancellation tests passed; signed-sandbox/manual accessibility/DMG qualification pending |
 | [ADR-008](ADR-008-append-only-reconciliation-corrections.md) | Append-only provisional-history revisions and registered same-evidence correcting projections | Proposed; schema-v12 implementation, migration, benchmark, UI, and adoption gates pending |
+| [ADR-009](ADR-009-corrected-finding-identity-and-invalidation.md) | Versioned original/corrected identities and append-only corrected-finding invalidation | Proposed; schema-v13 migration, query, retention, UI, and adoption gates pending |
 
 ## Status lifecycle
 

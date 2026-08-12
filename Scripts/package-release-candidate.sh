@@ -123,7 +123,7 @@ assert_exact_entitlements() {
     local entitlement
     for entitlement in \
         com.apple.security.app-sandbox \
-        com.apple.security.files.user-selected.read-only \
+        com.apple.security.files.user-selected.read-write \
         com.apple.security.files.bookmarks.app-scope; do
         [[ $(/usr/libexec/PlistBuddy -c "Print :$entitlement" "$scratch" 2>/dev/null) == true ]] \
             || fail "$label entitlement is missing or false: $entitlement"
@@ -218,7 +218,7 @@ plutil -insert sourceTreeClean -bool true "$manifest_plist"
 plutil -insert minimumSystemVersion -string "$minimum_system_version" "$manifest_plist"
 plutil -insert architectures -json '["arm64"]' "$manifest_plist"
 plutil -insert entitlements -json \
-    '["com.apple.security.app-sandbox","com.apple.security.files.user-selected.read-only","com.apple.security.files.bookmarks.app-scope"]' \
+    '["com.apple.security.app-sandbox","com.apple.security.files.user-selected.read-write","com.apple.security.files.bookmarks.app-scope"]' \
     "$manifest_plist"
 plutil -insert signing -dictionary "$manifest_plist"
 plutil -insert signing.mode -string adhoc "$manifest_plist"

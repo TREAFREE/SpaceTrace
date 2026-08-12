@@ -7,6 +7,7 @@ struct ContentView: View {
     @Bindable var baselineScanModel: BaselineScanViewModel
     @Bindable var directoryHistoryModel: DirectoryHistoryViewModel
     @Bindable var historicalFindingsModel: HistoricalFindingsViewModel
+    @Bindable var diagnosticExportModel: DiagnosticExportViewModel
     @Bindable var databaseRecoveryModel: DatabaseRecoveryViewModel
     @State private var selection: SpaceTraceSection? = .overview
 
@@ -85,6 +86,11 @@ struct ContentView: View {
             }
         case .permissions:
             DirectoryAuthorizationView(model: authorizationModel)
+        case .diagnostics:
+            DiagnosticExportView(
+                model: diagnosticExportModel,
+                historicalFindingsModel: historicalFindingsModel
+            )
         }
     }
 }
@@ -97,6 +103,7 @@ struct ContentView: View {
         baselineScanModel: BaselineScanViewModel(),
         directoryHistoryModel: DirectoryHistoryViewModel(),
         historicalFindingsModel: HistoricalFindingsViewModel(),
+        diagnosticExportModel: DiagnosticExportViewModel(),
         databaseRecoveryModel: DatabaseRecoveryViewModel()
     )
 }

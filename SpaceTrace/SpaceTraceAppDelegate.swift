@@ -11,6 +11,7 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
     let baselineScanModel = BaselineScanViewModel()
     let directoryHistoryModel = DirectoryHistoryViewModel()
     let historicalFindingsModel = HistoricalFindingsViewModel()
+    let diagnosticExportModel = DiagnosticExportViewModel()
     let databaseRecoveryModel = DatabaseRecoveryViewModel()
     let menuBarStatusModel = MenuBarStatusViewModel()
 
@@ -29,6 +30,12 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
             directoryHistoryModel.connect(UITestStorageHistoryLoader())
             historicalFindingsModel.connect(UITestHistoricalFindingOverviewService())
             menuBarStatusModel.loadUITestFixture()
+            if let writer = try? AtomicDiagnosticExportWriter(
+                stagingDirectoryURL: FileManager.default.temporaryDirectory
+                    .appendingPathComponent("SpaceTrace-UI-Export", isDirectory: true)
+            ) {
+                diagnosticExportModel.connect(writer)
+            }
             return
         }
 #endif
@@ -47,6 +54,9 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
                 historicalFindingsModel.connect(
                     compositionRoot.historicalFindingOverviewQuery
                 )
+                diagnosticExportModel.connect(
+                    compositionRoot.diagnosticExportWriter
+                )
                 menuBarStatusModel.connect(
                     compositionRoot.startupVolume24HourStatusQuery
                 )
@@ -54,6 +64,7 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
                     compositionRoot.storageHistorySoakRecorder != nil
                 )
                 startupTask = Task { [weak self] in
+                    await self?.diagnosticExportModel.recoverInterruptedExports()
                     await self?.authorizationModel.start()
                 }
                 storageHistoryObservationTask = Task { [weak self] in

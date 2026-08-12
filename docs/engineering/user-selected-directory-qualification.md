@@ -52,7 +52,9 @@ Scripts/qualify-user-selected-directory.sh /absolute/path/to/SpaceTrace.app
 The script fails closed unless the host is macOS 15.6.x, the architecture is arm64, the code signature verifies, `LSMinimumSystemVersion` is exactly 15.6, and these entitlements are true:
 
 - `com.apple.security.app-sandbox`
-- `com.apple.security.files.user-selected.read-only`
+- `com.apple.security.files.user-selected.read-write` (only for the exact
+  diagnostic-export file chosen in `NSSavePanel`; monitoring bookmarks remain
+  `.securityScopeAllowOnlyReadAccess`)
 - `com.apple.security.files.bookmarks.app-scope`
 
 For a newer-host, ad-hoc, non-qualifying smoke preflight only:
@@ -149,7 +151,7 @@ Pass criteria: every step passes on 15.6.x. A build or run on macOS 16/26 does n
 | App version/build | `CFBundleShortVersionString` / `CFBundleVersion` |
 | Host | `ProductVersion`, `BuildVersion`, arm64 |
 | Signature | Apple identity class; ad-hoc only for smoke |
-| Entitlements | sandbox, read-only selection, app-scoped bookmarks |
+| Entitlements | sandbox, user-selected read/write for diagnostic save only, app-scoped bookmarks; watched bookmark is explicitly read-only |
 | Q-01…Q-06 | Pass / fail / blocked with stable reason code |
 | Sensitive evidence | None |
 
@@ -167,7 +169,7 @@ This record is implementation evidence, not macOS 15.6 or distribution-signing q
 | Toolchain | Xcode 26.1.1 (`17B100`) |
 | Signature | Valid ad-hoc signature; no valid Apple code-signing identity was installed |
 | Minimum system | `LSMinimumSystemVersion = 15.6` |
-| Entitlements | App Sandbox, user-selected read-only, app-scoped bookmarks |
+| Entitlements | App Sandbox, user-selected read/write for diagnostic save only, app-scoped bookmarks; watched bookmark is explicitly read-only |
 | Fixture privacy | Synthetic internal directory and disposable APFS image only; no real user directory or existing external disk was selected |
 
 | Gate | Result | Evidence boundary |

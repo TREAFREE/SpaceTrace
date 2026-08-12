@@ -47,7 +47,7 @@ make package-release-candidate \
 - Bundle ID 为 `com.TREAFREE.SpaceTrace`；
 - 只含 Apple Silicon `arm64`；
 - `LSMinimumSystemVersion = 15.6`；
-- entitlement 精确等于 App Sandbox、用户选择位置只读和 app-scoped bookmark 三项；
+- entitlement 精确等于 App Sandbox、用户选择位置读写和 app-scoped bookmark 三项。读写只用于 `NSSavePanel` 中用户选择的诊断导出文件；被监控目录 bookmark 仍显式只读；
 - ad-hoc 签名、无 Team ID、存在 Hardened Runtime；
 - manifest 中 `developerId = false`、`notarized = false`。
 

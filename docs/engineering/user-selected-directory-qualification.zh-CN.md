@@ -52,7 +52,7 @@ Scripts/qualify-user-selected-directory.sh /absolute/path/to/SpaceTrace.app
 脚本采用 fail-closed：只有主机为 macOS 15.6.x、架构为 arm64、签名严格校验通过、`LSMinimumSystemVersion` 恰为 15.6，且以下 entitlement 为 true 时才通过：
 
 - `com.apple.security.app-sandbox`
-- `com.apple.security.files.user-selected.read-only`
+- `com.apple.security.files.user-selected.read-write`（仅用于 `NSSavePanel` 中用户选择的诊断导出文件；监控 bookmark 仍使用 `.securityScopeAllowOnlyReadAccess`）
 - `com.apple.security.files.bookmarks.app-scope`
 
 只在更新系统和 ad-hoc 签名上做“不计入资格”的 smoke 预检时，可运行：

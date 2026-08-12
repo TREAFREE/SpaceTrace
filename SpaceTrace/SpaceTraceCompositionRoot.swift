@@ -10,6 +10,7 @@ struct SpaceTraceCompositionRoot {
     let baselineScanCoordinator: AuthorizedBaselineScanCoordinator
     let storageHistoryQuery: StorageHistoryOverviewQuery
     let historicalFindingOverviewQuery: HistoricalFindingOverviewQuery
+    let diagnosticExportWriter: AtomicDiagnosticExportWriter
     let startupVolume24HourStatusQuery: StartupVolume24HourStatusQuery
     let storageHistoryBackgroundCoordinator: StorageHistoryBackgroundCoordinator
     let storageHistoryLifecycleMonitor: NativeStorageHistoryLifecycleMonitor
@@ -118,6 +119,12 @@ struct SpaceTraceCompositionRoot {
         let statusQuery = StartupVolume24HourStatusQuery(
             repository: repository
         )
+        let diagnosticExportWriter = try AtomicDiagnosticExportWriter(
+            stagingDirectoryURL: applicationSupportRoot
+                .appendingPathComponent("Diagnostics", isDirectory: true)
+                .appendingPathComponent("ExportStaging", isDirectory: true),
+            fileManager: fileManager
+        )
         let soakRecorder: StorageHistorySoakDiagnosticRecorder?
         if enableSoakDiagnostics {
             let diagnosticsDirectory = applicationSupportRoot
@@ -161,6 +168,7 @@ struct SpaceTraceCompositionRoot {
             historicalFindingOverviewQuery: HistoricalFindingOverviewQuery(
                 repository: repository
             ),
+            diagnosticExportWriter: diagnosticExportWriter,
             startupVolume24HourStatusQuery: statusQuery,
             storageHistoryBackgroundCoordinator:
                 storageHistoryBackgroundCoordinator,

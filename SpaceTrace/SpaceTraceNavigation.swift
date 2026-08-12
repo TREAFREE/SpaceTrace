@@ -3,6 +3,7 @@ import SwiftUI
 enum SpaceTraceSection: String, CaseIterable, Hashable, Identifiable {
     case overview
     case permissions
+    case diagnostics
 
     var id: Self { self }
 
@@ -10,6 +11,7 @@ enum SpaceTraceSection: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .overview: "概览"
         case .permissions: "目录授权"
+        case .diagnostics: "诊断导出"
         }
     }
 
@@ -17,6 +19,7 @@ enum SpaceTraceSection: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .overview: "chart.bar.xaxis"
         case .permissions: "folder.badge.gearshape"
+        case .diagnostics: "doc.badge.arrow.up"
         }
     }
 

@@ -6,8 +6,8 @@ import Testing
 struct SpaceTraceNavigationTests {
     @Test("The ordinary app shell exposes only implemented top-level destinations")
     func topLevelDestinationsStayHonest() {
-        #expect(SpaceTraceSection.allCases == [.overview, .permissions])
-        #expect(Set(SpaceTraceSection.allCases.map(\.accessibilityIdentifier)).count == 2)
+        #expect(SpaceTraceSection.allCases == [.overview, .permissions, .diagnostics])
+        #expect(Set(SpaceTraceSection.allCases.map(\.accessibilityIdentifier)).count == 3)
     }
 
     @Test("Overview readiness never presents an unavailable grant as ready")

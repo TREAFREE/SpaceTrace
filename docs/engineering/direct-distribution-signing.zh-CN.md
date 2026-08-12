@@ -31,7 +31,7 @@ ad-hoc 或本地开发签名不能用于提交公证。Apple Developer Program �
 ## 无付费会员测试包的控制措施
 
 - 从有 tag、可复现的 commit 构建；在 DMG 旁公布 commit SHA 与 SHA-256 校验值。
-- 继续启用 App Sandbox、用户自选位置只读权限、app-scoped bookmark 与 Hardened Runtime。
+- 继续启用 App Sandbox、仅用于精确诊断保存目标的用户自选位置读写权限、app-scoped bookmark 与 Hardened Runtime。监控 bookmark 仍显式只读，且不得增加修改 API。
 - 所有文件组装完成后再对最终 App bundle 做 ad-hoc 签名；使用 `codesign` 验证，并从一次全新下载、带 quarantine 的 DMG 测试启动。
 - 清楚说明“仍要打开”的准确步骤，并说明 macOS 无法验证发布者身份或公证状态。
 - 绝不能把产物称为“已签名并公证”或“Apple 已验证”。

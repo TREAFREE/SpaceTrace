@@ -2,7 +2,7 @@
 
 Status: **Packaging contract implemented; public distribution not qualified**
 
-Last updated: 2026-08-10
+Last updated: 2026-08-13
 
 Chinese companion translation: [release-candidate-checklist.zh-CN.md](release-candidate-checklist.zh-CN.md). This English document remains the engineering source of truth.
 
@@ -47,7 +47,10 @@ The packager fails closed if the source tree is dirty, the version is invalid or
 - Bundle ID `com.TREAFREE.SpaceTrace`;
 - Apple Silicon `arm64` only;
 - `LSMinimumSystemVersion = 15.6`;
-- App Sandbox, read-only user-selected files, and app-scoped bookmarks are the exact entitlement set;
+- App Sandbox, user-selected read/write, and app-scoped bookmarks are the exact
+  entitlement set. Read/write exists only for the exact diagnostic-export file
+  chosen in `NSSavePanel`; watched-directory bookmarks remain explicitly
+  read-only;
 - ad-hoc signature, no Team ID, Hardened Runtime present;
 - manifest fields `developerId = false` and `notarized = false`.
 

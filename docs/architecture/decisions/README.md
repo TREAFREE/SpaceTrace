@@ -10,6 +10,7 @@ This directory records durable technical, data, permission, distribution, and se
 | [ADR-004](ADR-004-sqlite-persistence-and-retention.md) | SQLite adapter and 30-day bounded retention | Proposed; raw adapter retained; recovery, schema-v10 sleep-aware directory/volume history, reconciliation, and current-host benchmark implemented; oldest-OS gate pending |
 | [ADR-005](ADR-005-system-command-adapter.md) | Optional isolated read-only system-command adapter | Proposed |
 | [ADR-006](ADR-006-immutable-observations-and-findings.md) | Immutable observation endpoints, explicit absence, proven moves, exclusive ranking, and append-only finding projection | Proposed; pure contracts, schema-v11, production disappearance/APFS move integration, and bounded Overview implemented; adoption, manual UI qualification, and release gates pending |
+| [ADR-007](ADR-007-user-initiated-diagnostic-export.md) | User-initiated, previewed diagnostic export with default redaction and a narrow save capability | Accepted; deterministic and cancellation tests passed; signed-sandbox/manual accessibility/DMG qualification pending |
 
 ## Status lifecycle
 

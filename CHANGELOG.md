@@ -6,6 +6,12 @@ All notable user-visible changes are recorded in this file.
 
 ### Added
 
+- Add a previewed, user-initiated diagnostic JSON export with default
+  per-export path tokenization, per-export full-path confirmation, bounded
+  finding selection, no upload surface, cancellation-safe atomic writes, and
+  startup cleanup of owned partial files. The sandbox now carries
+  user-selected read/write only for the exact save-panel destination; watched
+  directory bookmarks remain explicitly read-only.
 - Expand the reviewed attribution corpus to 64 known scenarios (eight per P0 category) and 32 Unknown near misses, with exact rule ID/version/confidence/evidence contracts and 100% repository precision, recall, and Unknown accuracy.
 - Add a bounded historical-finding Overview backed by current-effective and immutable audit reads, with separate evidence-invalidated records, frozen classification evidence, exact logical/allocated semantics, complete-evidence time ranges, typed History Off/baseline-unavailable states, and explicit destructive confirmation.
 - Connect the production complete-scan path to atomic paired logical/allocated schema-v11 frames, frozen classification, APFS directory object/reuse qualification, complete-parent explicit-disappearance reconciliation, immediate projection, and launch-time pending-work recovery. Real Foundation scans now project growth, same-volume APFS moves, and observed disappearance; unproved missing rows remain missing evidence.
@@ -28,12 +34,12 @@ All notable user-visible changes are recorded in this file.
 - **Public Beta: NO-GO.** No tag, GitHub Release, or artifact upload is authorized by this record.
 - **Local engineering RC generation: CONDITIONAL GO.** Maintainers may generate `0.1.0-rc.1` ad-hoc artifacts to continue controlled testing. They are not Apple-verified, are expected to be rejected by Gatekeeper, and are limited to Apple Silicon with a declared—not runtime-qualified—macOS 15.6 minimum.
 - The current-host 25-hour ad-hoc endurance run and its Activity Monitor/thermal evidence passed. The current-host controlled UI runner passed twelve authorization/history/finding scenarios and key accessibility-tree assertions.
-- Public blockers remain: a future approved replacement/supersession model; user-controlled export/redaction; macOS 15.6 runtime; genuine permission/replacement matrices; manual assistive-technology review of the implemented finding Overview; ADR-003/004/006 approval; clean quarantine install/rollback; Developer ID/notarization or explicit unsigned-risk acceptance; approved license/notices/SBOM; and required usability evidence. The FR-007/KPI-03 repository-corpus gate is closed.
+- Public blockers remain: a future approved replacement/supersession model; genuine signed-sandbox/DMG qualification of the implemented export and its entitlement; macOS 15.6 runtime; genuine permission/replacement matrices; manual assistive-technology review of the implemented finding/export UI; ADR-003/004/006 approval; clean quarantine install/rollback; Developer ID/notarization or explicit unsigned-risk acceptance; approved license/notices/SBOM; and required usability evidence. The FR-007/KPI-03 corpus and FR-014 implementation gates are closed.
 
 ### Draft tester notes — not published
 
 - Architecture: Apple Silicon `arm64` only. The project and RC manifest declare macOS 15.6+, but no public compatibility claim may be made until the app runs through its complete P0 lifecycle on macOS 15.6.
-- Permissions: SpaceTrace remains sandboxed and requests read-only access only to directories the user explicitly chooses. Removing a grant never deletes files.
+- Permissions: SpaceTrace remains sandboxed; monitored directories use explicit read-only bookmarks for locations the user chooses. User-selected write access is used only for a diagnostic file the user explicitly chooses to save. Removing a grant never deletes files.
 - Installation: the current RC is ad-hoc signed and not notarized. A trusted tester must verify the SHA-256 and source commit, then may use the per-app **System Settings > Privacy & Security > Open Anyway** exception. Do not disable Gatekeeper globally.
 - Data: bookmarks, settings, and history live in the SpaceTrace sandbox container. Deleting the App does not automatically delete monitored files or container data; complete container removal requires a separate exact-path, user-authorized action.
 - Updates and rollback: manual replacement is the only current mechanism. Cross-build bookmark continuity, schema downgrade, and rollback are not qualified; release notes must warn that directory reselection may be required and must not promise rollback.

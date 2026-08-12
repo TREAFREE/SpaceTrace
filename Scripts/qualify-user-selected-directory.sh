@@ -56,7 +56,7 @@ read_entitlement() {
 
 for entitlement in \
     com.apple.security.app-sandbox \
-    com.apple.security.files.user-selected.read-only \
+    com.apple.security.files.user-selected.read-write \
     com.apple.security.files.bookmarks.app-scope; do
     if [[ $(read_entitlement "$entitlement") != true ]]; then
         print -u2 "error: required entitlement missing or false: $entitlement"

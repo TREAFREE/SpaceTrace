@@ -11,7 +11,10 @@
 ## Global Constraints
 
 - Minimum runtime remains macOS 15.6 on Apple Silicon; a newer-host run is not macOS 15.6 runtime qualification.
-- App Sandbox, read-only user-selected files, and app-scoped bookmarks remain unchanged.
+- App Sandbox and app-scoped bookmarks remain. ADR-007 supersedes this plan's
+  original entitlement assumption: user-selected read/write is allowed only
+  for the exact diagnostic save-panel destination, while watched bookmarks
+  remain explicitly read-only.
 - Activity Monitor CPU, wakeup, memory, I/O, App Nap, sleep assertion, and thermal data are energy-related process evidence, not watt/joule evidence.
 - Qualification reports and committed fixtures must not contain user paths, file names, bookmark data, volume identity, capacity values, command lines, or environment values.
 - No Developer ID, notarization, Apple-identity, or automatic-update claim may be made without the corresponding real credential and matrix evidence.

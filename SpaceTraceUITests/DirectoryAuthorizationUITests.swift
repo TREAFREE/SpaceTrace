@@ -223,6 +223,45 @@ final class DirectoryAuthorizationUITests: XCTestCase {
     }
 
     @MainActor
+    func testDiagnosticExportDefaultsToRedactionAndRequiresFreshRawPathConsent() {
+        let app = launch(scenario: "authorized")
+        let destination = app.staticTexts["诊断导出"]
+        XCTAssertTrue(destination.waitForExistence(timeout: 3))
+        destination.click()
+
+        XCTAssertTrue(
+            element(identifier: "diagnostic-export-page", in: app)
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            element(identifier: "diagnostic-export-path-mode", in: app).exists
+        )
+        XCTAssertTrue(
+            element(identifier: "diagnostic-export-no-upload", in: app).exists
+        )
+        XCTAssertTrue(
+            element(identifier: "diagnostic-export-section-coverage", in: app).exists
+        )
+        XCTAssertTrue(
+            element(identifier: "diagnostic-export-section-selected_findings", in: app).exists
+        )
+
+        let rawPaths = app.buttons["diagnostic-export-full-paths-button"]
+        XCTAssertTrue(rawPaths.isHittable)
+        rawPaths.click()
+
+        let consent = app.buttons["仅本次导出完整路径"]
+        XCTAssertTrue(consent.waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            app.staticTexts[
+                "完整路径可能包含用户名、项目名和私人目录名。授权只绑定当前这一次导出，下一次必须重新确认。"
+            ].exists
+        )
+        app.sheets.firstMatch.buttons["保持默认脱敏"].click()
+        XCTAssertFalse(consent.exists)
+    }
+
+    @MainActor
     private func assertStatus(
         _ title: String,
         in app: XCUIApplication,

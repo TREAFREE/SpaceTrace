@@ -92,9 +92,11 @@ SwiftUI 应用通过 `NSApplicationDelegateAdaptor` 接入。`applicationShouldT
 
 ```xml
 com.apple.security.app-sandbox = true
-com.apple.security.files.user-selected.read-only = true
+com.apple.security.files.user-selected.read-write = true
 com.apple.security.files.bookmarks.app-scope = true
 ```
+
+读写 key 只用于 ADR-007 定义的用户主动 `NSSavePanel` 诊断导出。监控目录授权仍然只读：catalog 创建 bookmark 时始终使用 `.securityScopeAllowOnlyReadAccess`，并以 `.required` 模式在沙盒扩展无法启动时封闭失败。监控层没有写入、删除、移动或清理 API。
 
 因此组合根使用 `.required`：如果无法激活 sandbox extension，就会 fail closed。
 

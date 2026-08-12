@@ -8,7 +8,7 @@
 | Current project target | macOS 15.6, Swift version setting 5.0 |
 | Accepted product baseline | macOS 15.6+, Apple Silicon first; Intel deferred |
 | Architecture owner | SpaceTrace maintainers |
-| Related decisions | [ADR-001](decisions/ADR-001-native-macos-platform.md), [ADR-002](decisions/ADR-002-read-only-optional-full-disk-access.md), [ADR-003](decisions/ADR-003-fsevents-and-calibration-scans.md), [ADR-004](decisions/ADR-004-sqlite-persistence-and-retention.md), [ADR-005](decisions/ADR-005-system-command-adapter.md), [ADR-006](decisions/ADR-006-immutable-observations-and-findings.md) |
+| Related decisions | [ADR-001](decisions/ADR-001-native-macos-platform.md), [ADR-002](decisions/ADR-002-read-only-optional-full-disk-access.md), [ADR-003](decisions/ADR-003-fsevents-and-calibration-scans.md), [ADR-004](decisions/ADR-004-sqlite-persistence-and-retention.md), [ADR-005](decisions/ADR-005-system-command-adapter.md), [ADR-006](decisions/ADR-006-immutable-observations-and-findings.md), [ADR-007](decisions/ADR-007-user-initiated-diagnostic-export.md) |
 
 ## 1. Executive summary
 
@@ -795,6 +795,18 @@ Local storage is not encryption against another process running as the same user
 ### 17.2 Diagnostic export
 
 Export is user-initiated and previewed. Default redaction replaces the home directory with `$HOME`, omits file names below classified roots, strips bookmarks, hashes remaining path components with an export-specific random salt, and includes versions/coverage/counters. An explicit “include full paths” option requires a second confirmation.
+
+The sandbox uses `com.apple.security.files.user-selected.read-write` only so
+`NSSavePanel` can authorize the exact output selected by the user. Watched
+directory bookmarks remain explicitly read-only through
+`.securityScopeAllowOnlyReadAccess`, and monitoring ports expose no mutation
+operation. A schema-v1 JSON export is limited to 2 MiB and 100 selected
+findings, contains no file contents or upload action, writes through a private
+`0700`/`0600` staging area, and atomically commits only after cancellation is
+checked. Full-path consent is bound to one export UUID and is discarded after
+save, cancel, or failure. [ADR-007](decisions/ADR-007-user-initiated-diagnostic-export.md)
+freezes this deliberately narrow exception to the observed-data read-only
+boundary.
 
 ## 18. Local observability without telemetry
 

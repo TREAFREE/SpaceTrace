@@ -31,7 +31,9 @@ An ad-hoc or local development signature is not accepted for notarization. The s
 ## Controls for an unpaid tester build
 
 - Build from a tagged, reproducible commit; publish the commit SHA and SHA-256 checksum beside the DMG.
-- Keep App Sandbox, read-only user-selected file access, app-scoped bookmarks, and Hardened Runtime enabled.
+- Keep App Sandbox, user-selected read/write for the exact diagnostic save
+  destination, app-scoped bookmarks, and Hardened Runtime enabled. Monitoring
+  bookmarks remain explicitly read-only and must not gain a mutation API.
 - Ad-hoc sign the final app bundle after all files are assembled, then verify it with `codesign` and test it from a freshly downloaded, quarantined DMG.
 - Explain the exact **Open Anyway** steps and that macOS cannot verify the publisher or notarization status.
 - Never call the artifact “signed and notarized” or “Apple verified.”

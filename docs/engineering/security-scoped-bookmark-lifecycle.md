@@ -92,11 +92,16 @@ The checked-in development application is currently sandboxed and declares:
 
 ```xml
 com.apple.security.app-sandbox = true
-com.apple.security.files.user-selected.read-only = true
+com.apple.security.files.user-selected.read-write = true
 com.apple.security.files.bookmarks.app-scope = true
 ```
 
-It therefore composes the catalog with `.required`, which fails closed when a sandbox extension cannot start.
+The read/write key exists only for the user-initiated `NSSavePanel` diagnostic
+export described by ADR-007. Watched-directory acquisition remains read-only:
+the catalog creates every monitoring bookmark with
+`.securityScopeAllowOnlyReadAccess` and composes with `.required`, which fails
+closed when its sandbox extension cannot start. Monitoring has no write,
+delete, move, or cleanup API.
 
 ADR-002 separately proposes a directly distributed, unsandboxed product for broader ordinary-user-readable coverage. That proposal is not accepted by this implementation. The platform adapter has an explicit `.bookmarkIdentityOnly` mode for tests and a possible future direct-distribution composition; it skips sandbox-extension activation but retains exact bookmark/root/volume validation. Changing the release entitlement set still requires ADR/security review and release qualification.
 

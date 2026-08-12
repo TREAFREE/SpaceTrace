@@ -136,7 +136,11 @@ let package = Package(
         ),
         .testTarget(
             name: "SpaceTracePlatformTests",
-            dependencies: ["SpaceTracePlatform"]
+            dependencies: [
+                "SpaceTraceApplication",
+                "SpaceTraceDomain",
+                "SpaceTracePlatform",
+            ]
         ),
         .testTarget(
             name: "SpaceTraceMonitoringTests",

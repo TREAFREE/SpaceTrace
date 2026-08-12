@@ -72,14 +72,13 @@ The packaging test must call the generator directly and prove rejection of an in
 
 - [ ] **Step 5: Run the focused contract**
 
-Run the generator against the clean current commit and verify `plutil -lint`, exact SPDX fields, absence of the repository absolute path, and byte-identical output from two independent disposable directories.
+Run the generator against the clean current commit, lint its XML construction source before conversion, parse exact fields from the final JSON with `plutil -extract`, and verify absence of the repository absolute path plus byte-identical output from two independent disposable directories. (`plutil -lint` does not accept JSON input on the supported macOS toolchain.)
 
 ### Task 2: Integrate metadata and final Mach-O dependency auditing into the RC packager
 
 **Files:**
 - Modify: `Scripts/package-release-candidate.sh`
 - Modify: `Scripts/test-release-candidate-packaging.sh`
-- Modify: `Makefile`
 
 **Interfaces:**
 - Consumes: the final signed `SpaceTrace.app` and the Task 1 generator.
@@ -131,7 +130,7 @@ Expected: invalid/dirty/existing-output probes fail; the positive build reports 
 
 - [ ] **Step 1: Update the artifact tables and verification commands**
 
-List the SPDX and notices artifacts, state that the SBOM is source/provenance inventory rather than vulnerability attestation, and add `plutil -lint`, `plutil -extract packages.0.licenseDeclared`, and checksum verification to both checklists.
+List the SPDX and notices artifacts, state that the SBOM is source/provenance inventory rather than vulnerability attestation, and add `plutil -extract spdxVersion`, `plutil -extract packages.0.licenseDeclared`, and checksum verification to both checklists.
 
 - [ ] **Step 2: Record the exact non-claim**
 
@@ -152,11 +151,10 @@ Expected: all commands pass; English and Chinese checklist headings remain struc
 
 - [ ] **Step 4: Commit and push**
 
-Commit the generator, tests, packager, Makefile, and docs with the Chinese message `加入可复现发布 SBOM 与依赖清单`, then push the current branch. The project license remains an explicit owner decision after this commit.
+Commit the generator, tests, packager, and docs with the Chinese message `加入可复现发布 SBOM 与依赖清单`, then push the current branch. The project license remains an explicit owner decision after this commit.
 
 ## Self-Review
 
 - Spec coverage: generation, negative validation, final-binary linkage, manifest/checksum binding, DMG notices, bilingual documentation, and legal non-claim each have a task.
 - Placeholder scan: the plan contains no implementation placeholder; `NOASSERTION` is the required SPDX value, not unfinished text.
 - Type/interface consistency: all tasks use the same four generator arguments and the same versioned SBOM/notices filenames.
-

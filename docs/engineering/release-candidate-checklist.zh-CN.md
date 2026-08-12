@@ -38,9 +38,11 @@ make package-release-candidate \
 | 产物 | 用途 |
 |---|---|
 | `SpaceTrace-<version>.app` | 本地检查和资格验证；ad-hoc 签名并启用 Hardened Runtime |
-| `SpaceTrace-<version>.dmg` | 只读压缩测试镜像，包含 `SpaceTrace.app`、Applications 链接和中英双语信任风险提示 |
+| `SpaceTrace-<version>.dmg` | 只读压缩测试镜像，包含 `SpaceTrace.app`、Applications 链接、第三方声明和中英双语信任风险提示 |
 | `SpaceTrace-<version>.manifest.json` | commit、版本、构建环境、Bundle ID、部署目标、架构、entitlements、真实签名状态和产物哈希 |
-| `SpaceTrace-<version>.sha256` | DMG 与 manifest 的 SHA-256 |
+| `SpaceTrace-<version>.sha256` | DMG、manifest、SPDX 文档与声明的 SHA-256 |
+| `SpaceTrace-<version>.spdx.json` | 确定性 SPDX 2.3 源码/依赖与来源清单 |
+| `SpaceTrace-<version>.third-party-notices.txt` | 精确的内嵌依赖声明和项目许可证边界；DMG 内也包含一份 |
 
 遇到以下任一情况，打包必须 fail closed：源码树不干净、版本缺失或格式错误、输出已存在、Release 构建失败，或最终 bundle 不满足这些不变量：
 
@@ -49,7 +51,8 @@ make package-release-candidate \
 - `LSMinimumSystemVersion = 15.6`；
 - entitlement 精确等于 App Sandbox、用户选择位置读写和 app-scoped bookmark 三项。读写只用于 `NSSavePanel` 中用户选择的诊断导出文件；被监控目录 bookmark 仍显式只读；
 - ad-hoc 签名、无 Team ID、存在 Hardened Runtime；
-- manifest 中 `developerId = false`、`notarized = false`。
+- manifest 中 `developerId = false`、`notarized = false`；
+- 没有远程 Swift package、内嵌 framework/dylib 或非系统 Mach-O 依赖；最终二进制只允许链接 `/System/Library` 和 `/usr/lib`。
 
 ## 产物验证
 
@@ -60,10 +63,14 @@ shasum -a 256 -c SpaceTrace-0.1.0-rc.1.sha256
 codesign --verify --deep --strict --verbose=2 SpaceTrace-0.1.0-rc.1.app
 codesign -dvvv --entitlements :- SpaceTrace-0.1.0-rc.1.app
 hdiutil verify SpaceTrace-0.1.0-rc.1.dmg
+plutil -extract spdxVersion raw -o - SpaceTrace-0.1.0-rc.1.spdx.json
+plutil -extract packages.0.licenseDeclared raw -o - SpaceTrace-0.1.0-rc.1.spdx.json
 spctl --assess --type execute --verbose=4 SpaceTrace-0.1.0-rc.1.app
 ```
 
-前四项必须成功。`spctl` 应拒绝这个 ad-hoc、未公证产物；拒绝结果证明文档披露的信任边界，并不等于打包失败。如果某台机器意外接受，需要检查它是否保存过本机 Gatekeeper 例外，不能推广为其他 Mac 也会接受。
+前六项必须成功，两个 SPDX 值应分别为 `SPDX-2.3` 和 `NOASSERTION`。`spctl` 应拒绝这个 ad-hoc、未公证产物；拒绝结果证明文档披露的信任边界，并不等于打包失败。如果某台机器意外接受，需要检查它是否保存过本机 Gatekeeper 例外，不能推广为其他 Mac 也会接受。
+
+SPDX 文档是源码来源、构建来源和依赖清单，不是漏洞证明。当前依赖图没有外部 Swift package 或内嵌第三方库；Apple frameworks、系统 Swift runtime 和系统 `libsqlite3` 由 macOS 平台提供。`NOASSERTION` 是刻意保留的边界：生成元数据不能代替仓库所有者批准项目许可证。
 
 自动化契约入口：
 
@@ -73,7 +80,7 @@ make package-release-candidate-test VERSION=0.1.0-rc.1
 
 ## 测试者安装与首次启动
 
-1. 从同一个 GitHub Release 下载 DMG、manifest 和 checksum。
+1. 从同一个 GitHub Release 下载 DMG、manifest、checksum、SPDX 文档和第三方声明。
 2. 校验 SHA-256，并确认 manifest 的 `sourceCommit` 等于预期公开 commit。
 3. 打开 DMG，把 SpaceTrace 拖入“应用程序”。
 4. 正常尝试打开 SpaceTrace；首次应被 Gatekeeper 拦截。
@@ -134,4 +141,4 @@ make qualify-release-candidate \
 
 ## 公开发布阻塞项
 
-这个测试渠道不会关闭 Developer ID 签名、公证/票据附加、带 quarantine 的干净账户**仍要打开**启动、macOS 15.6 真实运行、独立构建替换后的 bookmark 连续性、完整权限/替换矩阵、ADR-003/ADR-004/ADR-006 评审、许可证/notices/SBOM 批准、人工无障碍/可用性复核或明确发布决策门禁。
+这个测试渠道不会关闭 Developer ID 签名、公证/票据附加、带 quarantine 的干净账户**仍要打开**启动、macOS 15.6 真实运行、独立构建替换后的 bookmark 连续性、完整权限/替换矩阵、ADR-003/ADR-004/ADR-006 评审、项目许可证批准、人工无障碍/可用性复核或明确发布决策门禁。SBOM/第三方声明生成契约已经实现，但 `NOASSERTION` 会刻意保持所有者决策未关闭。

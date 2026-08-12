@@ -38,9 +38,11 @@ The new output directory contains exactly:
 | Artifact | Purpose |
 |---|---|
 | `SpaceTrace-<version>.app` | Local inspection and qualification bundle; ad-hoc signed with Hardened Runtime |
-| `SpaceTrace-<version>.dmg` | Read-only compressed tester image containing `SpaceTrace.app`, an Applications link, and a bilingual trust warning |
+| `SpaceTrace-<version>.dmg` | Read-only compressed tester image containing `SpaceTrace.app`, an Applications link, the third-party notices, and a bilingual trust warning |
 | `SpaceTrace-<version>.manifest.json` | Commit, version, build environment, Bundle ID, deployment target, architecture, entitlements, signing truth, and artifact hashes |
-| `SpaceTrace-<version>.sha256` | SHA-256 entries for the DMG and manifest |
+| `SpaceTrace-<version>.sha256` | SHA-256 entries for the DMG, manifest, SPDX document, and notices |
+| `SpaceTrace-<version>.spdx.json` | Deterministic SPDX 2.3 source/dependency and provenance inventory |
+| `SpaceTrace-<version>.third-party-notices.txt` | Exact bundled-dependency notice and project-license boundary; also included in the DMG |
 
 The packager fails closed if the source tree is dirty, the version is invalid or absent, the output already exists, the Release build fails, or the final bundle differs from these invariants:
 
@@ -52,7 +54,10 @@ The packager fails closed if the source tree is dirty, the version is invalid or
   chosen in `NSSavePanel`; watched-directory bookmarks remain explicitly
   read-only;
 - ad-hoc signature, no Team ID, Hardened Runtime present;
-- manifest fields `developerId = false` and `notarized = false`.
+- manifest fields `developerId = false` and `notarized = false`;
+- no remote Swift package, bundled framework/dylib, or non-system Mach-O
+  dependency. Final binary linkage is restricted to `/System/Library` and
+  `/usr/lib`.
 
 ## Artifact verification
 
@@ -63,10 +68,23 @@ shasum -a 256 -c SpaceTrace-0.1.0-rc.1.sha256
 codesign --verify --deep --strict --verbose=2 SpaceTrace-0.1.0-rc.1.app
 codesign -dvvv --entitlements :- SpaceTrace-0.1.0-rc.1.app
 hdiutil verify SpaceTrace-0.1.0-rc.1.dmg
+plutil -extract spdxVersion raw -o - SpaceTrace-0.1.0-rc.1.spdx.json
+plutil -extract packages.0.licenseDeclared raw -o - SpaceTrace-0.1.0-rc.1.spdx.json
 spctl --assess --type execute --verbose=4 SpaceTrace-0.1.0-rc.1.app
 ```
 
-The first four checks must succeed. `spctl` is expected to reject this ad-hoc, unnotarized artifact. A rejection confirms the disclosed trust boundary; it is not a packaging failure. An unexpected acceptance must be investigated for a host-local Gatekeeper exception and must not be generalized to other Macs.
+The first six checks must succeed; the SPDX values must be `SPDX-2.3` and
+`NOASSERTION`. `spctl` is expected to reject this ad-hoc, unnotarized artifact.
+A rejection confirms the disclosed trust boundary; it is not a packaging
+failure. An unexpected acceptance must be investigated for a host-local
+Gatekeeper exception and must not be generalized to other Macs.
+
+The SPDX document is a source/provenance and dependency inventory, not a
+vulnerability attestation. The current graph contains no external Swift
+package or bundled third-party library; Apple frameworks, the system Swift
+runtime, and system `libsqlite3` are platform-provided. `NOASSERTION` is
+intentional: metadata generation does not approve a project license on the
+owner's behalf.
 
 The automated contract is:
 
@@ -76,7 +94,7 @@ make package-release-candidate-test VERSION=0.1.0-rc.1
 
 ## Tester installation and first launch
 
-1. Download the DMG, manifest, and checksum from the same GitHub Release.
+1. Download the DMG, manifest, checksum, SPDX document, and notices from the same GitHub Release.
 2. Verify the SHA-256 and confirm that the manifest's `sourceCommit` is the intended public commit.
 3. Open the DMG and drag SpaceTrace to Applications.
 4. Try to open SpaceTrace normally. Gatekeeper is expected to block the first attempt.
@@ -137,4 +155,4 @@ If a replacement build requires directory reselection, the GitHub Release notes 
 
 ## Public-release blockers
 
-This tester channel does not close Developer ID signing, notarization/stapling, a quarantined clean-account **Open Anyway** launch, macOS 15.6 runtime qualification, bookmark continuity across an independently built replacement, the complete permission/replacement matrix, ADR-003/ADR-004/ADR-006 review, license/notices/SBOM approval, manual accessibility/usability review, or the explicit release decision gate.
+This tester channel does not close Developer ID signing, notarization/stapling, a quarantined clean-account **Open Anyway** launch, macOS 15.6 runtime qualification, bookmark continuity across an independently built replacement, the complete permission/replacement matrix, ADR-003/ADR-004/ADR-006 review, project-license approval, manual accessibility/usability review, or the explicit release decision gate. The SBOM/notices generation contract is implemented, but `NOASSERTION` deliberately keeps that owner decision open.

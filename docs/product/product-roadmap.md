@@ -30,7 +30,7 @@ This roadmap is a sequencing and evidence plan, not a promise that every propose
 | Update/replacement and bookmark continuity | Partial — release blocking | `rc.3` fresh/same-build/independent-build process launch passed under a disposable ID; no bookmark was created, so cross-build restore/reselection behavior remains open |
 | Migration, corruption, and retention | Partial | Deterministic current-schema/golden-fixture recovery and large-row benchmarks passed; packaged upgrade, downgrade, and rollback remain open |
 | Permission, stale, denial, and external-volume RC matrix | Partial | Deterministic and earlier sandbox/native rows exist; genuine stale/denial, different-UUID packaged UI, and active-scan revocation remain open |
-| License, notices, and SBOM | Blocked — owner decision required | MIT is still an assumption; no approved `LICENSE`, complete third-party notices, or release SBOM is present |
+| License, notices, and SBOM | Partial — owner decision required | Deterministic SPDX 2.3 and third-party notices are generated, checksummed, and final-binary audited; no external Swift package or bundled third-party library was found. `licenseDeclared = NOASSERTION` remains until the owner approves `LICENSE` |
 | Usability and severity gates | Open — release blocking | Required formative sessions, KPI review, and release-specific Sev-0/Sev-1 triage record are incomplete |
 
 The next release review may change `NO-GO` only after every release-blocking row has linked, current evidence. A paid signing identity alone is not sufficient because product-completeness, minimum-OS, usability, accessibility, license, and update/rollback gates are independent.

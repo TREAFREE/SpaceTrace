@@ -47,10 +47,12 @@ print -r -- "$version" | /usr/bin/grep -Eq \
 
 script_directory=${0:A:h}
 repository_root=${script_directory:h}
+metadata_generator="$script_directory/generate-release-metadata.sh"
 cd "$repository_root"
 
 [[ $(git rev-parse --show-toplevel) == $repository_root ]] \
     || fail "script must run from the SpaceTrace Git worktree"
+[[ -x $metadata_generator ]] || fail "release metadata generator is missing or not executable"
 [[ -z $(git status --porcelain=v1 --untracked-files=all) ]] \
     || fail "release candidates require a clean source tree"
 
@@ -106,10 +108,14 @@ app_name="SpaceTrace-$version.app"
 dmg_name="SpaceTrace-$version.dmg"
 manifest_name="SpaceTrace-$version.manifest.json"
 checksum_name="SpaceTrace-$version.sha256"
+sbom_name="SpaceTrace-$version.spdx.json"
+notices_name="SpaceTrace-$version.third-party-notices.txt"
 app_path="$artifact_stage/$app_name"
 dmg_path="$artifact_stage/$dmg_name"
 manifest_path="$artifact_stage/$manifest_name"
 checksum_path="$artifact_stage/$checksum_name"
+sbom_path="$artifact_stage/$sbom_name"
+notices_path="$artifact_stage/$notices_name"
 
 /usr/bin/ditto "$built_app" "$app_path"
 chmod -R u+rwX,go+rX,go-w "$app_path"
@@ -179,8 +185,29 @@ actual_architectures=$(lipo -archs "$app_path/Contents/MacOS/SpaceTrace")
 [[ $actual_architectures == $architecture ]] \
     || fail "release candidate must contain only $architecture; found $actual_architectures"
 
+embedded_dependency=$(find "$app_path/Contents" \
+    \( -type d -name '*.framework' -o -type f -name '*.dylib' \) \
+    -print -quit)
+[[ -z $embedded_dependency ]] \
+    || fail "release app embeds a framework or dynamic library: $embedded_dependency"
+
+otool_output="$temporary_root/otool.txt"
+otool -L "$app_path/Contents/MacOS/SpaceTrace" >"$otool_output"
+/usr/bin/awk 'NR > 1 { print $1 }' "$otool_output" >"$temporary_root/dependencies.txt"
+while IFS= read -r dependency; do
+    [[ $dependency == /System/Library/* || $dependency == /usr/lib/* ]] \
+        || fail "release app links a non-system dependency: $dependency"
+done <"$temporary_root/dependencies.txt"
+
+"$metadata_generator" \
+    --version "$version" \
+    --commit "$commit" \
+    --sbom "$sbom_path" \
+    --notices "$notices_path"
+
 /usr/bin/ditto "$app_path" "$dmg_stage/SpaceTrace.app"
 /bin/ln -s /Applications "$dmg_stage/Applications"
+/bin/cp "$notices_path" "$dmg_stage/THIRD-PARTY-NOTICES.txt"
 cat >"$dmg_stage/READ-ME-FIRST.txt" <<'NOTICE'
 SpaceTrace release candidate / 测试候选版本
 
@@ -203,6 +230,8 @@ hdiutil verify "$dmg_path" >/dev/null
 
 dmg_sha256=$(shasum -a 256 "$dmg_path" | awk '{print $1}')
 executable_sha256=$(shasum -a 256 "$app_path/Contents/MacOS/SpaceTrace" | awk '{print $1}')
+sbom_sha256=$(shasum -a 256 "$sbom_path" | awk '{print $1}')
+notices_sha256=$(shasum -a 256 "$notices_path" | awk '{print $1}')
 xcode_version=$(xcodebuild -version | tr '\n' ' ' | sed 's/ $//')
 host_version=$(sw_vers -productVersion)
 
@@ -231,6 +260,10 @@ plutil -insert artifacts.app -string "$app_name" "$manifest_plist"
 plutil -insert artifacts.dmg -string "$dmg_name" "$manifest_plist"
 plutil -insert artifacts.dmgSha256 -string "$dmg_sha256" "$manifest_plist"
 plutil -insert artifacts.executableSha256 -string "$executable_sha256" "$manifest_plist"
+plutil -insert artifacts.sbom -string "$sbom_name" "$manifest_plist"
+plutil -insert artifacts.sbomSha256 -string "$sbom_sha256" "$manifest_plist"
+plutil -insert artifacts.thirdPartyNotices -string "$notices_name" "$manifest_plist"
+plutil -insert artifacts.thirdPartyNoticesSha256 -string "$notices_sha256" "$manifest_plist"
 plutil -insert buildEnvironment -dictionary "$manifest_plist"
 plutil -insert buildEnvironment.hostOS -string "$host_version" "$manifest_plist"
 plutil -insert buildEnvironment.xcode -string "$xcode_version" "$manifest_plist"
@@ -241,14 +274,18 @@ plutil -convert json -o "$manifest_path" "$manifest_plist"
 
 (
     cd "$artifact_stage"
-    shasum -a 256 "$dmg_name" "$manifest_name" >"$checksum_name"
+    shasum -a 256 \
+        "$dmg_name" \
+        "$manifest_name" \
+        "$sbom_name" \
+        "$notices_name" >"$checksum_name"
     shasum -a 256 -c "$checksum_name"
 )
 
 artifact_count=$(find "$artifact_stage" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')
-[[ $artifact_count == 4 ]] || fail "unexpected artifact count: $artifact_count"
+[[ $artifact_count == 6 ]] || fail "unexpected artifact count: $artifact_count"
 
-chmod 0644 "$dmg_path" "$manifest_path" "$checksum_path"
+chmod 0644 "$dmg_path" "$manifest_path" "$checksum_path" "$sbom_path" "$notices_path"
 /bin/mv "$artifact_stage" "$output_path"
 
 print "release candidate packaging: PASS"

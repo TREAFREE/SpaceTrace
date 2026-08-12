@@ -6,6 +6,11 @@ All notable user-visible changes are recorded in this file.
 
 ### Added
 
+- Add deterministic SPDX 2.3 and third-party-notices release metadata, final
+  Mach-O dependency auditing, manifest hash binding, four-file checksum
+  verification, and a six-artifact RC contract. The current build graph has no
+  external Swift package or bundled third-party library; project licensing
+  remains `NOASSERTION` pending owner approval.
 - Add a previewed, user-initiated diagnostic JSON export with default
   per-export path tokenization, per-export full-path confirmation, bounded
   finding selection, no upload surface, cancellation-safe atomic writes, and
@@ -35,7 +40,7 @@ All notable user-visible changes are recorded in this file.
 - **Local engineering RC generation: CONDITIONAL GO.** Maintainers may generate `0.1.0-rc.3` ad-hoc artifacts to continue controlled testing. They are not Apple-verified, are expected to be rejected by Gatekeeper, and are limited to Apple Silicon with a declared—not runtime-qualified—macOS 15.6 minimum.
 - The current-host 25-hour ad-hoc endurance run and its Activity Monitor/thermal evidence passed. The current-host controlled UI runner passed fourteen authorization/history/finding/export scenarios; the real signed-sandbox save panel wrote a bounded redacted JSON export and passed three consecutive repetitions.
 - Two independent `rc.3` packages from `d4f6cde` passed checksum, strict signing, exact-entitlement, arm64, deployment-target, read-only DMG, manifest, fresh/same-build/replacement process, and quarantined-copy checks. Gatekeeper and distribution policy rejected the candidate for the disclosed ad-hoc and missing-notary reasons.
-- Public blockers remain: a future approved replacement/supersession model; macOS 15.6 runtime; genuine bookmark/permission/replacement matrices; manual assistive-technology review of the implemented finding/export UI; ADR-003/004/006 approval; clean-account Gatekeeper-exception launch and rollback; Developer ID/notarization or explicit unsigned-risk acceptance; approved license/notices/SBOM; and required usability evidence. The FR-007/KPI-03 corpus and FR-014 implementation/current-host signed-sandbox export gates are closed.
+- Public blockers remain: a future approved replacement/supersession model; macOS 15.6 runtime; genuine bookmark/permission/replacement matrices; manual assistive-technology review of the implemented finding/export UI; ADR-003/004/006 approval; clean-account Gatekeeper-exception launch and rollback; Developer ID/notarization or explicit unsigned-risk acceptance; owner-approved project license; and required usability evidence. The FR-007/KPI-03 corpus, FR-014 implementation/current-host signed-sandbox export, and deterministic SBOM/notices generation gates are closed.
 
 ### Draft tester notes — not published
 

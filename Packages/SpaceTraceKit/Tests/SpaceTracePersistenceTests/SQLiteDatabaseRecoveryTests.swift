@@ -10,6 +10,7 @@ struct SQLiteDatabaseRecoveryTests {
     @Test("A failed migration preserves an atomic version-six backup")
     func failedMigrationPreservesBackup() async throws {
         let fixture = try RecoveryDatabaseFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directoryURL) }
         try await fixture.makeVersionSixDatabase()
         #expect(throws: SQLiteEventJournalError.migrationFailed(fromVersion: 6, targetVersion: 7)) {
             _ = try SQLiteEventJournalRepository(
@@ -30,6 +31,7 @@ struct SQLiteDatabaseRecoveryTests {
     @Test("A successful migration removes its temporary recovery backup")
     func successfulMigrationRemovesBackup() async throws {
         let fixture = try RecoveryDatabaseFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directoryURL) }
         try await fixture.makeVersionSixDatabase()
         let backupURL = SQLiteMigrationBackup.backupURL(
             for: fixture.databaseURL,
@@ -49,6 +51,7 @@ struct SQLiteDatabaseRecoveryTests {
     @Test("Corrupt main database is isolated byte-for-byte without silent reset")
     func corruptMainIsIsolated() async throws {
         let fixture = try RecoveryDatabaseFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directoryURL) }
         let repository = try SQLiteEventJournalRepository(databaseURL: fixture.databaseURL)
         try await repository.close()
         var damaged = try Data(contentsOf: fixture.databaseURL)
@@ -81,6 +84,7 @@ struct SQLiteDatabaseRecoveryTests {
     @Test("Malformed WAL is isolated and the main database opens read-only")
     func malformedWALIsIsolated() async throws {
         let fixture = try RecoveryDatabaseFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directoryURL) }
         let repository = try SQLiteEventJournalRepository(databaseURL: fixture.databaseURL)
         try await repository.close()
         let walURL = URL(fileURLWithPath: fixture.databaseURL.path + "-wal")
@@ -118,6 +122,7 @@ struct SQLiteDatabaseRecoveryTests {
     @Test("Migration failure boots from its read-only pre-migration backup")
     func migrationFailureUsesReadOnlyBackup() async throws {
         let fixture = try RecoveryDatabaseFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directoryURL) }
         try await fixture.makeVersionSixDatabase()
 
         let result = SQLiteRepositoryBootstrap.open(

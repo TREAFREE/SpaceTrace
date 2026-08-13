@@ -52,6 +52,7 @@
 - 确定性的 Disk Arbitration 回调解析、溢出、单订阅、停止与原生 session 生命周期测试，以及挂载状态机和 SQLite v3 到 v4 迁移测试；
 - 一项 opt-in 受控资格测试使用两个同名 64 MiB APFS 镜像，覆盖正常卸载、同卷重新挂载、相同挂载点上的不同 UUID 替换、不同 generation/stream ID，以及首个卷与替换卷上的实时 FSEvents dirty 证据；通过运行耗时 3.924 秒；
 - 一项 opt-in 当前主机 APFS FR-004 资格测试在一次性监控子树中真实分配并刷盘 5 GiB 文件，持久化无游标的 kernel-drop 连续性缺口，执行有界生产校准，并把准确子树恢复为至少 5 GiB 的 allocated 增长 finding 与正排名贡献；通过运行耗时 1.434 秒，随后删除夹具；
+- 随后，来自已推送 commit `3fe1f6a` 的 fail-closed FR-004 重复 runner 在不重试、不改变分母的前提下顺序执行恰好 20 次真实 5 GiB APFS 试验；20 次全部恢复准确子树，超过 19/20 发布门槛，没有遗留 5 GiB 夹具，并生成无路径的[资格记录](reconciliation-kpi-evidence-2026-08-14.txt)，SHA-256 为 `c8002d33f1777006db8ca777cccd3e0851a2a14ef78efc011828d47ec15b6af6`；
 - 通过可注入 client 与 resolver 的确定性测试，证明原生流创建失败和启动失败都会作废存量回放 checkpoint、持久化 scope 级校准工作、只尝试一次 `sinceNow` 恢复，并在该恢复同样失败时保持非活跃状态；
 - 通过确定性的启动后生命周期测试，证明自动实时恢复、连续性作废持久化、启动失败和重复终止的有界熔断、退避期间取消、拒绝未知/替换卷身份以及恢复策略参数校验；测试不依赖定时 sleep；
 - 通过确定性的生命周期状态观测测试，证明当前状态回放、`inactive → active → recovering → active`、终态 `failed`、按 generation 停止后的清理，以及缓冲区正数校验；
@@ -84,7 +85,7 @@
 
 ## 明确不作出的声明
 
-- 面向用户的多目录权限列表、批量基线、启动卷容量历史、版本/Schema 元数据、重启恢复、电源/温度/睡眠感知、schema v10 概览/菜单栏历史、不可变 finding 概览、schema v13 持久化、完整扫描 paired finalization、完整父级消失对账、合格 APFS 稳定移动、有界即时/启动投影、FR-007/KPI-03 仓库语料门禁，以及用户控制的脱敏诊断导出均已实现。生产扫描会在同一次遍历中冻结仅目录 logical/allocated 证据、直接子级覆盖、分类与 APFS 对象/复用证据；真实 Foundation 增长/重命名/删除与受控 APFS 镜像测试均已通过。概览直接读取终态版本化 current-effective 与失效审计记录，不重新分类，展示耐久校准状态与类型化 History Off/baseline-unavailable 状态。中断基线会安全丢弃未完成 staging，并重新扫描受影响的持久 dirty root，因此在不声称内存枚举偏移续跑的前提下满足 FR-002；真正中点续跑保留为非 P0 性能增强。Schema v12 修订/更正与纯追加 schema v13 更正 finding 失效记录现在覆盖 current-effective/审计查询、耐久状态、恢复/保留、诊断、UI 和一次真实 5 GiB 当前主机资格。文档规定的 19/20 原型 KPI 矩阵仍是发布资格，而不是实现声明。未经证明的缺失行和不受支持的文件系统仍会被抑制。APFS 唯一块核算也仍未完成。导出 entitlement 与真实签名沙盒保存流程已通过当前主机资格；人工辅助技术、干净账户 Gatekeeper 例外、打包 bookmark 连续性和 macOS 15.6 资格仍未完成。
+- 面向用户的多目录权限列表、批量基线、启动卷容量历史、版本/Schema 元数据、重启恢复、电源/温度/睡眠感知、schema v10 概览/菜单栏历史、不可变 finding 概览、schema v13 持久化、完整扫描 paired finalization、完整父级消失对账、合格 APFS 稳定移动、有界即时/启动投影、FR-007/KPI-03 仓库语料门禁，以及用户控制的脱敏诊断导出均已实现。生产扫描会在同一次遍历中冻结仅目录 logical/allocated 证据、直接子级覆盖、分类与 APFS 对象/复用证据；真实 Foundation 增长/重命名/删除与受控 APFS 镜像测试均已通过。概览直接读取终态版本化 current-effective 与失效审计记录，不重新分类，展示耐久校准状态与类型化 History Off/baseline-unavailable 状态。中断基线会安全丢弃未完成 staging，并重新扫描受影响的持久 dirty root，因此在不声称内存枚举偏移续跑的前提下满足 FR-002；真正中点续跑保留为非 P0 性能增强。Schema v12 修订/更正与纯追加 schema v13 更正 finding 失效记录现在覆盖 current-effective/审计查询、耐久状态、恢复/保留、诊断、UI，并在 19/20 门槛下完成当前主机 20/20 次真实 5 GiB 资格。未经证明的缺失行和不受支持的文件系统仍会被抑制。APFS 唯一块核算也仍未完成。导出 entitlement 与真实签名沙盒保存流程已通过当前主机资格；人工辅助技术、干净账户 Gatekeeper 例外、打包 bookmark 连续性和 macOS 15.6 资格仍未完成。
 - 修正后的当前主机运行关闭了提交 `ed0d660` 的 ad-hoc 24 小时进程/耐久门禁。Activity Monitor 的 CPU、唤醒、内存、I/O 与 thermal 区间仍只是能耗相关证据，不是直接瓦特/焦耳测量；该结果也不能证明普遍的系统调度到达保证、签名状态项交互矩阵、Apple 身份分发、Release Candidate 替换或 macOS 15.6 运行资格。
 - 用户主动基线调度会响应休眠、低电量模式、严重/危急温度，并观察当前供电来源。后台速率预算、系统负载调度以及架构中的 token bucket 尚未实现。硬链接去重受条目预算限制，但每次扫描运行期间仍保存在内存中。
 - 真实 sandbox Powerbox 展示以及 stale/身份失败的重新授权 UI 已实现；当前主机上的持久选择、同一 bundle 重启、明确 App 内移除和同镜像外置卷返回已经通过。真实 stale 证据、UI 流程中的不同 UUID 换卷子项、Apple 身份签名以及 macOS 15.6 运行矩阵仍未完成，或受到当前环境阻塞。
@@ -109,9 +110,9 @@
 8. 在 macOS 15.6 与当前稳定版 macOS 上，为已实现的 finding 概览完成人工键盘、VoiceOver、对比度、大字体和不确定性措辞复核。不受支持的文件系统与未经证明的缺失行必须继续被抑制。v12 更正链与 v13 目标专属失效记录已经实现，但产品措辞仍需该人工复核。
 9. 在签名沙盒与打包 DMG 中验证已实现的用户控制导出：覆盖保存面板写入、默认/token 脱敏、每次完整路径同意、取消/重启恢复和辅助技术行为，并且绝不自动上传。
 
-## 发布决策（继续维持 NO-GO；证据更新于 2026-08-13）
+## 发布决策（继续维持 NO-GO；证据更新于 2026-08-14）
 
 - **本地工程 RC 生成：CONDITIONAL GO（有条件继续）。** 可以使用 fail-closed ad-hoc 打包器，为明确互相信任的维护者/测试者生成带 provenance 的受控测试产物。
 - **GitHub Release 与 Public Beta：NO-GO（暂不发布）。** 本次没有创建 tag、Release 或上传产物。
-- 阻塞门禁包括：重复 FR-004 原型 KPI 矩阵；macOS 15.6 运行；人工辅助功能/可用性和真实 bookmark/权限/换卷矩阵；ADR-003/004/006/008/009 接受；Developer ID/公证，或明确接受未签名风险并完成干净账户 Gatekeeper 例外启动；打包升级/回滚；以及仓库所有者批准项目许可证。确定性 SBOM/notices 生成、自动化 finding/History-Off/校准概览、FR-007 语料和 FR-014 实现/当前主机真实签名沙盒导出门禁已经关闭，但打包/人工辅助技术与最低系统资格验证尚未完成。
+- 阻塞门禁包括：macOS 15.6 运行；人工辅助功能/可用性和真实 bookmark/权限/换卷矩阵；ADR-003/004/006/008/009 接受；Developer ID/公证，或明确接受未签名风险并完成干净账户 Gatekeeper 例外启动；打包升级/回滚；以及仓库所有者批准项目许可证。重复 FR-004 矩阵、确定性 SBOM/notices 生成、自动化 finding/History-Off/校准概览、FR-007 语料和 FR-014 实现/当前主机真实签名沙盒导出门禁已经关闭，但打包/人工辅助技术与最低系统资格验证尚未完成。
 - 逐行门禁表和未发布的测试者说明见[产品路线图](../product/product-roadmap.md)与 [Changelog](../../CHANGELOG.md)。

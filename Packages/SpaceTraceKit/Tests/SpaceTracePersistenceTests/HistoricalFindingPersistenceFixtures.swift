@@ -75,6 +75,27 @@ struct HistoricalLedgerTestFixture {
         }
     }
 
+    func execute(_ sql: String) throws {
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(
+            databaseURL.path,
+            &database,
+            SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX,
+            nil
+        ) == SQLITE_OK, let database else {
+            throw HistoricalLedgerFixtureError.sqlite("open")
+        }
+        defer { sqlite3_close_v2(database) }
+        var message: UnsafeMutablePointer<CChar>?
+        let result = sqlite3_exec(database, sql, nil, nil, &message)
+        guard result == SQLITE_OK else {
+            let text = message.map { String(cString: $0) }
+                ?? String(cString: sqlite3_errmsg(database))
+            if let message { sqlite3_free(message) }
+            throw HistoricalLedgerFixtureError.sqlite(text)
+        }
+    }
+
     private func open() throws -> OpaquePointer {
         var database: OpaquePointer?
         guard sqlite3_open_v2(

@@ -94,4 +94,3 @@ retraction，再删除 corrected finding，之后沿用已验证的 v12 依赖�
 4. 证明终态更正 finding 遵守自己的 retraction，且不会恢复前驱 finding。
 5. 重跑严格并发、released fixture、隐私、容量、恢复、签名沙盒、macOS 15.6 与
    DMG 门禁。
-

@@ -107,4 +107,3 @@ query integration can be considered complete.
    revive predecessor findings.
 5. Re-run strict concurrency, released fixtures, privacy, capacity, recovery,
    signed sandbox, macOS 15.6, and DMG gates.
-

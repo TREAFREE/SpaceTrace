@@ -1,3 +1,4 @@
+import Foundation
 import SpaceTraceApplication
 import SpaceTraceDomain
 import Testing
@@ -44,6 +45,97 @@ struct HistoricalFindingsViewModelTests {
         #expect(model.overview == overview)
         #expect(model.overview?.currentFindings.count == 1)
         #expect(model.overview?.invalidatedFindings.count == 1)
+    }
+
+    @Test("Configured scope readiness is loaded beside finding evidence")
+    func loadsReconciliationReadiness() async throws {
+        let scopeID = try WatchedScopeID("scope-requires-permission")
+        let overview = try findingOverview(
+            scopeID: scopeID,
+            availability: .available,
+            current: [],
+            invalidated: []
+        )
+        let service = HistoricalFindingOverviewServiceFake(
+            responses: [.success(overview)]
+        )
+        let loader = ReconciliationStatusLoaderFake()
+        let model = HistoricalFindingsViewModel(
+            service: service,
+            reconciliationLoader: loader
+        )
+
+        await model.load(scopes: [
+            HistoricalFindingScopeDisplay(
+                scopeID: scopeID,
+                path: nil,
+                readiness: .permissionRequired
+            ),
+        ])
+
+        #expect(model.state == .loaded)
+        #expect(
+            model.reconciliationStatuses[scopeID]?.state
+                == .permissionRequired(lastSuccess: nil)
+        )
+        #expect(await loader.requests == [
+            ReconciliationStatusLoaderFake.Request(
+                scopeID: scopeID,
+                readiness: .permissionRequired
+            ),
+        ])
+    }
+
+    @Test("Diagnostic export omits pathless scopes and preserves their typed health state")
+    func diagnosticExportHandlesUnavailableScopeWithoutInventingAPath() async throws {
+        let availableID = try WatchedScopeID("scope-export-available")
+        let permissionID = try WatchedScopeID("scope-export-permission")
+        let overview = try HistoricalFindingOverview(
+            retentionDays: 30,
+            scopes: [
+                try HistoricalFindingScopeOverview(
+                    scopeID: availableID,
+                    availability: .available,
+                    currentFindings: [],
+                    invalidatedFindings: []
+                ),
+                try HistoricalFindingScopeOverview(
+                    scopeID: permissionID,
+                    availability: .baselineUnavailable,
+                    currentFindings: [],
+                    invalidatedFindings: []
+                ),
+            ]
+        )
+        let model = HistoricalFindingsViewModel(
+            service: HistoricalFindingOverviewServiceFake(
+                responses: [.success(overview)]
+            ),
+            reconciliationLoader: ReconciliationStatusLoaderFake()
+        )
+
+        await model.load(scopes: [
+            HistoricalFindingScopeDisplay(
+                scopeID: availableID,
+                path: "/Fixtures/Available"
+            ),
+            HistoricalFindingScopeDisplay(
+                scopeID: permissionID,
+                path: nil,
+                readiness: .permissionRequired
+            ),
+        ])
+
+        let exportSource = try DiagnosticExportSourceFactory.make(
+            from: model,
+            now: Date(timeIntervalSince1970: 1_800_000_000)
+        )
+        let source = try #require(exportSource)
+        #expect(source.scopes.map(\.scopeID) == [availableID])
+        #expect(source.healthEvents.map(\.code).contains("permission_required"))
+        #expect(source.healthEvents.first(where: {
+            $0.code == "permission_required"
+        })?.count == 1)
     }
 
     @Test("A read failure is retryable without inventing an empty result")
@@ -151,6 +243,32 @@ private actor HistoricalFindingOverviewServiceFake: HistoricalFindingOverviewSer
         if policyWriteFails {
             throw HistoricalFindingsViewModelFixtureError.policyFailed
         }
+    }
+}
+
+private actor ReconciliationStatusLoaderFake: ReconciliationStatusLoading {
+    struct Request: Sendable, Equatable {
+        let scopeID: WatchedScopeID
+        let readiness: ReconciliationScopeReadiness
+    }
+
+    private(set) var requests: [Request] = []
+
+    func load(
+        scopeID: WatchedScopeID,
+        readiness: ReconciliationScopeReadiness
+    ) throws -> ReconciliationStatus {
+        requests.append(Request(scopeID: scopeID, readiness: readiness))
+        let state: ReconciliationStatusState
+        switch readiness {
+        case .ready:
+            state = .baselineUnavailable
+        case .permissionRequired:
+            state = .permissionRequired(lastSuccess: nil)
+        case .volumeUnavailable:
+            state = .volumeUnavailable(lastSuccess: nil)
+        }
+        return try ReconciliationStatus(scopeID: scopeID, state: state)
     }
 }
 

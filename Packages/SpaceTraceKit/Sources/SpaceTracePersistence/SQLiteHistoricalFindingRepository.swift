@@ -45,6 +45,70 @@ extension SQLiteEventJournalRepository {
         return available == nil ? .baselineUnavailable : .available
     }
 
+    public func durableReconciliationStatus(
+        for scopeID: WatchedScopeID
+    ) throws -> ReconciliationStatus {
+        try performHistoricalStartupMaintenanceIfNeeded()
+        let domainScopeID = try ScopeID(scopeID.rawValue)
+        switch try historicalPathHistoryAvailability(for: domainScopeID) {
+        case .historyDisabled:
+            return try ReconciliationStatus(scopeID: scopeID, state: .historyDisabled)
+        case .baselineUnavailable:
+            return try ReconciliationStatus(scopeID: scopeID, state: .baselineUnavailable)
+        case .available:
+            break
+        }
+
+        let successRow = try historicalReconciliationSuccessRow(scopeID: scopeID)
+        let success = try successRow.map {
+            try ReconciliationSuccess(
+                scopeID: scopeID,
+                sequence: ReconciliationRevisionSequence($0.nodeID * 2),
+                completedAt: ObservationInstant(millisecondsSince1970: $0.completedAt)
+            )
+        }
+        let pending = try historicalReconciliationPendingRow(scopeID: scopeID)
+        let attempt = try historicalReconciliationAttemptRow(scopeID: scopeID)
+        if let attempt {
+            let attemptedRevision = try DirtyRegionRevision(attempt.dirtyRevision)
+            let attemptedAt = try ObservationInstant(
+                millisecondsSince1970: attempt.attemptedAt
+            )
+            let state: ReconciliationStatusState = attempt.state == "partial"
+                ? .partial(
+                    lastSuccess: success,
+                    attemptedRevision: attemptedRevision,
+                    attemptedAt: attemptedAt
+                )
+                : .failed(
+                    lastSuccess: success,
+                    attemptedRevision: attemptedRevision,
+                    attemptedAt: attemptedAt
+                )
+            return try ReconciliationStatus(scopeID: scopeID, state: state)
+        }
+        if let pending {
+            return try ReconciliationStatus(
+                scopeID: scopeID,
+                state: .pending(
+                    lastSuccess: success,
+                    oldestPendingRevision: try pending.dirtyRevision.map(
+                        DirtyRegionRevision.init
+                    ),
+                    pendingSince: try pending.pendingSince.map {
+                        try ObservationInstant(millisecondsSince1970: $0)
+                    }
+                )
+            )
+        }
+        guard let success else {
+            throw SQLiteEventJournalError.corruptStoredValue(
+                field: "reconciliation_status.available_without_success"
+            )
+        }
+        return try ReconciliationStatus(scopeID: scopeID, state: .current(success))
+    }
+
     public func nextHistoricalProjectionWork() throws -> HistoricalProjectionWork? {
         try performHistoricalStartupMaintenanceIfNeeded()
         return try readNextHistoricalProjectionWork()
@@ -565,6 +629,10 @@ extension SQLiteEventJournalRepository {
                 throw SQLiteEventJournalError.dirtyRevisionChangedDuringFinalization
             }
             try finishScanRun(runID, state: "completed", report: report)
+            try removeCompletedCycleCalibrationAttempts(
+                streamID: streamID,
+                regionPath: context.regionPath
+            )
             if let historicalRequest,
                case let .published(commit)? = historicalOutcome {
                 let revisions = try appendReconciliationRevisions(
@@ -606,7 +674,8 @@ extension SQLiteEventJournalRepository {
 
 extension SQLiteEventJournalRepository:
     HistoricalFindingPersistenceRepository,
-    HistoricalFindingIntegrityReconciliationRepository
+    HistoricalFindingIntegrityReconciliationRepository,
+    ReconciliationStatusRepository
 {}
 
 struct HistoricalCalibrationPrimitiveResult {
@@ -1656,6 +1725,149 @@ private extension SQLiteEventJournalRepository {
 }
 
 private extension SQLiteEventJournalRepository {
+    func historicalReconciliationSuccessRow(
+        scopeID: WatchedScopeID
+    ) throws -> HistoricalReconciliationSuccessRow? {
+        let rows = try historicalRows(
+            """
+            SELECT revision.node_id,run.finished_at_ms,run.dirty_revision_be
+            FROM historical_reconciliation_revision revision
+            JOIN historical_observation_node node ON node.node_id=revision.node_id
+            JOIN historical_observation_batch batch ON batch.batch_id=node.batch_id
+            JOIN historical_scope scope ON scope.scope_key=batch.scope_key
+            JOIN scan_run run ON run.id=batch.scan_run_id
+            WHERE scope.scope_id=? AND run.state='completed'
+              AND run.coverage='complete' AND run.finished_at_ms IS NOT NULL
+            ORDER BY revision.node_id DESC
+            LIMIT 1
+            """,
+            blobs: [Data(scopeID.rawValue.utf8)]
+        ) { statement in
+            let nodeID = sqlite3_column_int64(statement, 0)
+            guard nodeID > 0, nodeID <= Int64.max / 2 else {
+                throw SQLiteEventJournalError.corruptStoredValue(
+                    field: "reconciliation_status.node_id"
+                )
+            }
+            return HistoricalReconciliationSuccessRow(
+                nodeID: nodeID,
+                completedAt: sqlite3_column_int64(statement, 1),
+                dirtyRevision: try historicalReconciliationDirtyRevision(
+                    historicalData(statement, 2, "reconciliation_status.success_revision")
+                )
+            )
+        }
+        guard rows.count <= 1 else {
+            throw SQLiteEventJournalError.corruptStoredValue(
+                field: "reconciliation_status.success"
+            )
+        }
+        return rows.first
+    }
+
+    func historicalReconciliationPendingRow(
+        scopeID: WatchedScopeID
+    ) throws -> HistoricalReconciliationPendingRow? {
+        let dirtyRows = try historicalRows(
+            """
+            SELECT dirty.revision_be,dirty.updated_at_ms
+            FROM dirty_region dirty
+            JOIN watched_scope_bookmark bookmark ON bookmark.scope_id=?
+            WHERE bookmark.expected_root='/'
+               OR dirty.path=bookmark.expected_root
+               OR substr(dirty.path,1,length(bookmark.expected_root)+1)=
+                  bookmark.expected_root||'/'
+            ORDER BY dirty.revision_be,dirty.stream_id,dirty.path
+            LIMIT 1
+            """,
+            text: scopeID.rawValue
+        ) { statement in
+            HistoricalReconciliationPendingRow(
+                dirtyRevision: try historicalReconciliationDirtyRevision(
+                    historicalData(statement, 0, "reconciliation_status.pending_revision")
+                ),
+                pendingSince: sqlite3_column_type(statement, 1) == SQLITE_NULL
+                    ? nil
+                    : sqlite3_column_int64(statement, 1)
+            )
+        }
+        let pathFreeRows = try historicalRows(
+            """
+            SELECT updated_at_ms
+            FROM path_free_calibration_requirement
+            WHERE scope_id=?
+            ORDER BY updated_at_ms,stream_id
+            LIMIT 1
+            """,
+            text: scopeID.rawValue
+        ) { statement in
+            sqlite3_column_int64(statement, 0)
+        }
+        guard dirtyRows.count <= 1, pathFreeRows.count <= 1 else {
+            throw SQLiteEventJournalError.corruptStoredValue(
+                field: "reconciliation_status.pending"
+            )
+        }
+        if let dirty = dirtyRows.first {
+            let pendingSince = [dirty.pendingSince, pathFreeRows.first]
+                .compactMap { $0 }
+                .min()
+            return HistoricalReconciliationPendingRow(
+                dirtyRevision: dirty.dirtyRevision,
+                pendingSince: pendingSince
+            )
+        }
+        return pathFreeRows.first.map {
+            HistoricalReconciliationPendingRow(
+                dirtyRevision: nil,
+                pendingSince: $0
+            )
+        }
+    }
+
+    func historicalReconciliationAttemptRow(
+        scopeID: WatchedScopeID
+    ) throws -> HistoricalReconciliationAttemptRow? {
+        let rows = try historicalRows(
+            """
+            SELECT run.state,run.dirty_revision_be,
+                   COALESCE(run.finished_at_ms,run.started_at_ms)
+            FROM scan_run run
+            JOIN dirty_region dirty
+              ON dirty.stream_id=run.stream_id
+             AND dirty.path=run.region_path
+             AND dirty.revision_be=run.dirty_revision_be
+            JOIN watched_scope_bookmark bookmark ON bookmark.scope_id=?
+            WHERE run.state IN ('partial','failed')
+              AND (bookmark.expected_root='/'
+                   OR run.region_path=bookmark.expected_root
+                   OR substr(run.region_path,1,length(bookmark.expected_root)+1)=
+                      bookmark.expected_root||'/')
+            ORDER BY run.started_at_ms DESC,run.id
+            LIMIT 2
+            """,
+            text: scopeID.rawValue
+        ) { statement in
+            HistoricalReconciliationAttemptRow(
+                state: try historicalText(
+                    statement,
+                    0,
+                    "reconciliation_status.attempt_state"
+                ),
+                dirtyRevision: try historicalReconciliationDirtyRevision(
+                    historicalData(statement, 1, "reconciliation_status.attempt_revision")
+                ),
+                attemptedAt: sqlite3_column_int64(statement, 2)
+            )
+        }
+        guard rows.count <= 1 else {
+            throw SQLiteEventJournalError.corruptStoredValue(
+                field: "reconciliation_status.attempt"
+            )
+        }
+        return rows.first
+    }
+
     func validateDisabledReceiptIfPresent(
         request: HistoricalCalibrationFinalizationRequest,
         expectedDigest: Data
@@ -3073,6 +3285,23 @@ private struct HistoricalStoredRetraction {
     let expectedDraftDigest: Data
 }
 
+private struct HistoricalReconciliationSuccessRow {
+    let nodeID: Int64
+    let completedAt: Int64
+    let dirtyRevision: UInt64
+}
+
+private struct HistoricalReconciliationPendingRow {
+    let dirtyRevision: UInt64?
+    let pendingSince: Int64?
+}
+
+private struct HistoricalReconciliationAttemptRow {
+    let state: String
+    let dirtyRevision: UInt64
+    let attemptedAt: Int64
+}
+
 private func historicalEffectiveFindingOrder(
     _ lhs: EffectiveHistoricalFinding,
     _ rhs: EffectiveHistoricalFinding
@@ -3151,6 +3380,26 @@ private extension HistoricalFindingMovementContext {
 }
 
 private let historicalSQLiteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+private func historicalReconciliationDirtyRevision(_ data: Data) throws -> UInt64 {
+    guard data.count == MemoryLayout<UInt64>.size else {
+        throw SQLiteEventJournalError.corruptStoredValue(
+            field: "reconciliation_status.dirty_revision"
+        )
+    }
+    let value = data.reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
+    guard value > 0 else {
+        throw SQLiteEventJournalError.corruptStoredValue(
+            field: "reconciliation_status.dirty_revision"
+        )
+    }
+    return value
+}
+
+private func historicalReconciliationRevisionData(_ value: UInt64) -> Data {
+    var bigEndian = value.bigEndian
+    return withUnsafeBytes(of: &bigEndian) { Data($0) }
+}
 
 private func bindHistoricalBlob(
     _ data: Data,

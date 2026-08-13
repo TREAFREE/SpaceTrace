@@ -5,16 +5,16 @@ import Testing
 
 @Suite("SQLite v12 correction-ledger migration", .serialized)
 struct SQLiteHistoricalCorrectionMigrationTests {
-    @Test("A fresh store installs the exact frozen v12 graph without fabricated corrections")
+    @Test("A fresh store preserves the frozen v12 graph inside current v13")
     func freshStoreInstallsV12() async throws {
         let fixture = try CorrectionMigrationDatabase()
         defer { fixture.remove() }
 
         let repository = try SQLiteEventJournalRepository(databaseURL: fixture.databaseURL)
-        #expect(SQLiteEventJournalRepository.currentSchemaVersion == 12)
+        #expect(SQLiteEventJournalRepository.currentSchemaVersion == 13)
         try await repository.close()
 
-        #expect(try fixture.integer("PRAGMA user_version") == 12)
+        #expect(try fixture.integer("PRAGMA user_version") == 13)
         #expect(try fixture.integer("SELECT count(*) FROM historical_reconciliation_revision") == 0)
         #expect(try fixture.integer("SELECT count(*) FROM historical_projection_correction_checkpoint") == 0)
         #expect(try fixture.text("PRAGMA integrity_check") == "ok")
@@ -22,7 +22,7 @@ struct SQLiteHistoricalCorrectionMigrationTests {
         let digest = try fixture.schemaDigest()
         let digestHex = digest.map { String(format: "%02x", $0) }.joined()
         #expect(
-            digest == SQLiteHistoricalCorrectionSchema.frozenSchemaDigest,
+            digest == SQLiteHistoricalCorrectedRetractionSchema.frozenSchemaDigest,
             "actual schema digest: \(digestHex)"
         )
     }
@@ -36,7 +36,7 @@ struct SQLiteHistoricalCorrectionMigrationTests {
         let repository = try SQLiteEventJournalRepository(databaseURL: fixture.databaseURL)
         try await repository.close()
 
-        #expect(try fixture.integer("PRAGMA user_version") == 12)
+        #expect(try fixture.integer("PRAGMA user_version") == 13)
         #expect(try fixture.v11SemanticSnapshot() == before)
         #expect(try fixture.integer("SELECT count(*) FROM historical_reconciliation_revision") == 0)
         #expect(try fixture.integer("SELECT count(*) FROM historical_correction_input") == 0)

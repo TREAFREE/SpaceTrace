@@ -132,36 +132,12 @@ struct DiagnosticExportView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     ForEach(model.findingSelections) { finding in
-                        Button {
+                        DiagnosticExportFindingSelectionRow(
+                            finding: finding,
+                            isSaving: model.state == .saving
+                        ) {
                             model.toggleFinding(finding.id)
-                        } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: finding.isSelected
-                                      ? "checkmark.circle.fill"
-                                      : "circle")
-                                    .foregroundStyle(
-                                        finding.isSelected
-                                            ? Color.accentColor
-                                            : Color(nsColor: .secondaryLabelColor)
-                                    )
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(finding.title)
-                                        .lineLimit(1)
-                                    Text(finding.kind.rawValue)
-                                        .font(.caption.monospaced())
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                            }
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
-                        .disabled(model.state == .saving)
-                        .accessibilityLabel(finding.title)
-                        .accessibilityValue(finding.isSelected ? "已选择" : "未选择")
-                        .accessibilityIdentifier(
-                            "diagnostic-export-finding-\(finding.id.rawValue)"
-                        )
                     }
                 }
             }
@@ -256,6 +232,45 @@ struct DiagnosticExportView: View {
         case .coverage: "scope"
         case .healthEvents: "waveform.path.ecg"
         case .selectedFindings: "list.bullet.rectangle"
+        }
+    }
+}
+
+private struct DiagnosticExportFindingSelectionRow: View {
+    let finding: DiagnosticExportFindingSelection
+    let isSaving: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        Button(action: toggle) {
+            HStack(spacing: 10) {
+                Image(systemName: finding.isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(
+                        finding.isSelected
+                            ? Color.accentColor
+                            : Color(nsColor: .secondaryLabelColor)
+                    )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(finding.title).lineLimit(1)
+                    Text(finding.kind.rawValue)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isSaving)
+        .accessibilityLabel(finding.title)
+        .accessibilityValue(finding.isSelected ? "已选择" : "未选择")
+        .accessibilityIdentifier("diagnostic-export-finding-\(identifier)")
+    }
+
+    private var identifier: String {
+        switch finding.id {
+        case .original(let id): "original-\(id.rawValue)"
+        case .corrected(let id): "corrected-\(id.rawValue)"
         }
     }
 }

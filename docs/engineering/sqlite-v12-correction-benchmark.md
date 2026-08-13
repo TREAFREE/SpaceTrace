@@ -1,15 +1,19 @@
-# SQLite v12 Correction Physical Prototype Evidence
+# SQLite v12/v13 Correction Physical Evidence
 
 Last updated: 2026-08-13
 
 ## Scope
 
-This evidence freezes the physical layout selected for ADR-008. Production now
-migrates fresh and v11 stores to `PRAGMA user_version` 12. The layout extends the released
+This evidence freezes the correction layout selected for ADR-008 and the
+additive corrected-finding invalidation extension selected for ADR-009.
+Production now migrates fresh, v11, and v12 stores to `PRAGMA user_version` 13.
+The v12 layout extends the released
 v11 immutable observation ledger with compact reconciliation revisions,
 registered correction input, linear correcting-projection work/checkpoints,
 complete replacement findings/ranks/reasons, and current-effective query
-indexes. Complete paired calibration now appends reconciliation revisions in
+indexes. Schema v13 adds only the append-only corrected-finding retraction
+target required to distinguish original and corrected finding identities.
+Complete paired calibration now appends reconciliation revisions in
 the same transaction as current truth, v11 frames, scan completion, the dirty
 compare-and-delete, and the legacy materialized cache. It does not claim that
 status/query UI integration, macOS 15.6 qualification, signing, notarization,
@@ -49,7 +53,7 @@ The benchmark runs one temporary SQLite database at a time and removes it when
 the scenario ends. It writes
 `SpaceTrace-v12-historical-corrections.json` under
 `FileManager.default.temporaryDirectory`; the measured report SHA-256 was
-`f235ace99c9352c1cb053f978781f97c2e53b582b8ce71cf7fabbd9f0640a706`.
+`915140cafec33596e7ddc9153a0c6b319f6348fd3f88aca8f317ed87c08cbc01`.
 
 ## Fixed workload
 
@@ -72,16 +76,16 @@ minimum-reference-hardware qualification.
 
 | Requested | Scenario | Retained v11 nodes | v12 revision rows | Correcting projections / findings | Pre-maintenance main+WAL+SHM | Final main+WAL+SHM | Revision P95 | Projection P95 |
 |---:|---|---:|---:|---:|---:|---:|---:|---:|
-| 500,000 | no correction | 500,000 | 480,000 | 0 / 0 | 149,007,600 B | 109,731,840 B | 0.799 ms | 0.053 ms |
-| 500,000 | 2% correction churn | 500,000 | 480,000 | 47 / 18,424 | 170,616,640 B | 118,034,432 B | 0.860 ms | 0.044 ms |
-| 500,000 | v10→v12 overlap | 250,000 | 240,000 | 0 / 0 | 132,191,920 B | 106,176,512 B | 0.671 ms | 0.030 ms |
-| 1,000,000 | no correction | 1,000,000 | 960,000 | 0 / 0 | 299,248,080 B | 220,418,048 B | 0.703 ms | 0.029 ms |
-| 1,000,000 | 2% correction churn | 1,000,000 | 960,000 | 47 / 36,848 | 341,543,528 B | 237,023,232 B | 0.756 ms | 0.050 ms |
-| 1,000,000 | v10→v12 overlap | 500,000 | 480,000 | 0 / 0 | 264,027,400 B | 212,590,592 B | 0.691 ms | 0.024 ms |
+| 500,000 | no correction | 500,000 | 480,000 | 0 / 0 | 148,323,608 B | 109,744,128 B | 0.712 ms | 0.029 ms |
+| 500,000 | 2% correction churn | 500,000 | 480,000 | 47 / 18,424 | 169,932,648 B | 118,046,720 B | 0.732 ms | 0.048 ms |
+| 500,000 | v10→v13 overlap | 250,000 | 240,000 | 0 / 0 | 131,507,928 B | 106,188,800 B | 0.679 ms | 0.034 ms |
+| 1,000,000 | no correction | 1,000,000 | 960,000 | 0 / 0 | 298,564,088 B | 220,430,336 B | 0.747 ms | 0.031 ms |
+| 1,000,000 | 2% correction churn | 1,000,000 | 960,000 | 47 / 36,848 | 340,859,536 B | 237,035,520 B | 0.841 ms | 0.046 ms |
+| 1,000,000 | v10→v13 overlap | 500,000 | 480,000 | 0 / 0 | 263,343,408 B | 212,602,880 B | 0.712 ms | 0.027 ms |
 
 All six scenarios reported `integrity_check=ok`, zero foreign-key violations,
 `secure_delete=ON`, and zero WAL bytes after truncation. The largest final
-case is 237,023,232 bytes, leaving 12,976,768 bytes under the
+case is 237,035,520 bytes, leaving 12,964,480 bytes under the
 250,000,000-byte post-maintenance gate. The pre-maintenance values are recorded
 truthfully and are not constrained by that long-lived storage gate.
 
@@ -104,6 +108,11 @@ truthfully and are not constrained by that long-lived storage gate.
   schema digest
   `04fba44ae486b4d2f54324bd2068838675162103846d58abfd89fbdebcd059cf`
   before serving writes.
+- The additive v12→v13 migration preserves every v12 row, creates no synthetic
+  retraction, and validates the full schema digest
+  `cd10e239cc6067a77c4e51a0d862ad6942c406b24a2ca2962304bd77ffbc49a4`
+  before serving. The released v13 fixture, generator, semantic digest, and
+  schema-object digest are independently verified by the fixture gate.
 - Legacy `directory_history_sample` rows remain an explicitly lossy legacy
   baseline; migration never re-labels them as immutable v12 revisions.
 - The deterministic released v12 fixture contains two complete paired
@@ -118,7 +127,12 @@ truthfully and are not constrained by that long-lived storage gate.
   already-expired scans append no revision. Retention removes an entire
   same-bucket chain and any dependent correcting-projection graph atomically
   before deleting v11 nodes.
-- Registered correcting-projection transactions are implemented and covered by
-  strict-concurrency Application/SQLite tests. Current-effective/audit queries,
-  durable status, recovery/retention integration, UI, and the controlled 5 GiB
-  qualification remain open; this stage alone does not complete FR-004.
+- Registered correcting-projection transactions, versioned current-effective
+  and audit queries, durable reconciliation status, recovery/retention,
+  corrected-finding invalidation, diagnostics, and Overview presentation are
+  implemented and covered by strict-concurrency Application/SQLite/App tests.
+  A current-host APFS qualification allocated and flushed a real 5 GiB file,
+  introduced a kernel-drop continuity gap, and recovered the exact target
+  subtree with an allocated growth finding of at least 5 GiB. The release KPI
+  still requires the documented repeated prototype matrix; macOS 15.6,
+  accessibility, signed distribution, and notarization remain separate gates.

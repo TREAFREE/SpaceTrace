@@ -20,7 +20,7 @@ public enum ReconciliationStatusState: Sendable, Equatable {
     case current(ReconciliationSuccess)
     case pending(
         lastSuccess: ReconciliationSuccess?,
-        oldestPendingRevision: DirtyRegionRevision,
+        oldestPendingRevision: DirtyRegionRevision?,
         pendingSince: ObservationInstant?
     )
     case partial(
@@ -50,6 +50,63 @@ public enum ReconciliationStatusState: Sendable, Equatable {
             lastSuccess
         case .historyDisabled, .baselineUnavailable:
             nil
+        }
+    }
+}
+
+/// Durable status facts reconstructed from the local ledger. Permission and
+/// mount readiness are deliberately supplied by the lifecycle coordinator,
+/// because neither can be inferred safely from historical SQLite rows alone.
+public protocol ReconciliationStatusRepository: Sendable {
+    func durableReconciliationStatus(
+        for scopeID: WatchedScopeID
+    ) async throws -> ReconciliationStatus
+}
+
+public enum ReconciliationScopeReadiness: Sendable, Equatable, Hashable {
+    case ready
+    case permissionRequired
+    case volumeUnavailable
+}
+
+public protocol ReconciliationStatusLoading: Sendable {
+    func load(
+        scopeID: WatchedScopeID,
+        readiness: ReconciliationScopeReadiness
+    ) async throws -> ReconciliationStatus
+}
+
+public struct ReconciliationStatusQuery: ReconciliationStatusLoading, Sendable {
+    private let repository: any ReconciliationStatusRepository
+
+    public init(repository: any ReconciliationStatusRepository) {
+        self.repository = repository
+    }
+
+    public func load(
+        scopeID: WatchedScopeID,
+        readiness: ReconciliationScopeReadiness
+    ) async throws -> ReconciliationStatus {
+        let durable = try await repository.durableReconciliationStatus(for: scopeID)
+        switch durable.state {
+        case .historyDisabled, .baselineUnavailable:
+            return durable
+        default:
+            break
+        }
+        switch readiness {
+        case .ready:
+            return durable
+        case .permissionRequired:
+            return try ReconciliationStatus(
+                scopeID: scopeID,
+                state: .permissionRequired(lastSuccess: durable.state.successEvidence)
+            )
+        case .volumeUnavailable:
+            return try ReconciliationStatus(
+                scopeID: scopeID,
+                state: .volumeUnavailable(lastSuccess: durable.state.successEvidence)
+            )
         }
     }
 }

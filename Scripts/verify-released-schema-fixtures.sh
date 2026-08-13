@@ -35,8 +35,8 @@ jq -e '
     type == "object" and
     (keys == ["fixtures", "formatVersion"]) and
     (.formatVersion | type == "number" and . == 2 and floor == .) and
-    (.fixtures | type == "array" and length == 3) and
-    ([.fixtures[].schemaVersion] == [10, 11, 12]) and
+    (.fixtures | type == "array" and length == 4) and
+    ([.fixtures[].schemaVersion] == [10, 11, 12, 13]) and
     all(.fixtures[];
         type == "object" and
         (keys == [
@@ -124,20 +124,25 @@ typeset -A expected_semantic_digest expected_schema_digest
 expected_byte_digest[10]=f410f4d3aee861a09f1128661a98082cc19c53bc9662cbde761409506dfa5dec
 expected_byte_digest[11]=5a471cf3f76622411b8fed60043fe837b4bdc4f3a0b811a20818aa84b6ca2945
 expected_byte_digest[12]=360a23821d8cb5b37a56047052b8d45ab0b80daae9d554d1f3aec0109bcb4e42
+expected_byte_digest[13]=05e935c1b565e091c3c47853199a57d46cf5bf153f38f639e1d16eedc68423c7
 expected_generator_digest[10]=2145d8b0a04ee446be7072c26798ec4605122074d2b3a5c08e92c502a491eebe
 expected_generator_digest[11]=4ad02a80505b0ccc00ea4998c3cea28d8589bf26044ec772e0b981b22c84abf8
 expected_generator_digest[12]=b1c6c60d6c71bf57c0f96c4208fcf67945c42563d554f93119a8ea371541ac38
+expected_generator_digest[13]=c15b0f1fd906012397c5623ffa9610376018394c964b1be68bc82247877c4e8d
 expected_seed[10]=spacetrace-released-v10-20260812
 expected_seed[11]=spacetrace-released-v11-20260812
 expected_seed[12]=spacetrace-released-v12-20260813
+expected_seed[13]=spacetrace-released-v13-20260813
 expected_semantic_digest[10]=9489396aeb50cf8c369a61051201078ce0f858033a4f66a46de6be3fe8356c5b
 expected_semantic_digest[11]=f9b1394b6e1ee144548d8ad5179cd5ba8917891fe13064ab9493e463ed1a9414
 expected_semantic_digest[12]=ac6fdb5e1edfaabce652bd3a67a180e2fa1d6a918d25d4b1277068816e48131f
+expected_semantic_digest[13]=b848f5eea5b5729284b328df90df144f9524eb43d908af398ef937c0dfefbe9d
 expected_schema_digest[10]=f9a79fcd1b5ad9912fb9e796ed7f66358c18092fb665071ec937283f050e02e3
 expected_schema_digest[11]=8d5d1cb9d992ba944ad67c4100a56a6c8e521fe3bf6ef02b27a620f9e1ba08f7
 expected_schema_digest[12]=9f401f317d53a3c9c8f71fc7e0afdd2bfe043604c720edacf83cfd4f5ecbee0f
+expected_schema_digest[13]=e38248766b69ddd3605f0f08a213aafec9793d017354b0189b0777b0be4d4425
 
-for version in 10 11 12; do
+for version in 10 11 12 13; do
     entry=$(jq -c --argjson version "$version" \
         '.fixtures[] | select(.schemaVersion == $version)' "$manifest_path")
     [[ -n "$entry" ]] || fail "manifest omits schema v$version"
@@ -218,5 +223,15 @@ done
     "SELECT checksum FROM schema_migration WHERE version=12") == \
     04fba44ae486b4d2f54324bd2068838675162103846d58abfd89fbdebcd059cf ]] || \
     fail "v12 repository schema digest is not frozen"
+[[ $(sqlite3 -readonly "file:$fixture_root/v13/SpaceTrace.sqlite?immutable=1" \
+    'SELECT count(*) FROM historical_projection_correction_checkpoint') -eq 1 ]] || \
+    fail "v13 fixture lost its v12 correction checkpoint"
+[[ $(sqlite3 -readonly "file:$fixture_root/v13/SpaceTrace.sqlite?immutable=1" \
+    'SELECT count(*) FROM historical_corrected_finding_retraction') -eq 0 ]] || \
+    fail "v13 fixture invented a corrected-finding invalidation"
+[[ $(sqlite3 -readonly "file:$fixture_root/v13/SpaceTrace.sqlite?immutable=1" \
+    "SELECT checksum FROM schema_migration WHERE version=13") == \
+    cd10e239cc6067a77c4e51a0d862ad6942c406b24a2ca2962304bd77ffbc49a4 ]] || \
+    fail "v13 repository schema digest is not frozen"
 
 echo "Released-schema fixtures are reproducible and valid."

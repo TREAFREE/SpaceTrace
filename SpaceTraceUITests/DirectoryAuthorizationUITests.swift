@@ -167,10 +167,30 @@ final class DirectoryAuthorizationUITests: XCTestCase {
         waitForExpectations(timeout: 3)
 
         let invalidated = element(
-            identifier: "historical-finding-invalidated-4",
+            identifier: "historical-finding-invalidated-original-4",
             in: app
         )
         XCTAssertTrue(invalidated.waitForExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testOverviewShowsTypedReconciliationReadinessWithoutRelyingOnColor() {
+        let authorized = launch(scenario: "authorized")
+        let current = element(
+            identifier: "reconciliation-status-scope-ui-authorized",
+            in: authorized
+        )
+        XCTAssertTrue(current.waitForExistence(timeout: 5))
+        XCTAssertTrue(String(describing: current.value).contains("已校准至修订 8"))
+        authorized.terminate()
+
+        let stale = launch(scenario: "stale")
+        let permission = element(
+            identifier: "reconciliation-status-scope-ui-stale",
+            in: stale
+        )
+        XCTAssertTrue(permission.waitForExistence(timeout: 5))
+        XCTAssertTrue(String(describing: permission.value).contains("需要重新授权"))
     }
 
     @MainActor
@@ -199,6 +219,10 @@ final class DirectoryAuthorizationUITests: XCTestCase {
         )
         XCTAssertFalse(
             element(identifier: "historical-findings-empty", in: app).exists
+        )
+        XCTAssertTrue(
+            element(identifier: "reconciliation-status-scope-ui-authorized", in: app)
+                .exists
         )
     }
 

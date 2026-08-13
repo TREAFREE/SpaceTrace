@@ -1606,7 +1606,7 @@ expect_rejection "manifest-v2 requires the independent verifier" \
     "format-2 fixture verifier is absent"
 
 # The exact reviewed v2 closure is accepted only when its verifier, generators,
-# source inputs and all seven frozen fixtures are present in the same repository.
+# source inputs and all eight frozen fixtures are present in the same repository.
 create_repository "reviewed-manifest-v2"
 reviewed_v2_repository=$current_repository
 reviewed_v2_base=$current_base
@@ -1619,10 +1619,12 @@ cp -R "$repository_root/Packages/SpaceTraceKit/Tests/SpaceTracePersistenceTests/
 cp "$repository_root/Packages/SpaceTraceKit/Sources/SpaceTracePersistence/SQLiteEventJournalRepository.swift" \
     "$repository_root/Packages/SpaceTraceKit/Sources/SpaceTracePersistence/SQLiteHistoricalFindingSchema.swift" \
     "$repository_root/Packages/SpaceTraceKit/Sources/SpaceTracePersistence/SQLiteHistoricalCorrectionSchema.swift" \
+    "$repository_root/Packages/SpaceTraceKit/Sources/SpaceTracePersistence/SQLiteHistoricalCorrectedRetractionSchema.swift" \
     "$reviewed_v2_repository/Packages/SpaceTraceKit/Sources/SpaceTracePersistence/"
 cp "$repository_root/Scripts/Fixtures/generate-released-schema-v10-fixture.sh" \
     "$repository_root/Scripts/Fixtures/generate-released-schema-v11-fixture.sh" \
     "$repository_root/Scripts/Fixtures/generate-released-schema-v12-fixture.sh" \
+    "$repository_root/Scripts/Fixtures/generate-released-schema-v13-fixture.sh" \
     "$reviewed_v2_repository/Scripts/Fixtures/"
 cp "$repository_root/Scripts/verify-released-schema-fixtures.sh" \
     "$reviewed_v2_repository/Scripts/"

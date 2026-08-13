@@ -12,7 +12,7 @@ enum DiagnosticExportViewState: Equatable {
 }
 
 struct DiagnosticExportFindingSelection: Identifiable, Equatable {
-    let id: HistoricalFindingRecordID
+    let id: HistoricalFindingVersionID
     let title: String
     let kind: HistoricalFindingKind
     let isSelected: Bool
@@ -38,7 +38,7 @@ final class DiagnosticExportViewModel {
     @ObservationIgnored
     private var source: DiagnosticExportSource?
     @ObservationIgnored
-    private var selectedIDs: Set<HistoricalFindingRecordID> = []
+    private var selectedIDs: Set<HistoricalFindingVersionID> = []
     @ObservationIgnored
     private var rawPathAuthorization: DiagnosticRawPathAuthorization?
     @ObservationIgnored
@@ -109,7 +109,7 @@ final class DiagnosticExportViewModel {
         rebuildPreview()
     }
 
-    func toggleFinding(_ id: HistoricalFindingRecordID) {
+    func toggleFinding(_ id: HistoricalFindingVersionID) {
         guard state != .saving else { return }
         if selectedIDs.remove(id) == nil {
             guard selectedIDs.count
@@ -184,7 +184,7 @@ final class DiagnosticExportViewModel {
             let prepared = try DiagnosticExportBuilder().prepare(
                 source: source,
                 exportID: exportID,
-                selectedFindingIDs: selectedIDs.sorted(),
+                selectedFindingVersionIDs: selectedIDs.sorted(),
                 pathMode: pathMode
             )
             try Task.checkCancellation()
@@ -232,7 +232,7 @@ final class DiagnosticExportViewModel {
             preview = try DiagnosticExportBuilder().preview(
                 source: source,
                 exportID: exportID,
-                selectedFindingIDs: selectedIDs.sorted(),
+                selectedFindingVersionIDs: selectedIDs.sorted(),
                 pathMode: pathMode
             )
             if state == .unavailable || state == .failed {
@@ -254,10 +254,8 @@ enum DiagnosticExportSourceFactory {
         now: Date = Date()
     ) throws -> DiagnosticExportSource? {
         guard let overview = model.overview else { return nil }
-        let scopes = try overview.scopes.map { scope in
-            guard let path = model.displayPath(for: scope.scopeID) else {
-                throw DiagnosticExportError.invalidPath
-            }
+        let scopes: [DiagnosticExportScopeSource] = try overview.scopes.compactMap { scope in
+            guard let path = model.displayPath(for: scope.scopeID) else { return nil }
             return try DiagnosticExportScopeSource(
                 scopeID: scope.scopeID,
                 rootPath: path,
@@ -272,6 +270,12 @@ enum DiagnosticExportSourceFactory {
         let disabled = scopes.filter { $0.availability == .historyDisabled }.count
         let unavailable = scopes.filter { $0.availability == .baselineUnavailable }.count
         let invalidated = overview.invalidatedFindings.count
+        let statusCounts = Dictionary(
+            grouping: model.reconciliationStatuses.values.compactMap { status in
+                healthEventDescriptor(for: status.state)
+            },
+            by: \.code
+        )
         if disabled > 0 {
             events.append(try DiagnosticExportHealthEvent(
                 code: "history_disabled",
@@ -296,6 +300,18 @@ enum DiagnosticExportSourceFactory {
                 count: invalidated
             ))
         }
+        for code in statusCounts.keys.sorted(by: {
+            $0.utf8.lexicographicallyPrecedes($1.utf8)
+        }) {
+            guard let descriptors = statusCounts[code],
+                  let descriptor = descriptors.first else { continue }
+            events.append(try DiagnosticExportHealthEvent(
+                code: code,
+                severity: descriptor.severity,
+                observedAt: timestamp,
+                count: descriptors.count
+            ))
+        }
         return try DiagnosticExportSource(
             generatedAt: timestamp,
             appVersion: appVersion(bundle: bundle),
@@ -304,6 +320,32 @@ enum DiagnosticExportSourceFactory {
             scopes: scopes,
             healthEvents: events
         )
+    }
+
+    private struct HealthEventDescriptor {
+        let code: String
+        let severity: DiagnosticExportHealthSeverity
+    }
+
+    private static func healthEventDescriptor(
+        for state: ReconciliationStatusState
+    ) -> HealthEventDescriptor? {
+        switch state {
+        case .current:
+            nil
+        case .pending:
+            HealthEventDescriptor(code: "reconciliation_pending", severity: .notice)
+        case .partial:
+            HealthEventDescriptor(code: "reconciliation_partial", severity: .warning)
+        case .failed:
+            HealthEventDescriptor(code: "reconciliation_failed", severity: .error)
+        case .permissionRequired:
+            HealthEventDescriptor(code: "permission_required", severity: .warning)
+        case .volumeUnavailable:
+            HealthEventDescriptor(code: "volume_unavailable", severity: .warning)
+        case .historyDisabled, .baselineUnavailable:
+            nil
+        }
     }
 
     private static func appVersion(bundle: Bundle) -> String {

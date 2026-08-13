@@ -209,7 +209,7 @@ extension SQLiteEventJournalRepository: HistoricalProjectionCorrectionRepository
 }
 
 extension SQLiteEventJournalRepository {
-    private func readHistoricalProjectionCorrectionAuditRecord(
+    func readHistoricalProjectionCorrectionAuditRecord(
         rootProjectionID: HistoricalProjectionRecordID,
         validateTerminalResult: Bool
     ) throws -> HistoricalProjectionCorrectionAuditRecord? {
@@ -1004,6 +1004,172 @@ extension SQLiteEventJournalRepository {
             lhs.0 == rhs.0 ? lhs.1 < rhs.1 : lhs.0 < rhs.0
         }
     }
+
+    func historicalValidatedCorrectedProjectionAuditRecords(
+        rootProjectionID: HistoricalProjectionRecordID,
+        correctingProjectionID: HistoricalCorrectingProjectionRecordID
+    ) throws -> [VersionedHistoricalFindingAuditRecord] {
+        let terminalRows = try correctionRows(
+            """
+            SELECT projection.work_id,work.algorithm_version,
+                   work.ranking_policy_version,work.correction_input_format_version,
+                   work.correction_input_sha256,input.canonical_input
+            FROM historical_correcting_projection projection
+            JOIN historical_projection_correction_work work ON work.work_id=projection.work_id
+            JOIN historical_projection_correction_checkpoint checkpoint
+              ON checkpoint.correcting_projection_id=projection.correcting_projection_id
+            JOIN historical_correction_input input
+              ON input.algorithm_version=work.algorithm_version
+             AND input.ranking_policy_version=work.ranking_policy_version
+             AND input.input_format_version=work.correction_input_format_version
+             AND input.input_sha256=work.correction_input_sha256
+            WHERE projection.correcting_projection_id=? AND work.root_projection_id=?
+            """,
+            integers: [correctingProjectionID.rawValue, rootProjectionID.rawValue]
+        ) { statement in
+            (
+                sqlite3_column_int64(statement, 0),
+                Int(sqlite3_column_int64(statement, 1)),
+                Int(sqlite3_column_int64(statement, 2)),
+                Int(sqlite3_column_int64(statement, 3)),
+                try correctionData(statement, 4, "correction.input_digest"),
+                try correctionData(statement, 5, "correction.input")
+            )
+        }
+        guard terminalRows.count == 1, let terminal = terminalRows.first,
+              terminal.4.count == 32 else {
+            throw SQLiteEventJournalError.historicalCorrectionImmutableConflict
+        }
+        let rootWork = try historicalRootProjectionWork(rootProjectionID)
+        let baseline = try correctionReadFrame(sequence: rootWork.baselineSequence)
+            .correctionUnwrap(field: "historical_correction_baseline")
+        let comparison = try correctionReadFrame(sequence: rootWork.comparisonSequence)
+            .correctionUnwrap(field: "historical_correction_comparison")
+        let semanticIdentity = try HistoricalProjectionSemanticIdentity(
+            algorithmVersion: HistoricalFindingAlgorithmVersion(terminal.1),
+            rankingPolicyVersion: HistoricalFindingRankingPolicyVersion(terminal.2),
+            correctionInputFormatVersion: HistoricalCorrectionInputFormatVersion(terminal.3),
+            correctionInputDigest: HistoricalProjectionCorrectionDigest(bytes: Array(terminal.4))
+        )
+        let result = try historicalProjectionCorrectionRegistry.generate(
+            semanticIdentity: semanticIdentity,
+            canonicalInput: terminal.5,
+            baseline: baseline,
+            comparison: comparison,
+            positiveLimit: rootWork.positiveLimit
+        )
+        let storedCommand = try historicalStoredCorrectionCommand(
+            workID: terminal.0,
+            expectedResult: result,
+            rootProjectionID: rootProjectionID
+        )
+        _ = try validateStoredHistoricalCorrection(
+            workID: terminal.0,
+            command: storedCommand.command,
+            requestDigest: storedCommand.requestDigest
+        )
+        let expectedRows = try correctionExpectedRows(work: rootWork, result: result)
+        let storedRows = try correctionRows(
+            """
+            SELECT finding.corrected_finding_id,finding.ordinal,finding.draft_sha256,
+                   rank.rank,retraction.corrected_retraction_sequence,
+                   retraction.request_id,retraction.expected_draft_sha256,
+                   retraction.reason_code,retraction.committed_at_ms,retraction.expires_at_ms
+            FROM historical_corrected_finding finding
+            LEFT JOIN historical_corrected_positive_rank rank
+              ON rank.corrected_finding_id=finding.corrected_finding_id
+            LEFT JOIN historical_corrected_finding_retraction retraction
+              ON retraction.retracted_corrected_finding_id=finding.corrected_finding_id
+            WHERE finding.correcting_projection_id=?
+            ORDER BY finding.ordinal
+            """,
+            integers: [correctingProjectionID.rawValue]
+        ) { statement in
+            HistoricalCorrectedAuditRow(
+                findingID: sqlite3_column_int64(statement, 0),
+                ordinal: Int(sqlite3_column_int64(statement, 1)),
+                draftDigest: try correctionData(statement, 2, "corrected.draft_digest"),
+                positiveRank: try historicalOptionalInteger(statement, 3),
+                retractionID: try historicalOptionalInteger(statement, 4),
+                requestID: sqlite3_column_type(statement, 5) == SQLITE_NULL
+                    ? nil
+                    : try correctionData(statement, 5, "corrected_retraction.request_id"),
+                expectedDraftDigest: sqlite3_column_type(statement, 6) == SQLITE_NULL
+                    ? nil
+                    : try correctionData(
+                        statement,
+                        6,
+                        "corrected_retraction.expected_digest"
+                    ),
+                retractionReason: try historicalOptionalInteger(statement, 7),
+                retractionCommittedAt: try historicalOptionalInteger(statement, 8),
+                retractionExpiresAt: try historicalOptionalInteger(statement, 9)
+            )
+        }
+        guard storedRows.count == expectedRows.count else {
+            throw SQLiteEventJournalError.historicalCorrectionImmutableConflict
+        }
+
+        return try zip(storedRows, expectedRows).map { stored, expected in
+            guard stored.ordinal == expected.ordinal,
+                  stored.draftDigest == expected.draftDigest,
+                  stored.positiveRank.map(Int.init) == result.batch.rankedPositiveFindingKeys
+                    .firstIndex(of: expected.draft.key).map({ $0 + 1 }) else {
+                throw SQLiteEventJournalError.historicalCorrectionImmutableConflict
+            }
+            let correctedFindingID = try HistoricalCorrectedFindingRecordID(
+                stored.findingID
+            )
+            let retraction = try historicalCorrectedRetraction(
+                row: stored,
+                findingID: correctedFindingID
+            )
+            let finding = try VersionedEffectiveHistoricalFinding(
+                recordID: .corrected(correctedFindingID),
+                projectionID: .correcting(correctingProjectionID),
+                comparisonSequence: rootWork.comparisonSequence,
+                positiveRank: stored.positiveRank.map(Int.init),
+                draft: expected.draft
+            )
+            return try VersionedHistoricalFindingAuditRecord(
+                finding: finding,
+                draftSHA256: HistoricalEvidenceDigest(bytes: Array(stored.draftDigest)),
+                retraction: retraction.map(HistoricalFindingVersionedRetraction.corrected)
+            )
+        }
+    }
+
+    private func historicalCorrectedRetraction(
+        row: HistoricalCorrectedAuditRow,
+        findingID: HistoricalCorrectedFindingRecordID
+    ) throws -> HistoricalCorrectedFindingRetractionRecord? {
+        let values = [
+            row.retractionID != nil,
+            row.requestID != nil,
+            row.expectedDraftDigest != nil,
+            row.retractionReason != nil,
+            row.retractionCommittedAt != nil,
+            row.retractionExpiresAt != nil,
+        ]
+        if values.allSatisfy({ $0 == false }) { return nil }
+        guard values.allSatisfy({ $0 }),
+              row.retractionReason == 1,
+              row.expectedDraftDigest == row.draftDigest,
+              let retractionID = row.retractionID,
+              let requestID = row.requestID,
+              let committedAt = row.retractionCommittedAt,
+              let expiresAt = row.retractionExpiresAt else {
+            throw SQLiteEventJournalError.historicalCorrectionImmutableConflict
+        }
+        return try HistoricalCorrectedFindingRetractionRecord(
+            recordID: HistoricalCorrectedRetractionRecordID(retractionID),
+            requestID: HistoricalRetractionRequestID(bytes: Array(requestID)),
+            findingID: findingID,
+            reason: .evidenceInvalidated,
+            committedAt: ObservationInstant(millisecondsSince1970: committedAt),
+            expiresAt: ObservationInstant(millisecondsSince1970: expiresAt)
+        )
+    }
 }
 
 private struct HistoricalCorrectionRootRow {
@@ -1064,6 +1230,19 @@ private struct HistoricalStoredCorrectedFindingRow {
     let rankingContribution: Int64?
     let movementAncestorID: Int64?
     let expiresAt: Int64
+}
+
+private struct HistoricalCorrectedAuditRow {
+    let findingID: Int64
+    let ordinal: Int
+    let draftDigest: Data
+    let positiveRank: Int64?
+    let retractionID: Int64?
+    let requestID: Data?
+    let expectedDraftDigest: Data?
+    let retractionReason: Int64?
+    let retractionCommittedAt: Int64?
+    let retractionExpiresAt: Int64?
 }
 
 private extension Optional {

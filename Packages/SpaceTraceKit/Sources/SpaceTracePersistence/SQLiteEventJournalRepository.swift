@@ -7,7 +7,7 @@ import Synchronization
 /// A dependency-free SQLite prototype for ADR-004. The actor is the sole
 /// owner of the connection and serializes every transaction and query.
 public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGenerationRepository, WatchedScopeBookmarkRepository, AuthorizedBaselineSnapshotRepository, DirectoryHistoryRepository, StartupVolumeCapacityHistoryRepository, StorageHistoryRetentionApplying {
-    public static let currentSchemaVersion = 12
+    public static let currentSchemaVersion = 13
     private static let schemaVersion = Int32(currentSchemaVersion)
 
     /// `Mutex` makes the non-Sendable C handle safe to release from the
@@ -605,6 +605,10 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 runID,
                 state: disposition.rawValue,
                 report: report
+            )
+            try removeOtherNonAuthoritativeCalibrationAttempts(
+                keeping: runID,
+                context: context
             )
             try deleteStagedRows(runID)
             try execute("COMMIT TRANSACTION", operation: "commit calibration discard")
@@ -1317,7 +1321,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 try migrateToVersionNine(database, failurePoint: failurePoint)
             case 8:
                 try migrateToVersionNine(database, failurePoint: failurePoint)
-            case 9, 10, 11:
+            case 9, 10, 11, 12:
                 break
             default:
                 throw SQLiteEventJournalError.unsupportedSchemaVersion(currentVersion)
@@ -1342,6 +1346,12 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                     failurePoint: failurePoint
                 )
             }
+            if currentVersion < 13 {
+                try migrateToVersionThirteen(
+                    database,
+                    failurePoint: failurePoint
+                )
+            }
         } catch SQLiteEventJournalError.injectedFailure {
             let targetVersion: Int32
             switch failurePoint {
@@ -1349,6 +1359,8 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 targetVersion = version
             case .afterV12SchemaInstall?, .afterV12MigrationRecord?:
                 targetVersion = 12
+            case .afterV13SchemaInstall?, .afterV13MigrationRecord?:
+                targetVersion = 13
             default:
                 throw SQLiteEventJournalError.injectedFailure
             }
@@ -1359,9 +1371,9 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
         }
 
         do {
-            try SQLiteHistoricalFindingCodec.validateInstalledV12(
+            try SQLiteHistoricalFindingCodec.validateInstalledV13(
                 database: database,
-                frozenSchemaDigest: SQLiteHistoricalCorrectionSchema.frozenSchemaDigest
+                frozenSchemaDigest: SQLiteHistoricalCorrectedRetractionSchema.frozenSchemaDigest
             )
             try SQLiteArtifactValidator.validateOpenedDatabase(database)
         } catch {
@@ -1422,6 +1434,62 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                     on: database,
                     "ROLLBACK TRANSACTION",
                     operation: "roll back schema migration v12"
+                )
+            } catch let rollbackError {
+                throw SQLiteEventJournalError.rollbackFailed(
+                    original: String(describing: migrationError),
+                    rollback: String(describing: rollbackError)
+                )
+            }
+            throw migrationError
+        }
+    }
+
+    private static func migrateToVersionThirteen(
+        _ database: OpaquePointer,
+        failurePoint: SQLiteEventJournalTestFailurePoint?
+    ) throws {
+        try execute(
+            on: database,
+            "BEGIN IMMEDIATE TRANSACTION",
+            operation: "begin schema migration v13"
+        )
+        do {
+            try SQLiteHistoricalCorrectedRetractionSchema.installFrozenV13(on: database)
+            // Reconciliation status becomes a durable public read model in
+            // v13. Older terminal attempts were never maintained as a single
+            // current-cycle fact, so retaining them would let a stale failure
+            // masquerade as the current pending cycle after revision reuse.
+            try execute(
+                on: database,
+                "DELETE FROM scan_run WHERE state IN ('partial','failed','cancelled')",
+                operation: "discard pre-v13 non-authoritative calibration attempts"
+            )
+            if failurePoint == .afterV13SchemaInstall {
+                throw SQLiteEventJournalError.injectedFailure
+            }
+            let digest = try SQLiteHistoricalFindingCodec.schemaObjectDigest(database: database)
+            let digestHex = digest.map { String(format: "%02x", $0) }.joined()
+            try execute(
+                on: database,
+                "INSERT INTO schema_migration(version,applied_at_ms,checksum) VALUES(13,CAST(strftime('%s','now') AS INTEGER)*1000,'\(digestHex)'); PRAGMA user_version=13",
+                operation: "record schema migration version 13"
+            )
+            if failurePoint == .afterV13MigrationRecord {
+                throw SQLiteEventJournalError.injectedFailure
+            }
+            try failMigrationIfRequested(version: 13, failurePoint: failurePoint)
+            try execute(
+                on: database,
+                "COMMIT TRANSACTION",
+                operation: "commit schema migration v13"
+            )
+        } catch let migrationError {
+            do {
+                try execute(
+                    on: database,
+                    "ROLLBACK TRANSACTION",
+                    operation: "roll back schema migration v13"
                 )
             } catch let rollbackError {
                 throw SQLiteEventJournalError.rollbackFailed(
@@ -3208,7 +3276,7 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                 finished_at_ms = ?6
             WHERE id = ?1
             """
-        let finishedAt = Int64(Date().timeIntervalSince1970 * 1_000)
+        let finishedAt = Self.milliseconds(now())
         try withStatement(sql, operation: "finish calibration run") { statement in
             try runID.rawValue.withCString { runCString in
                 try state.withCString { stateCString in
@@ -3229,6 +3297,66 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
                         try check(sqlite3_bind_int64(statement, 6, finishedAt), operation: "bind finished time")
                         try stepExpectingDone(statement, operation: "update calibration run")
                     }
+                }
+            }
+        }
+    }
+
+    func removeOtherNonAuthoritativeCalibrationAttempts(
+        keeping runID: CalibrationRunID,
+        context: ScanRunContext
+    ) throws {
+        let revisionBytes = Self.encode(context.revision.rawValue)
+        let sql = """
+            DELETE FROM scan_run
+            WHERE id <> ?1
+              AND stream_id = ?2
+              AND region_path = ?3
+              AND dirty_revision_be = ?4
+              AND state IN ('partial', 'failed', 'cancelled')
+            """
+        try withStatement(sql, operation: "remove superseded calibration attempts") { statement in
+            try runID.rawValue.withCString { runCString in
+                try context.streamID.rawValue.withCString { streamCString in
+                    try context.regionPath.rawValue.withCString { pathCString in
+                        try revisionBytes.withUnsafeBytes { revisionBuffer in
+                            try check(sqlite3_bind_text(statement, 1, runCString, -1, nil), operation: "bind retained calibration run")
+                            try check(sqlite3_bind_text(statement, 2, streamCString, -1, nil), operation: "bind attempt stream")
+                            try check(sqlite3_bind_text(statement, 3, pathCString, -1, nil), operation: "bind attempt region")
+                            try check(
+                                sqlite3_bind_blob(
+                                    statement,
+                                    4,
+                                    revisionBuffer.baseAddress,
+                                    Int32(revisionBuffer.count),
+                                    nil
+                                ),
+                                operation: "bind attempt revision"
+                            )
+                            try stepExpectingDone(statement, operation: "delete superseded calibration attempts")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    func removeCompletedCycleCalibrationAttempts(
+        streamID: EventStreamID,
+        regionPath: DirtyRegionPath
+    ) throws {
+        let sql = """
+            DELETE FROM scan_run
+            WHERE stream_id = ?1
+              AND region_path = ?2
+              AND state IN ('partial', 'failed', 'cancelled')
+            """
+        try withStatement(sql, operation: "remove completed-cycle calibration attempts") { statement in
+            try streamID.rawValue.withCString { streamCString in
+                try regionPath.rawValue.withCString { pathCString in
+                    try check(sqlite3_bind_text(statement, 1, streamCString, -1, nil), operation: "bind completed attempt stream")
+                    try check(sqlite3_bind_text(statement, 2, pathCString, -1, nil), operation: "bind completed attempt region")
+                    try stepExpectingDone(statement, operation: "delete completed-cycle calibration attempts")
                 }
             }
         }
@@ -3535,6 +3663,10 @@ public actor SQLiteEventJournalRepository: EventJournalRepository, ScopeMountGen
             )
         }
 
+        try execute(
+            "DELETE FROM historical_corrected_finding_retraction WHERE retracted_corrected_finding_id IN (SELECT corrected.corrected_finding_id FROM historical_corrected_finding corrected JOIN historical_correcting_projection projection ON projection.correcting_projection_id=corrected.correcting_projection_id WHERE projection.work_id IN (SELECT work_id FROM spacetrace_expired_correction_work))",
+            operation: "delete expired corrected finding retractions"
+        )
         try execute(
             "DELETE FROM historical_corrected_positive_rank WHERE correcting_projection_id IN (SELECT correcting.correcting_projection_id FROM historical_correcting_projection correcting WHERE correcting.work_id IN (SELECT work_id FROM spacetrace_expired_correction_work))",
             operation: "delete expired corrected ranks"
@@ -4384,6 +4516,8 @@ enum SQLiteEventJournalTestFailurePoint: Sendable, Equatable {
     case beforeMigrationCommit(version: Int32)
     case afterV12SchemaInstall
     case afterV12MigrationRecord
+    case afterV13SchemaInstall
+    case afterV13MigrationRecord
     case afterHistoricalDictionaries
     case afterHistoricalBatch
     case afterHistoricalNodes
@@ -4396,6 +4530,8 @@ enum SQLiteEventJournalTestFailurePoint: Sendable, Equatable {
     case afterHistoricalProjectionCommitBeforeReturningReceipt
     case beforeHistoricalRetractionCommit
     case afterHistoricalRetractionCommitBeforeReturningReceipt
+    case beforeHistoricalCorrectedRetractionCommit
+    case afterHistoricalCorrectedRetractionCommitBeforeReturningReceipt
     case afterHistoricalRetentionFindingsBeforeFrames
     case afterHistoricalRetentionFramesBeforeDictionaries
     case afterHistoricalRetentionCommitBeforeCheckpoint
@@ -4436,6 +4572,10 @@ public enum SQLiteEventJournalError: Error, Sendable, Equatable {
     case historicalRetractionTargetNotFound
     case historicalRetractionExpectedDigestMismatch
     case historicalRetractionImmutableConflict
+    case historicalCorrectedRetractionTargetNotFound
+    case historicalCorrectedRetractionExpectedDigestMismatch
+    case historicalCorrectedRetractionImmutableConflict
+    case historicalCorrectedRetractionTargetExpired
     case historicalScrubPending
     case invalidCursorEncoding(field: String, actualByteCount: Int)
     case corruptStoredValue(field: String)

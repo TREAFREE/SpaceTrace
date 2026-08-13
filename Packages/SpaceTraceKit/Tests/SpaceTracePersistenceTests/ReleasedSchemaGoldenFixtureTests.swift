@@ -6,7 +6,7 @@ import Testing
 
 @Suite("Released-schema golden fixtures", .serialized)
 struct ReleasedSchemaGoldenFixtureTests {
-    @Test("Frozen legacy bytes and generated v10-v12 fixtures migrate forward")
+    @Test("Frozen legacy bytes and generated v10-v13 fixtures migrate to current schema")
     func fixturesMigrateForward() async throws {
         let root = try releasedFixtureRoot()
         for fixture in legacyFixtures {
@@ -18,7 +18,7 @@ struct ReleasedSchemaGoldenFixtureTests {
 
         let manifest = try loadManifest(root: root)
         #expect(manifest.formatVersion == 2)
-        #expect(manifest.fixtures.map(\.schemaVersion) == [10, 11, 12])
+        #expect(manifest.fixtures.map(\.schemaVersion) == [10, 11, 12, 13])
         for fixture in manifest.fixtures {
             let sourceURL = root.appendingPathComponent(fixture.relativePath)
             #expect(try digest(sourceURL) == fixture.sha256)
@@ -37,7 +37,7 @@ struct ReleasedSchemaGoldenFixtureTests {
         #expect(try #require(object["formatVersion"]) is NSNumber)
         #expect((object["formatVersion"] as? NSNumber)?.intValue == 2)
         let entries = try #require(object["fixtures"] as? [[String: Any]])
-        #expect(entries.count == 3)
+        #expect(entries.count == 4)
 
         let manifest = try JSONDecoder().decode(GoldenManifest.self, from: data)
         for (entry, raw) in zip(manifest.fixtures, entries) {
@@ -90,7 +90,7 @@ struct ReleasedSchemaGoldenFixtureTests {
 
         let repository = try SQLiteEventJournalRepository(databaseURL: copy.database)
         try await repository.close()
-        #expect(try readVersion(copy.database) == 12)
+        #expect(try readVersion(copy.database) == 13)
         #expect(try scalar(copy.database, "SELECT count(*) FROM node_current") == 2)
         #expect(try scalar(copy.database, "SELECT count(*) FROM historical_observation_node") == 0)
         #expect(try scalar(copy.database, "SELECT count(*) FROM historical_reconciliation_revision") == 0)
@@ -104,7 +104,7 @@ struct ReleasedSchemaGoldenFixtureTests {
         let before = try scalar(copy.database, "SELECT count(*) FROM historical_observation_node")
         let repository = try SQLiteEventJournalRepository(databaseURL: copy.database)
         try await repository.close()
-        #expect(try readVersion(copy.database) == 12)
+        #expect(try readVersion(copy.database) == 13)
         #expect(before == 2)
         #expect(try scalar(copy.database, "SELECT count(*) FROM historical_observation_node") == before)
         #expect(try scalar(copy.database, "SELECT count(*) FROM historical_observation_frame_commit") == 2)
@@ -120,13 +120,40 @@ struct ReleasedSchemaGoldenFixtureTests {
         let corrections = try scalar(copy.database, "SELECT count(*) FROM historical_projection_correction_checkpoint")
         let repository = try SQLiteEventJournalRepository(databaseURL: copy.database)
         try await repository.close()
-        #expect(try readVersion(copy.database) == 12)
+        #expect(try readVersion(copy.database) == 13)
         #expect(nodes == 4)
         #expect(revisions == 4)
         #expect(corrections == 1)
         #expect(try scalar(copy.database, "SELECT count(*) FROM historical_observation_node") == nodes)
         #expect(try scalar(copy.database, "SELECT count(*) FROM historical_reconciliation_revision") == revisions)
         #expect(try scalar(copy.database, "SELECT count(*) FROM historical_projection_correction_checkpoint") == corrections)
+    }
+
+    @Test("A populated v13 fixture reopens without fabricating a corrected invalidation")
+    func versionThirteenReopens() async throws {
+        let copy = try fixtureCopy(version: 13)
+        defer { try? FileManager.default.removeItem(at: copy.directory) }
+        let nodes = try scalar(copy.database, "SELECT count(*) FROM historical_observation_node")
+        let corrections = try scalar(
+            copy.database,
+            "SELECT count(*) FROM historical_projection_correction_checkpoint"
+        )
+        let repository = try SQLiteEventJournalRepository(databaseURL: copy.database)
+        try await repository.close()
+        #expect(try readVersion(copy.database) == 13)
+        #expect(try scalar(copy.database, "SELECT count(*) FROM historical_observation_node") == nodes)
+        #expect(
+            try scalar(
+                copy.database,
+                "SELECT count(*) FROM historical_projection_correction_checkpoint"
+            ) == corrections
+        )
+        #expect(
+            try scalar(
+                copy.database,
+                "SELECT count(*) FROM historical_corrected_finding_retraction"
+            ) == 0
+        )
     }
 
     @Test("An injected v11 migration failure leaves the v10 main and backup readable")
@@ -173,13 +200,13 @@ struct ReleasedSchemaGoldenFixtureTests {
         }
     }
 
-    @Test("Unsupported v13 is rejected without persistent mutation")
+    @Test("Unsupported v14 is rejected without persistent mutation")
     func unsupportedFutureSchemaDoesNotMutate() throws {
         let copy = try fixtureCopy(version: 12)
         defer { try? FileManager.default.removeItem(at: copy.directory) }
-        try execute(copy.database, "PRAGMA journal_mode=DELETE; PRAGMA user_version=13")
+        try execute(copy.database, "PRAGMA journal_mode=DELETE; PRAGMA user_version=14")
         let before = try Data(contentsOf: copy.database)
-        #expect(throws: SQLiteEventJournalError.unsupportedSchemaVersion(13)) {
+        #expect(throws: SQLiteEventJournalError.unsupportedSchemaVersion(14)) {
             _ = try SQLiteEventJournalRepository(databaseURL: copy.database)
         }
         #expect(try Data(contentsOf: copy.database) == before)

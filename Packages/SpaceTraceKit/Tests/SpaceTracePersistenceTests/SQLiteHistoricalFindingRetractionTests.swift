@@ -294,11 +294,13 @@ struct SQLiteHistoricalFindingRetractionTests {
         )
         #expect(overview.scopes.map(\.availability) == [.available])
         #expect(
-            overview.currentFindings.contains(where: { $0.id == original.recordID })
+            overview.currentFindings.contains(where: {
+                $0.id == .original(original.recordID)
+            })
                 == false
         )
         #expect(
-            overview.invalidatedFindings.map(\.id).contains(original.recordID)
+            overview.invalidatedFindings.map(\.id).contains(.original(original.recordID))
         )
         try await repository.close()
     }

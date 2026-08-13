@@ -6,8 +6,9 @@ readonly plan_path="docs/superpowers/plans/2026-08-11-sqlite-v11-historical-ledg
 readonly released_fixture_root="Packages/SpaceTraceKit/Tests/SpaceTracePersistenceTests/Fixtures/ReleasedSchemas"
 readonly released_fixture_manifest="${released_fixture_root}/manifest.json"
 readonly released_fixture_verifier="Scripts/verify-released-schema-fixtures.sh"
-readonly reviewed_manifest_v2_sha256="8e11172b11f00e19af2627aa33ea8556a67f36b0526aa08553968770170f0201"
-readonly prior_reviewed_manifest_v2_sha256="25fee3602653820e235a0cfa4d2b881bfa798cbdf531aba44d1882a547a2a93d"
+readonly reviewed_manifest_v2_sha256="e196f7cff3b08f31f9b1ff4be0ecc37bb89460fd2c3e899a9b8211f0464e2da6"
+readonly prior_reviewed_manifest_v2_sha256="8e11172b11f00e19af2627aa33ea8556a67f36b0526aa08553968770170f0201"
+readonly second_prior_reviewed_manifest_v2_sha256="25fee3602653820e235a0cfa4d2b881bfa798cbdf531aba44d1882a547a2a93d"
 readonly maximum_commit_count=4096
 readonly maximum_artifact_count=20000
 readonly maximum_artifact_bytes=$((32 * 1024 * 1024))
@@ -492,9 +493,12 @@ validate_manifest_file() {
         manifest_digest=$(shasum -a 256 "$manifest_path" | awk '{print $1}') || \
             infrastructure_failure
         if [[ "$manifest_digest" == "$reviewed_manifest_v2_sha256" ]]; then
-            (( fixture_count == 3 )) || \
+            (( fixture_count == 4 )) || \
                 report_violation "format-2 fixture closure is incomplete"
         elif [[ "$manifest_digest" == "$prior_reviewed_manifest_v2_sha256" ]]; then
+            (( fixture_count == 3 )) || \
+                report_violation "format-2 fixture closure is incomplete"
+        elif [[ "$manifest_digest" == "$second_prior_reviewed_manifest_v2_sha256" ]]; then
             (( fixture_count == 2 )) || \
                 report_violation "format-2 fixture closure is incomplete"
         else

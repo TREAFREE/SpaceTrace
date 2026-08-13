@@ -50,7 +50,7 @@ public enum HistoricalFindingOverviewClassification: Sendable, Equatable {
 /// historical wording and metric from the immutable draft; UI code never
 /// reclassifies or recomputes an older finding.
 public struct HistoricalFindingOverviewItem: Sendable, Equatable, Identifiable {
-    public let id: HistoricalFindingRecordID
+    public let id: HistoricalFindingVersionID
     public let kind: HistoricalFindingKind
     public let metric: StorageMetric
     public let inclusiveDeltaBytes: Int64
@@ -66,7 +66,7 @@ public struct HistoricalFindingOverviewItem: Sendable, Equatable, Identifiable {
     public let validity: HistoricalFindingOverviewItemValidity
 
     public init(
-        id: HistoricalFindingRecordID,
+        id: HistoricalFindingVersionID,
         kind: HistoricalFindingKind,
         metric: StorageMetric,
         inclusiveDeltaBytes: Int64,
@@ -115,8 +115,74 @@ public struct HistoricalFindingOverviewItem: Sendable, Equatable, Identifiable {
         self.validity = validity
     }
 
+    public init(
+        id: HistoricalFindingRecordID,
+        kind: HistoricalFindingKind,
+        metric: StorageMetric,
+        inclusiveDeltaBytes: Int64,
+        rankingContributionBytes: Int64?,
+        positiveRank: Int?,
+        baselinePath: String,
+        comparisonPath: String,
+        baselineDisplayName: String,
+        comparisonDisplayName: String,
+        baselineTime: ObservationInstant,
+        comparisonTime: ObservationInstant,
+        classification: HistoricalFindingOverviewClassification,
+        validity: HistoricalFindingOverviewItemValidity
+    ) throws(HistoricalFindingOverviewQueryError) {
+        try self.init(
+            id: .original(id),
+            kind: kind,
+            metric: metric,
+            inclusiveDeltaBytes: inclusiveDeltaBytes,
+            rankingContributionBytes: rankingContributionBytes,
+            positiveRank: positiveRank,
+            baselinePath: baselinePath,
+            comparisonPath: comparisonPath,
+            baselineDisplayName: baselineDisplayName,
+            comparisonDisplayName: comparisonDisplayName,
+            baselineTime: baselineTime,
+            comparisonTime: comparisonTime,
+            classification: classification,
+            validity: validity
+        )
+    }
+
     init(
         finding: EffectiveHistoricalFinding,
+        validity: HistoricalFindingOverviewItemValidity
+    ) throws(HistoricalFindingOverviewQueryError) {
+        let decision: VersionedAttributionDecision?
+        switch finding.draft.kind {
+        case .disappearance:
+            decision = finding.draft.evidence.baselineClassificationDecision
+        case .growth, .decrease, .appearance, .move:
+            decision = finding.draft.evidence.comparisonClassificationDecision
+        }
+        guard let decision else { throw .missingClassificationEvidence }
+        try self.init(
+            id: .original(finding.recordID),
+            kind: finding.draft.kind,
+            metric: finding.draft.evidence.metric,
+            inclusiveDeltaBytes: finding.draft.inclusiveDelta.bytes,
+            rankingContributionBytes: finding.draft.rankingContribution?.bytes,
+            positiveRank: finding.positiveRank,
+            baselinePath: finding.draft.evidence.baselinePath,
+            comparisonPath: finding.draft.evidence.comparisonPath,
+            baselineDisplayName: finding.draft.evidence.baselineDisplayName,
+            comparisonDisplayName: finding.draft.evidence.comparisonDisplayName,
+            baselineTime: finding.draft.evidence.baselineTime,
+            comparisonTime: finding.draft.evidence.comparisonTime,
+            classification: HistoricalFindingOverviewClassification(
+                decision: decision
+            ),
+            validity: validity
+        )
+    }
+
+    init(
+        finding: VersionedEffectiveHistoricalFinding,
         validity: HistoricalFindingOverviewItemValidity
     ) throws(HistoricalFindingOverviewQueryError) {
         let decision: VersionedAttributionDecision?
@@ -140,9 +206,7 @@ public struct HistoricalFindingOverviewItem: Sendable, Equatable, Identifiable {
             comparisonDisplayName: finding.draft.evidence.comparisonDisplayName,
             baselineTime: finding.draft.evidence.baselineTime,
             comparisonTime: finding.draft.evidence.comparisonTime,
-            classification: HistoricalFindingOverviewClassification(
-                decision: decision
-            ),
+            classification: HistoricalFindingOverviewClassification(decision: decision),
             validity: validity
         )
     }
@@ -302,13 +366,13 @@ public struct HistoricalFindingOverviewQuery:
                 continue
             }
 
-            let effective = try await repository.effectiveHistoricalFindings(
+            let effective = try await repository.versionedEffectiveHistoricalFindings(
                 for: scopeID,
                 through: latest,
                 limit: currentQueryLimit
             )
             let invalidatedAudit = try await repository
-                .evidenceInvalidatedHistoricalFindingAuditRecords(
+                .versionedEvidenceInvalidatedHistoricalFindingAuditRecords(
                 for: scopeID,
                 through: latest,
                 limit: auditQueryLimit

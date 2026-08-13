@@ -299,9 +299,25 @@ public struct DiagnosticExportBuilder: Sendable {
         selectedFindingIDs: [HistoricalFindingRecordID],
         pathMode: DiagnosticExportPathMode
     ) throws -> DiagnosticExportPreview {
+        try preview(
+            source: source,
+            exportID: exportID,
+            selectedFindingVersionIDs: selectedFindingIDs.map(
+                HistoricalFindingVersionID.original
+            ),
+            pathMode: pathMode
+        )
+    }
+
+    public func preview(
+        source: DiagnosticExportSource,
+        exportID: UUID,
+        selectedFindingVersionIDs: [HistoricalFindingVersionID],
+        pathMode: DiagnosticExportPathMode
+    ) throws -> DiagnosticExportPreview {
         let selected = try validateSelection(
             source: source,
-            selectedFindingIDs: selectedFindingIDs
+            selectedFindingVersionIDs: selectedFindingVersionIDs
         )
         return try makePreview(
             source: source,
@@ -317,10 +333,27 @@ public struct DiagnosticExportBuilder: Sendable {
         selectedFindingIDs: [HistoricalFindingRecordID],
         pathMode: DiagnosticExportPathMode
     ) throws -> PreparedDiagnosticExport {
-        try prepare(
+        try prepareVersioned(
             source: source,
             exportID: exportID,
-            selectedFindingIDs: selectedFindingIDs,
+            selectedFindingVersionIDs: selectedFindingIDs.map(
+                HistoricalFindingVersionID.original
+            ),
+            pathMode: pathMode,
+            redactionSalt: nil
+        )
+    }
+
+    public func prepare(
+        source: DiagnosticExportSource,
+        exportID: UUID,
+        selectedFindingVersionIDs: [HistoricalFindingVersionID],
+        pathMode: DiagnosticExportPathMode
+    ) throws -> PreparedDiagnosticExport {
+        try prepareVersioned(
+            source: source,
+            exportID: exportID,
+            selectedFindingVersionIDs: selectedFindingVersionIDs,
             pathMode: pathMode,
             redactionSalt: nil
         )
@@ -333,9 +366,27 @@ public struct DiagnosticExportBuilder: Sendable {
         pathMode: DiagnosticExportPathMode,
         redactionSalt: Data?
     ) throws -> PreparedDiagnosticExport {
+        try prepareVersioned(
+            source: source,
+            exportID: exportID,
+            selectedFindingVersionIDs: selectedFindingIDs.map(
+                HistoricalFindingVersionID.original
+            ),
+            pathMode: pathMode,
+            redactionSalt: redactionSalt
+        )
+    }
+
+    private func prepareVersioned(
+        source: DiagnosticExportSource,
+        exportID: UUID,
+        selectedFindingVersionIDs: [HistoricalFindingVersionID],
+        pathMode: DiagnosticExportPathMode,
+        redactionSalt: Data?
+    ) throws -> PreparedDiagnosticExport {
         let selected = try validateSelection(
             source: source,
-            selectedFindingIDs: selectedFindingIDs
+            selectedFindingVersionIDs: selectedFindingVersionIDs
         )
         let preview = try makePreview(
             source: source,
@@ -354,7 +405,7 @@ public struct DiagnosticExportBuilder: Sendable {
                 (scope.scopeID, String(format: "scope_%02d", offset + 1))
             }
         )
-        let selectedIDs = Set(selectedFindingIDs)
+        let selectedIDs = Set(selectedFindingVersionIDs)
         let pathProjector: DiagnosticPathProjector
         switch pathMode {
         case let .redacted(homeDirectory):
@@ -441,19 +492,19 @@ public struct DiagnosticExportBuilder: Sendable {
 
     private func validateSelection(
         source: DiagnosticExportSource,
-        selectedFindingIDs: [HistoricalFindingRecordID]
-    ) throws -> [HistoricalFindingRecordID] {
-        guard selectedFindingIDs.count <= Self.maximumSelectedFindingCount else {
+        selectedFindingVersionIDs: [HistoricalFindingVersionID]
+    ) throws -> [HistoricalFindingVersionID] {
+        guard selectedFindingVersionIDs.count <= Self.maximumSelectedFindingCount else {
             throw DiagnosticExportError.tooManySelectedFindings
         }
-        guard Set(selectedFindingIDs).count == selectedFindingIDs.count else {
+        guard Set(selectedFindingVersionIDs).count == selectedFindingVersionIDs.count else {
             throw DiagnosticExportError.duplicateFindingSelection
         }
         let available = Set(source.scopes.flatMap { $0.findings.map(\.id) })
-        guard selectedFindingIDs.allSatisfy(available.contains) else {
+        guard selectedFindingVersionIDs.allSatisfy(available.contains) else {
             throw DiagnosticExportError.unknownFindingSelection
         }
-        return selectedFindingIDs
+        return selectedFindingVersionIDs
     }
 
     private func makePreview(

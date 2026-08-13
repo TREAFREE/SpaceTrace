@@ -6,7 +6,7 @@ DESTINATION := platform=macOS,arch=arm64
 PACKAGE_PATH := Packages/SpaceTraceKit
 DERIVED_DATA_ROOT := build/DerivedData
 
-.PHONY: verify hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy released-schema-fixtures package-test package-concurrency-audit package-background-lifecycle-qualification package-background-soak-qualification package-apfs-image-qualification persistence-benchmark package-release-candidate package-release-candidate-test qualify-release-candidate xcode-list app-build-debug app-test-unit app-test-ui app-build-release
+.PHONY: verify hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy released-schema-fixtures package-test package-concurrency-audit package-background-lifecycle-qualification package-background-soak-qualification package-apfs-image-qualification package-apfs-reconciliation-qualification persistence-benchmark package-release-candidate package-release-candidate-test qualify-release-candidate xcode-list app-build-debug app-test-unit app-test-ui app-build-release
 
 verify: hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy released-schema-fixtures package-test package-concurrency-audit xcode-list app-build-debug app-test-unit app-build-release
 
@@ -46,6 +46,9 @@ package-background-soak-qualification:
 
 package-apfs-image-qualification:
 	SPACETRACE_RUN_APFS_IMAGE_TESTS=1 swift test --package-path "$(PACKAGE_PATH)" --filter APFSDiskImageLifecycleIntegrationTests
+
+package-apfs-reconciliation-qualification:
+	SPACETRACE_RUN_APFS_RECONCILIATION_TESTS=1 swift test --package-path "$(PACKAGE_PATH)" --filter ReconciliationKPIIntegrationTests
 
 persistence-benchmark:
 	swift run --package-path "$(PACKAGE_PATH)" -c release SpaceTracePersistenceBenchmark 500000

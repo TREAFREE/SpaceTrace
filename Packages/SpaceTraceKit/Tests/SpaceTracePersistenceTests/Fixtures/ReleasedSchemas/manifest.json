@@ -33,6 +33,17 @@
       "seed": "spacetrace-released-v12-20260813",
       "semanticSHA256": "ac6fdb5e1edfaabce652bd3a67a180e2fa1d6a918d25d4b1277068816e48131f",
       "schemaObjectSHA256": "9f401f317d53a3c9c8f71fc7e0afdd2bfe043604c720edacf83cfd4f5ecbee0f"
+    },
+    {
+      "schemaVersion": 13,
+      "relativePath": "v13/SpaceTrace.sqlite",
+      "sha256": "05e935c1b565e091c3c47853199a57d46cf5bf153f38f639e1d16eedc68423c7",
+      "generatorPath": "Scripts/Fixtures/generate-released-schema-v13-fixture.sh",
+      "generatorSHA256": "c15b0f1fd906012397c5623ffa9610376018394c964b1be68bc82247877c4e8d",
+      "generatorVersion": 1,
+      "seed": "spacetrace-released-v13-20260813",
+      "semanticSHA256": "b848f5eea5b5729284b328df90df144f9524eb43d908af398ef937c0dfefbe9d",
+      "schemaObjectSHA256": "e38248766b69ddd3605f0f08a213aafec9793d017354b0189b0777b0be4d4425"
     }
   ]
 }

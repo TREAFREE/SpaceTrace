@@ -3,6 +3,67 @@ import SpaceTraceApplication
 import SpaceTraceDomain
 import SwiftUI
 
+enum ReconciliationStatusTone: Sendable, Equatable {
+    case success
+    case attention
+    case failure
+    case neutral
+}
+
+struct ReconciliationStatusPresentation: Sendable, Equatable {
+    let detail: String
+    let symbolName: String
+    let tone: ReconciliationStatusTone
+
+    init(state: ReconciliationStatusState) {
+        switch state {
+        case .current(let success):
+            detail = "已校准至修订 \(success.sequence.rawValue) · \(Self.formatted(success.completedAt))"
+            symbolName = "checkmark.circle.fill"
+            tone = .success
+        case .pending(_, let revision, _):
+            if let revision {
+                detail = "有待处理变化 · dirty revision \(revision.rawValue)"
+            } else {
+                detail = "有待处理变化；路径已按隐私保留策略移除，仍需重新扫描"
+            }
+            symbolName = "clock.arrow.circlepath"
+            tone = .attention
+        case .partial(_, let revision, let attemptedAt):
+            detail = "修订 \(revision.rawValue) 的扫描覆盖不完整 · \(Self.formatted(attemptedAt))"
+            symbolName = "circle.lefthalf.filled"
+            tone = .attention
+        case .failed(_, let revision, let attemptedAt):
+            detail = "修订 \(revision.rawValue) 的扫描失败 · \(Self.formatted(attemptedAt))"
+            symbolName = "exclamationmark.triangle.fill"
+            tone = .failure
+        case .permissionRequired:
+            detail = "目录授权已过期或被撤回，需要重新授权后才能校准"
+            symbolName = "exclamationmark.shield.fill"
+            tone = .attention
+        case .volumeUnavailable:
+            detail = "目录所在卷当前不可用，卷返回后才能继续校准"
+            symbolName = "externaldrive.badge.questionmark"
+            tone = .attention
+        case .historyDisabled:
+            detail = "路径历史已关闭"
+            symbolName = "clock.badge.xmark"
+            tone = .neutral
+        case .baselineUnavailable:
+            detail = "尚无可用于比较的完整历史基线"
+            symbolName = "clock.badge.questionmark"
+            tone = .neutral
+        }
+    }
+
+    private static func formatted(_ instant: ObservationInstant) -> String {
+        Date(
+            timeIntervalSince1970:
+                Double(instant.millisecondsSince1970) / 1_000
+        ).formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
 struct HistoricalFindingsOverviewView: View {
     @Bindable var model: HistoricalFindingsViewModel
     @State private var confirmsHistoryOff = false
@@ -154,14 +215,26 @@ struct HistoricalFindingsOverviewView: View {
             }
             .accessibilityIdentifier("historical-findings-history-disabled")
         } else if overview.scopes.allSatisfy({ $0.availability == .baselineUnavailable }) {
-            ContentUnavailableView {
-                Label("正在等待新的历史基线", systemImage: "clock.badge.questionmark")
-            } description: {
-                Text("路径历史已经开启，但还没有可比较的完整基线。请在上方开始或重新执行基线扫描。")
+            VStack(alignment: .leading, spacing: 18) {
+                if model.reconciliationStatuses.isEmpty == false {
+                    reconciliationSection(overview)
+                    Divider()
+                }
+
+                ContentUnavailableView {
+                    Label("正在等待新的历史基线", systemImage: "clock.badge.questionmark")
+                } description: {
+                    Text("路径历史已经开启，但还没有可比较的完整基线。请在上方开始或重新执行基线扫描。")
+                }
+                .accessibilityIdentifier("historical-findings-baseline-unavailable")
             }
-            .accessibilityIdentifier("historical-findings-baseline-unavailable")
         } else {
             VStack(alignment: .leading, spacing: 18) {
+                if model.reconciliationStatuses.isEmpty == false {
+                    reconciliationSection(overview)
+                    Divider()
+                }
+
                 currentSection(overview)
 
                 if overview.scopes.contains(where: {
@@ -179,6 +252,56 @@ struct HistoricalFindingsOverviewView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    private func reconciliationSection(
+        _ overview: HistoricalFindingOverview
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("校准状态")
+                .font(.headline)
+                .accessibilityIdentifier("reconciliation-status-heading")
+
+            ForEach(overview.scopes) { scope in
+                if let status = model.reconciliationStatuses[scope.scopeID] {
+                    let presentation = ReconciliationStatusPresentation(
+                        state: status.state
+                    )
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: presentation.symbolName)
+                            .foregroundStyle(reconciliationColor(presentation.tone))
+                            .frame(width: 22)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(model.displayPath(for: scope.scopeID) ?? "已配置目录")
+                                .font(.callout.weight(.medium))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Text(presentation.detail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier(
+                        "reconciliation-status-\(scope.scopeID.rawValue)"
+                    )
+                }
+            }
+        }
+    }
+
+    private func reconciliationColor(
+        _ tone: ReconciliationStatusTone
+    ) -> Color {
+        switch tone {
+        case .success: .green
+        case .attention: .orange
+        case .failure: .red
+        case .neutral: .secondary
         }
     }
 
@@ -378,9 +501,18 @@ private struct HistoricalFindingRow: View {
         .accessibilityLabel(accessibilityDescription)
         .accessibilityIdentifier(
             invalidated
-                ? "historical-finding-invalidated-\(item.id.rawValue)"
-                : "historical-finding-current-\(item.id.rawValue)"
+                ? "historical-finding-invalidated-\(findingIdentifier)"
+                : "historical-finding-current-\(findingIdentifier)"
         )
+    }
+
+    private var findingIdentifier: String {
+        switch item.id {
+        case .original(let id):
+            "original-\(id.rawValue)"
+        case .corrected(let id):
+            "corrected-\(id.rawValue)"
+        }
     }
 
     private var title: String {

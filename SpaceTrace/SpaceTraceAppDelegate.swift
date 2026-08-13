@@ -29,6 +29,9 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
         if authorizationModel.loadUITestScenarioIfConfigured() {
             directoryHistoryModel.connect(UITestStorageHistoryLoader())
             historicalFindingsModel.connect(UITestHistoricalFindingOverviewService())
+            historicalFindingsModel.connectReconciliationStatus(
+                UITestReconciliationStatusLoader()
+            )
             menuBarStatusModel.loadUITestFixture()
             if let writer = try? AtomicDiagnosticExportWriter(
                 stagingDirectoryURL: FileManager.default.temporaryDirectory
@@ -53,6 +56,9 @@ final class SpaceTraceAppDelegate: NSObject, NSApplicationDelegate {
                 directoryHistoryModel.connect(compositionRoot.storageHistoryQuery)
                 historicalFindingsModel.connect(
                     compositionRoot.historicalFindingOverviewQuery
+                )
+                historicalFindingsModel.connectReconciliationStatus(
+                    compositionRoot.reconciliationStatusQuery
                 )
                 diagnosticExportModel.connect(
                     compositionRoot.diagnosticExportWriter
@@ -366,6 +372,40 @@ private struct UITestHistoricalFindingOverviewService:
                 ),
             validity: validity
         )
+    }
+}
+
+private struct UITestReconciliationStatusLoader: ReconciliationStatusLoading {
+    nonisolated func load(
+        scopeID: WatchedScopeID,
+        readiness: ReconciliationScopeReadiness
+    ) throws -> ReconciliationStatus {
+        let scenario = ProcessInfo.processInfo.environment[
+            "SPACETRACE_UI_TEST_SCENARIO"
+        ]
+        let success = ReconciliationSuccess(
+            scopeID: scopeID,
+            sequence: try ReconciliationRevisionSequence(8),
+            completedAt: try ObservationInstant(
+                millisecondsSince1970: 1_800_000_000_000
+            )
+        )
+        let state: ReconciliationStatusState
+        if scenario == "history-disabled" {
+            state = .historyDisabled
+        } else if scenario == "baseline-unavailable" {
+            state = .baselineUnavailable
+        } else {
+            switch readiness {
+            case .ready:
+                state = .current(success)
+            case .permissionRequired:
+                state = .permissionRequired(lastSuccess: success)
+            case .volumeUnavailable:
+                state = .volumeUnavailable(lastSuccess: success)
+            }
+        }
+        return try ReconciliationStatus(scopeID: scopeID, state: state)
     }
 }
 #endif

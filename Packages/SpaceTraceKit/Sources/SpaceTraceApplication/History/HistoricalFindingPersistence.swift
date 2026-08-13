@@ -433,7 +433,7 @@ public struct HistoricalFindingEvidenceInvalidationCommand: Sendable, Equatable 
 /// Evidence invalidation is deliberately narrower than a user action or a
 /// classifier decision. Only an integrity workflow can provide one of these
 /// typed failures, and neither case carries paths or mutable UI input.
-enum HistoricalFindingIntegrityFailure: Sendable, Equatable {
+package enum HistoricalFindingIntegrityFailure: Sendable, Equatable {
     case ledgerIntegrityViolation
     case projectionIntegrityViolation
 }
@@ -560,6 +560,24 @@ public protocol HistoricalFindingOverviewRepository: Sendable {
         limit: HistoricalFindingQueryLimit
     ) async throws -> [HistoricalFindingAuditRecord]
 
+    func versionedEffectiveHistoricalFindings(
+        for scopeID: ScopeID,
+        through comparisonSequence: ObservationCommitSequence,
+        limit: HistoricalFindingQueryLimit
+    ) async throws -> [VersionedEffectiveHistoricalFinding]
+
+    func versionedHistoricalFindingAuditRecords(
+        for scopeID: ScopeID,
+        through comparisonSequence: ObservationCommitSequence,
+        limit: HistoricalFindingQueryLimit
+    ) async throws -> [VersionedHistoricalFindingAuditRecord]
+
+    func versionedEvidenceInvalidatedHistoricalFindingAuditRecords(
+        for scopeID: ScopeID,
+        through comparisonSequence: ObservationCommitSequence,
+        limit: HistoricalFindingQueryLimit
+    ) async throws -> [VersionedHistoricalFindingAuditRecord]
+
     func historicalPathHistoryPolicy() async throws -> HistoricalPathHistoryPolicy
 
     func historicalPathHistoryAvailability(
@@ -569,6 +587,44 @@ public protocol HistoricalFindingOverviewRepository: Sendable {
     func setHistoricalPathHistoryPolicy(
         _ policy: HistoricalPathHistoryPolicy
     ) async throws
+}
+
+public extension HistoricalFindingOverviewRepository {
+    func versionedEffectiveHistoricalFindings(
+        for scopeID: ScopeID,
+        through comparisonSequence: ObservationCommitSequence,
+        limit: HistoricalFindingQueryLimit
+    ) async throws -> [VersionedEffectiveHistoricalFinding] {
+        try await effectiveHistoricalFindings(
+            for: scopeID,
+            through: comparisonSequence,
+            limit: limit
+        ).map(VersionedEffectiveHistoricalFinding.init(original:))
+    }
+
+    func versionedHistoricalFindingAuditRecords(
+        for scopeID: ScopeID,
+        through comparisonSequence: ObservationCommitSequence,
+        limit: HistoricalFindingQueryLimit
+    ) async throws -> [VersionedHistoricalFindingAuditRecord] {
+        try await historicalFindingAuditRecords(
+            for: scopeID,
+            through: comparisonSequence,
+            limit: limit
+        ).map(VersionedHistoricalFindingAuditRecord.init(original:))
+    }
+
+    func versionedEvidenceInvalidatedHistoricalFindingAuditRecords(
+        for scopeID: ScopeID,
+        through comparisonSequence: ObservationCommitSequence,
+        limit: HistoricalFindingQueryLimit
+    ) async throws -> [VersionedHistoricalFindingAuditRecord] {
+        try await evidenceInvalidatedHistoricalFindingAuditRecords(
+            for: scopeID,
+            through: comparisonSequence,
+            limit: limit
+        ).map(VersionedHistoricalFindingAuditRecord.init(original:))
+    }
 }
 
 public protocol HistoricalFindingPersistenceRepository:

@@ -151,6 +151,31 @@ struct DiagnosticExportTests {
         }
     }
 
+    @Test("Corrected finding identities can be selected without numeric source confusion")
+    func exportsCorrectedFindingIdentity() throws {
+        let correctedID = try HistoricalCorrectedFindingRecordID(1)
+        let fixture = try makeFixture(findingVersionID: .corrected(correctedID))
+        let prepared = try DiagnosticExportBuilder().prepare(
+            source: fixture.source,
+            exportID: fixture.exportID,
+            selectedFindingVersionIDs: [.corrected(correctedID)],
+            pathMode: .redacted(homeDirectory: "/Fixtures/Homes/alex")
+        )
+        let document = try JSONDecoder().decode(
+            DiagnosticExportDocument.self,
+            from: prepared.data
+        )
+        #expect(document.findings.count == 1)
+        #expect(throws: DiagnosticExportError.unknownFindingSelection) {
+            _ = try DiagnosticExportBuilder().prepare(
+                source: fixture.source,
+                exportID: fixture.exportID,
+                selectedFindingIDs: [fixture.findingID],
+                pathMode: .redacted(homeDirectory: "/Fixtures/Homes/alex")
+            )
+        }
+    }
+
     @Test("Different export salts prevent cross-export path correlation")
     func saltsAreExportSpecific() throws {
         let fixture = try makeFixture()
@@ -171,17 +196,21 @@ struct DiagnosticExportTests {
 private struct DiagnosticExportFixture {
     let exportID: UUID
     let findingID: HistoricalFindingRecordID
+    let findingVersionID: HistoricalFindingVersionID
     let rawPath: String
     let source: DiagnosticExportSource
 }
 
-private func makeFixture() throws -> DiagnosticExportFixture {
+private func makeFixture(
+    findingVersionID: HistoricalFindingVersionID? = nil
+) throws -> DiagnosticExportFixture {
     let exportID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
     let scopeID = try WatchedScopeID("scope-private")
     let findingID = try HistoricalFindingRecordID(1)
+    let effectiveFindingVersionID = findingVersionID ?? .original(findingID)
     let rawPath = "/Fixtures/Homes/alex/Secret Project/Private Cache"
     let finding = try HistoricalFindingOverviewItem(
-        id: findingID,
+        id: effectiveFindingVersionID,
         kind: .growth,
         metric: .allocated,
         inclusiveDeltaBytes: 4_096,
@@ -228,6 +257,7 @@ private func makeFixture() throws -> DiagnosticExportFixture {
     return DiagnosticExportFixture(
         exportID: exportID,
         findingID: findingID,
+        findingVersionID: effectiveFindingVersionID,
         rawPath: rawPath,
         source: source
     )

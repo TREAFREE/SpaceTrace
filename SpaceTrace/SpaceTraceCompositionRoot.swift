@@ -10,6 +10,7 @@ struct SpaceTraceCompositionRoot {
     let baselineScanCoordinator: AuthorizedBaselineScanCoordinator
     let storageHistoryQuery: StorageHistoryOverviewQuery
     let historicalFindingOverviewQuery: HistoricalFindingOverviewQuery
+    let reconciliationStatusQuery: ReconciliationStatusQuery
     let diagnosticExportWriter: AtomicDiagnosticExportWriter
     let startupVolume24HourStatusQuery: StartupVolume24HourStatusQuery
     let storageHistoryBackgroundCoordinator: StorageHistoryBackgroundCoordinator
@@ -166,6 +167,9 @@ struct SpaceTraceCompositionRoot {
                 volumeRepository: repository
             ),
             historicalFindingOverviewQuery: HistoricalFindingOverviewQuery(
+                repository: repository
+            ),
+            reconciliationStatusQuery: ReconciliationStatusQuery(
                 repository: repository
             ),
             diagnosticExportWriter: diagnosticExportWriter,

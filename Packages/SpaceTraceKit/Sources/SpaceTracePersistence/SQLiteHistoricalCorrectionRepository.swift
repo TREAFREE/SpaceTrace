@@ -8,9 +8,9 @@ import SQLite3
 /// cannot fabricate revisions or correcting projections from legacy rows.
 enum SQLiteHistoricalCorrectionRepository {
     static func validateInstalledSchema(database: OpaquePointer) throws {
-        try SQLiteHistoricalFindingCodec.validateInstalledV12(
+        try SQLiteHistoricalFindingCodec.validateInstalledV13(
             database: database,
-            frozenSchemaDigest: SQLiteHistoricalCorrectionSchema.frozenSchemaDigest
+            frozenSchemaDigest: SQLiteHistoricalCorrectedRetractionSchema.frozenSchemaDigest
         )
     }
 }

@@ -352,6 +352,53 @@ enum SQLiteHistoricalFindingCodec {
         }
     }
 
+    static func validateInstalledV13(
+        database: OpaquePointer,
+        frozenSchemaDigest: Data
+    ) throws {
+        let digest = try schemaObjectDigest(database: database)
+        let expectedChecksum = digest.map { String(format: "%02x", $0) }.joined()
+        let storedChecksum = try readSingleText(
+            database,
+            sql: "SELECT checksum FROM schema_migration WHERE version=13"
+        )
+        guard storedChecksum == expectedChecksum else {
+            throw SQLiteHistoricalFindingCodecError.invalidSchemaDigest
+        }
+        let sourceV12Checksum = try readSingleText(
+            database,
+            sql: "SELECT checksum FROM schema_migration WHERE version=12"
+        )
+        let sourceV11Checksum = try readSingleText(
+            database,
+            sql: "SELECT checksum FROM schema_migration WHERE version=11"
+        )
+        let frozenV11Checksum = SQLiteHistoricalFindingSchema.frozenSchemaDigest
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let frozenV12Checksum = SQLiteHistoricalCorrectionSchema.frozenSchemaDigest
+            .map { String(format: "%02x", $0) }
+            .joined()
+        guard (sourceV11Checksum != frozenV11Checksum
+                || sourceV12Checksum == frozenV12Checksum),
+              (sourceV12Checksum != frozenV12Checksum
+                || digest == frozenSchemaDigest) else {
+            throw SQLiteHistoricalFindingCodecError.invalidSchemaDigest
+        }
+
+        let generation = try readSingleBlob(
+            database,
+            sql: "SELECT store_generation FROM historical_store_identity WHERE singleton=1 AND format_version=1"
+        )
+        try validateStoreGeneration(generation)
+        guard try readSingleInteger(
+            database,
+            sql: "SELECT count(*) FROM historical_retention_policy WHERE singleton=1"
+        ) == 1 else {
+            throw SQLiteHistoricalFindingCodecError.invalidSchemaDigest
+        }
+    }
+
     private static func validateUTF8Bytes(_ data: Data, maximumBytes: Int) throws {
         guard maximumBytes > 0, !data.isEmpty, data.count <= maximumBytes else {
             throw SQLiteHistoricalFindingCodecError.byteLengthOutOfRange

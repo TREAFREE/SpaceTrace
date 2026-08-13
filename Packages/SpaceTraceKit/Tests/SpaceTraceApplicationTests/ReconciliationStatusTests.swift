@@ -34,7 +34,7 @@ struct ReconciliationStatusTests {
             return
         }
         #expect(lastSuccess?.sequence.rawValue == 5)
-        #expect(revision.rawValue == 6)
+        #expect(revision?.rawValue == 6)
         #expect(pendingSince?.millisecondsSince1970 == 10_000)
     }
 
@@ -90,6 +90,70 @@ struct ReconciliationStatusTests {
         #expect(lastSuccess == nil)
         #expect(revision.rawValue == 8)
         #expect(attemptedAt.millisecondsSince1970 == 30_000)
+    }
+
+    @Test("Lifecycle readiness overlays durable evidence without erasing last success")
+    func lifecycleReadinessOverlay() async throws {
+        let scopeID = try WatchedScopeID("scope-a")
+        let current = try ReconciliationStatus(
+            scopeID: scopeID,
+            state: .current(success(scopeID: "scope-a", sequence: 9, completedAt: 40_000))
+        )
+        let query = ReconciliationStatusQuery(
+            repository: ReconciliationStatusFixtureRepository(status: current)
+        )
+
+        let permission = try await query.load(
+            scopeID: scopeID,
+            readiness: .permissionRequired
+        )
+        guard case .permissionRequired(let permissionSuccess) = permission.state else {
+            Issue.record("Expected permission-required status")
+            return
+        }
+        #expect(permissionSuccess?.sequence.rawValue == 9)
+
+        let volume = try await query.load(
+            scopeID: scopeID,
+            readiness: .volumeUnavailable
+        )
+        guard case .volumeUnavailable(let volumeSuccess) = volume.state else {
+            Issue.record("Expected volume-unavailable status")
+            return
+        }
+        #expect(volumeSuccess?.sequence.rawValue == 9)
+    }
+
+    @Test("History policy states outrank transient permission and volume readiness")
+    func historyPolicyStatePrecedence() async throws {
+        let scopeID = try WatchedScopeID("scope-a")
+        for state in [
+            ReconciliationStatusState.historyDisabled,
+            .baselineUnavailable,
+        ] {
+            let durable = try ReconciliationStatus(scopeID: scopeID, state: state)
+            let query = ReconciliationStatusQuery(
+                repository: ReconciliationStatusFixtureRepository(status: durable)
+            )
+            #expect(
+                try await query.load(scopeID: scopeID, readiness: .permissionRequired)
+                    == durable
+            )
+            #expect(
+                try await query.load(scopeID: scopeID, readiness: .volumeUnavailable)
+                    == durable
+            )
+        }
+    }
+}
+
+private struct ReconciliationStatusFixtureRepository: ReconciliationStatusRepository {
+    let status: ReconciliationStatus
+
+    func durableReconciliationStatus(
+        for scopeID: WatchedScopeID
+    ) async throws -> ReconciliationStatus {
+        status
     }
 }
 

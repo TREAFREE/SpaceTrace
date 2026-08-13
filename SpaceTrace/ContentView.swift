@@ -65,9 +65,27 @@ struct ContentView: View {
     }
 
     private var findingScopes: [HistoricalFindingScopeDisplay] {
-        authorizationModel.items.compactMap { item in
-            guard case .authorized(let path) = item.status else { return nil }
-            return HistoricalFindingScopeDisplay(scopeID: item.id, path: path)
+        authorizationModel.items.map { item in
+            switch item.status {
+            case .authorized(let path):
+                HistoricalFindingScopeDisplay(
+                    scopeID: item.id,
+                    path: path,
+                    readiness: .ready
+                )
+            case .unavailable:
+                HistoricalFindingScopeDisplay(
+                    scopeID: item.id,
+                    path: nil,
+                    readiness: .volumeUnavailable
+                )
+            case .requiresReauthorization:
+                HistoricalFindingScopeDisplay(
+                    scopeID: item.id,
+                    path: nil,
+                    readiness: .permissionRequired
+                )
+            }
         }
     }
 

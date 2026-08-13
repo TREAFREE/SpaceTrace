@@ -105,7 +105,7 @@ make qualify-release-candidate \
 
 | 场景 | 期望结果 | 当前资格状态 |
 |---|---|---|
-| 从挂载 DMG 全新复制 | 只在完成明确披露的单 App Gatekeeper 例外后启动；不伪造历史 | `0.1.0-rc.4` 已通过只读挂载、复制、quarantine 和预期 Gatekeeper 拒绝；干净账户的**仍要打开**启动仍未完成 |
+| 从挂载 DMG 全新复制 | 只在完成明确披露的单 App Gatekeeper 例外后启动；不伪造历史 | `0.1.0-rc.5` 已通过只读挂载、复制、quarantine 和预期 Gatekeeper 拒绝；干净账户的**仍要打开**启动仍未完成 |
 | 同构建退出并重启 | 相同 bundle identity 无需再次选择即可精确恢复有效 bookmark | 一次性身份下的进程重启已通过；打包 bookmark 连续性仍未完成 |
 | 使用另一次独立构建的 RC 替换“应用程序”副本 | App 可启动；原 bookmark 要么精确恢复，要么明确提示重新授权 | 独立二进制的进程替换已通过；打包 bookmark 连续性仍未完成，不能从 ad-hoc 签名推断 |
 | stale 或已撤销授权 | 不静默刷新或扩大 scope；必须由用户再次选择 | 确定性 fixture 已通过；真实 RC 条件未完成 |
@@ -116,16 +116,16 @@ make qualify-release-candidate \
 
 ### 当前主机候选证据（2026-08-13）
 
-在 macOS 26.6.1、Xcode 26.1.1 上，从干净且已推送的 commit `4ad9ca904f17af50bf3685b3692eac0dcb750a32` 独立生成了两份 `0.1.0-rc.4` 产物。两次运行的签名、精确 entitlement、架构、部署目标、最终 Mach-O 依赖、DMG、manifest、四项 checksum、SPDX 与 notices 校验都通过。两份独立可执行文件的 SHA-256 分别为 `eb5d28be4ededfe8b03b781d25af8218fe8ee47becada38145a13f88bb4ab554` 和 `6957f93f707e7e6bc5ec6d364a07192ac45fb4eb44c9cc6c9f414c86988c575f`；主 DMG 的 SHA-256 为 `6684dc816aebc026f9636e3deb5b9be5713e156e2473c2c325286471a179d26c`，SPDX 为 `c56b47d71fe5f42bf94243a6d75d5358d280b2a899f01c40816ba351907e01b4`，notices 为 `fee378cc85210c831446fef6402c8980cba60a104088d952ee789d902198d525`。各自 manifest 记录自己的真实值，且没有声称字节完全一致。
+在 macOS 26.6.1、Xcode 26.1.1 上，从干净且已推送的 commit `a6ba750069f811a0bb333b0a844cfa2fea9eb27d` 生成了保留的 `0.1.0-rc.5` 产物。其打包契约已通过签名、精确 entitlement、架构、部署目标、最终 Mach-O 依赖、DMG、manifest、四项 checksum、SPDX 与 notices 校验。可执行文件 SHA-256 为 `cce21a395e90b4de5ee50528c655103824445a8828e8a92272a45f5ad37ca88b`；DMG 为 `4e81871d0459ecca1e83a2ec77d5e8d91b47134259b175e0b1baa73b691f6fda`；SPDX 为 `c235fc9ca731ff17556701d6d45387511a9ad050197011d3548efcc21be906f2`；notices 为 `0f9ca116241ac5621368ff3de4ae395970525018396901f3c236a9a4c8286590`。第二份独立构建的包只作为替换输入，资格验证后已删除；这里不声称两次构建字节完全一致。
 
 主 DMG 以只读方式挂载，内容精确为 `SpaceTrace.app`、指向 `/Applications` 的符号链接、`READ-ME-FIRST.txt` 和 `THIRD-PARTY-NOTICES.txt`。带合成下载 quarantine 属性的复制 App 仍通过严格代码签名校验。`spctl` 返回 3 和 `rejected`；`syspolicy_check distribution` 返回 70，并独立报告 ad-hoc 签名与缺失公证票据。可执行文件和 `Info.plist` 都记录 macOS 15.6 最低版本。这些检查证明当前主机上的产物与信任边界，但不能替代干净账户的**仍要打开**启动或 macOS 15.6 运行资格。
 
-使用 Apple 身份签名的 Xcode 沙盒 runner 完成了全部 14 个授权、历史、发现和导出 UI 场景。诊断导出场景打开真实 `NSSavePanel`、确认用户选择的保存位置、从磁盘读取结果 JSON，并验证 2 MiB 上限、路径脱敏模式和不自动上传声明；该场景还连续聚焦运行 3 次通过。这证明当前主机签名沙盒保存路径，但不声称 quarantined ad-hoc RC 已在干净账户完成人工 Gatekeeper 例外。
+使用本机测试签名的 Xcode 沙盒 runner 完成了全部 15 个授权、历史、finding 和导出 UI 场景。诊断导出场景打开真实 `NSSavePanel`、确认用户选择的保存位置、从磁盘读取结果 JSON，并验证 2 MiB 上限、路径脱敏模式和不自动上传声明；该场景还连续聚焦运行 3 次通过。这证明当前主机签名沙盒保存路径，但不声称 quarantined ad-hoc RC 已在干净账户完成人工 Gatekeeper 例外，也不声称使用了 Developer ID 身份。
 
-在同一个一次性 Bundle ID 下，先使用第一份 App，再使用独立构建的替换 App；全新启动、同构建正常重启和替换后启动均通过。流程没有选择目录。macOS containermanager 隐私保护拒绝系统 `trash` 对约 852 KiB 一次性容器的操作，因此清理记录为阻塞而不是通过。当前主机的精确残留为：
+在同一个一次性 Bundle ID 下，先使用保留的 App，再使用独立构建的替换 App；全新启动、同构建正常重启和替换后启动均通过。流程没有选择目录。macOS containermanager 隐私保护拒绝系统 `trash` 对约 984 KiB 一次性容器的操作，因此清理记录为阻塞而不是通过。当前主机的精确残留为：
 
 ```text
-~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260812191025p84320
+~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260813152142p80794
 ```
 
 删除它需要另一次由用户明确授权 Full Disk Access 的操作。该容器只含资格测试数据，没有修改任何被监控目录。

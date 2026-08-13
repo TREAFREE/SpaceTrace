@@ -107,9 +107,9 @@ make qualify-release-candidate \
 
 | 场景 | 期望结果 | 当前资格状态 |
 |---|---|---|
-| 从挂载 DMG 全新复制 | 只在完成明确披露的单 App Gatekeeper 例外后启动；不伪造历史 | `0.1.0-rc.6` 已通过只读挂载、复制、quarantine 和预期 Gatekeeper 拒绝；干净账户的**仍要打开**启动仍未完成 |
+| 从挂载 DMG 全新复制 | 只在完成明确披露的单 App Gatekeeper 例外后启动；不伪造历史 | `0.1.0-rc.7` 已通过只读挂载、复制、quarantine 和预期 Gatekeeper 拒绝；干净账户的**仍要打开**启动仍未完成 |
 | 同构建退出并重启 | 相同 bundle identity 无需再次选择即可精确恢复有效 bookmark | 一次性身份下的进程重启已通过；打包 bookmark 连续性仍未完成 |
-| 使用另一次独立构建的 RC 替换“应用程序”副本 | App 可启动；原 bookmark 要么精确恢复，要么明确提示重新授权 | 非 quarantine 的 `rc.5 → rc.6` 与 `rc.6 → rc.5` 进程替换已通过；打包 bookmark 连续性仍未完成，不能从 ad-hoc 签名推断 |
+| 使用另一次独立构建的 RC 替换“应用程序”副本 | App 可启动；原 bookmark 要么精确恢复，要么明确提示重新授权 | 非 quarantine 的 `rc.6 → rc.7` 与 `rc.7 → rc.6` 进程替换已通过；打包 bookmark 连续性仍未完成，不能从 ad-hoc 签名推断 |
 | stale 或已撤销授权 | 不静默刷新或扩大 scope；必须由用户再次选择 | 确定性 fixture 已通过；真实 RC 条件未完成 |
 | 权限被拒绝 | 保留已有可信状态或显示不可用；不能在能力不完整时开始扫描 | 对打包 RC 未完成 |
 | 外置卷缺席，随后同一 Volume UUID 返回 | 缺席时显示不可用；相同身份返回后恢复精确授权 | 早期签名沙盒 smoke 已通过；新 RC 行未完成 |
@@ -118,18 +118,20 @@ make qualify-release-candidate \
 
 ### 当前主机候选证据（2026-08-14）
 
-在 macOS 26.6.1、Xcode 26.1.1 上，从干净且已推送的 commit `dd868eb3fee2191455a60c383bccd8820d5f4fb9` 生成了保留的 `0.1.0-rc.6` 产物。其打包契约已通过签名、精确 entitlement、架构、部署目标、最终 Mach-O 依赖、DMG、manifest、四项 checksum、SPDX 与 notices 校验。可执行文件 SHA-256 为 `a8c6d66336327be4ea05a6cf8d32e3cf5d4979f1541800cad9184a89c06f3e4a`；DMG 为 `03d3c0fdf7a98be298fe96eb01a8329c443ac01d5e9f765f40ca7049245891d5`；SPDX 为 `fcd1f61459e83ffdb275192afbeb784be8b622f13a99b9427f94e9e71061b5f6`；notices 为 `aa89ad6d3eca9158c89ca1188e4ac56d5af23caf0c9c3974f32f0cd603228625`。先前已校验 checksum 的 `rc.5` 提供了用于正向和反向进程替换的独立二进制；这里不声称两次构建字节完全一致。
+在 macOS 26.6.1、Xcode 26.1.1 上，从干净且已推送的 commit `a3b8b45ca6f9dad752a9b750422b343d71c04dc8` 生成了保留的 `0.1.0-rc.7` 产物。其打包契约已通过签名、精确 entitlement、架构、部署目标、最终 Mach-O 依赖、DMG、manifest、四项 checksum、SPDX 与 notices 校验。可执行文件 SHA-256 为 `f52a0ff3984256e606f35c61b400b2da76283b629fa315a34667b38858da356a`；DMG 为 `dab727280f2c68829cc4ddb51b78bebe1ba1250cc3c6433d4dcf0fea8116d38a`；SPDX 为 `53f7e468c9754919a282418e0f86ef23682586f2c004841cb933246a2e228a46`；notices 为 `c5bfed60122264ac1123eeabeb61893e94b964b01e1eb8fd4c79fcf5b83f4250`。先前已校验 checksum 的 `rc.6` 提供了用于正向和反向进程替换的独立二进制；这里不声称两次构建字节完全一致。
 
 主 DMG 以只读方式挂载，内容精确为 `SpaceTrace.app`、指向 `/Applications` 的符号链接、`READ-ME-FIRST.txt` 和 `THIRD-PARTY-NOTICES.txt`。带合成下载 quarantine 属性的复制 App 仍通过严格代码签名校验。`spctl` 返回 3 和 `rejected`；`syspolicy_check distribution` 返回 70，并独立报告 ad-hoc 签名与缺失公证票据。可执行文件和 `Info.plist` 都记录 macOS 15.6 最低版本。这些检查证明当前主机上的产物与信任边界，但不能替代干净账户的**仍要打开**启动或 macOS 15.6 运行资格。
 
 使用本机测试签名的 Xcode 沙盒 runner 完成了全部 15 个授权、历史、finding 和导出 UI 场景。诊断导出场景打开真实 `NSSavePanel`、确认用户选择的保存位置、从磁盘读取结果 JSON，并验证 2 MiB 上限、路径脱敏模式和不自动上传声明；该场景还连续聚焦运行 3 次通过。这证明当前主机签名沙盒保存路径，但不声称 quarantined ad-hoc RC 已在干净账户完成人工 Gatekeeper 例外，也不声称使用了 Developer ID 身份。
 
-使用非 quarantine 的保留 App 和一次性 Bundle ID，`rc.5 → rc.6` 与 `rc.6 → rc.5` 都完成了全新启动、同构建正常重启、替换后启动和正常退出。流程没有选择目录，因此这只是进程替换证据，不是 bookmark 或数据库回滚资格。根因调查期间，曾启动一份带合成 quarantine 的 `rc.6` 副本：macOS 创建进程后由 Apple System Policy 主动终止，准确符合已披露的信任边界；资格脚本现在会在启动前拒绝此类输入。macOS containermanager 隐私保护拒绝系统 `trash` 对每个约 984 KiB 一次性容器的操作，因此清理记录为阻塞而不是通过。当前主机新增的三个精确残留为：
+使用非 quarantine 的保留 App 和一次性 Bundle ID，`rc.6 → rc.7` 与 `rc.7 → rc.6` 都完成了全新启动、同构建正常重启、替换后启动和正常退出。流程没有选择目录，因此这只是进程替换证据，不是 bookmark 或数据库回滚资格。较早的根因调查期间，曾启动一份带合成 quarantine 的 `rc.6` 副本：macOS 创建进程后由 Apple System Policy 主动终止，准确符合已披露的信任边界；资格脚本会在启动前拒绝此类输入。macOS containermanager 隐私保护拒绝系统 `trash` 对每个约 984 KiB 一次性容器的操作，因此清理记录为阻塞而不是通过。rc.6 与 rc.7 边界资格产生的五个当前主机残留为：
 
 ```text
 ~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260813161709p86005
 ~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260813161920p86393
 ~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260813162038p86552
+~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260813163720p39902
+~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260813163738p40045
 ```
 
 删除它们需要另一次由用户明确授权 Full Disk Access 的操作。这些容器只含资格测试数据，没有修改任何被监控目录。

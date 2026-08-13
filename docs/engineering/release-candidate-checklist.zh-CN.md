@@ -2,7 +2,7 @@
 
 状态：**打包契约已实现；尚未具备公开分发资格**
 
-最近更新：2026-08-13
+最近更新：2026-08-14
 
 英文事实源：[release-candidate-checklist.md](release-candidate-checklist.md)。本文是便于中文阅读的对应译文；如两者存在差异，以英文文档为工程事实源，并应在同一次变更中修正译文。
 
@@ -103,32 +103,36 @@ make qualify-release-candidate \
 
 它会分别报告全新启动、同构建正常退出/重启和独立二进制替换后启动。容器移除采用 fail closed：如果 macOS 容器隐私保护拒绝终端访问，命令会返回 `container-cleanup-blocked-by-macos-privacy`，打印精确残留路径，而且不会修改容器元数据或扩大删除范围。该流程不会选择目录，因此不能验证 bookmark 连续性、拒绝权限、stale 授权或外置卷行为。
 
+这个非交互子集会拒绝顶层 App bundle 带有 `com.apple.quarantine` 的任一输入。从网络下载的 ad-hoc 候选必须先在干净账户中完成人工、单 App 的 Gatekeeper 例外；资格脚本不会移除 quarantine，也不会自动代替用户作出这项信任决定。
+
 | 场景 | 期望结果 | 当前资格状态 |
 |---|---|---|
-| 从挂载 DMG 全新复制 | 只在完成明确披露的单 App Gatekeeper 例外后启动；不伪造历史 | `0.1.0-rc.5` 已通过只读挂载、复制、quarantine 和预期 Gatekeeper 拒绝；干净账户的**仍要打开**启动仍未完成 |
+| 从挂载 DMG 全新复制 | 只在完成明确披露的单 App Gatekeeper 例外后启动；不伪造历史 | `0.1.0-rc.6` 已通过只读挂载、复制、quarantine 和预期 Gatekeeper 拒绝；干净账户的**仍要打开**启动仍未完成 |
 | 同构建退出并重启 | 相同 bundle identity 无需再次选择即可精确恢复有效 bookmark | 一次性身份下的进程重启已通过；打包 bookmark 连续性仍未完成 |
-| 使用另一次独立构建的 RC 替换“应用程序”副本 | App 可启动；原 bookmark 要么精确恢复，要么明确提示重新授权 | 独立二进制的进程替换已通过；打包 bookmark 连续性仍未完成，不能从 ad-hoc 签名推断 |
+| 使用另一次独立构建的 RC 替换“应用程序”副本 | App 可启动；原 bookmark 要么精确恢复，要么明确提示重新授权 | 非 quarantine 的 `rc.5 → rc.6` 与 `rc.6 → rc.5` 进程替换已通过；打包 bookmark 连续性仍未完成，不能从 ad-hoc 签名推断 |
 | stale 或已撤销授权 | 不静默刷新或扩大 scope；必须由用户再次选择 | 确定性 fixture 已通过；真实 RC 条件未完成 |
 | 权限被拒绝 | 保留已有可信状态或显示不可用；不能在能力不完整时开始扫描 | 对打包 RC 未完成 |
 | 外置卷缺席，随后同一 Volume UUID 返回 | 缺席时显示不可用；相同身份返回后恢复精确授权 | 早期签名沙盒 smoke 已通过；新 RC 行未完成 |
 | 同名但不同 Volume UUID 的替换卷 | 旧授权不得转移 | 原生生命周期已通过；打包 UI 行未完成 |
 | 数据库/Schema 替换 | 迁移备份与恢复符合 released-schema fixture，不静默重建 | 确定性测试已通过；打包升级行未完成 |
 
-### 当前主机候选证据（2026-08-13）
+### 当前主机候选证据（2026-08-14）
 
-在 macOS 26.6.1、Xcode 26.1.1 上，从干净且已推送的 commit `a6ba750069f811a0bb333b0a844cfa2fea9eb27d` 生成了保留的 `0.1.0-rc.5` 产物。其打包契约已通过签名、精确 entitlement、架构、部署目标、最终 Mach-O 依赖、DMG、manifest、四项 checksum、SPDX 与 notices 校验。可执行文件 SHA-256 为 `cce21a395e90b4de5ee50528c655103824445a8828e8a92272a45f5ad37ca88b`；DMG 为 `4e81871d0459ecca1e83a2ec77d5e8d91b47134259b175e0b1baa73b691f6fda`；SPDX 为 `c235fc9ca731ff17556701d6d45387511a9ad050197011d3548efcc21be906f2`；notices 为 `0f9ca116241ac5621368ff3de4ae395970525018396901f3c236a9a4c8286590`。第二份独立构建的包只作为替换输入，资格验证后已删除；这里不声称两次构建字节完全一致。
+在 macOS 26.6.1、Xcode 26.1.1 上，从干净且已推送的 commit `dd868eb3fee2191455a60c383bccd8820d5f4fb9` 生成了保留的 `0.1.0-rc.6` 产物。其打包契约已通过签名、精确 entitlement、架构、部署目标、最终 Mach-O 依赖、DMG、manifest、四项 checksum、SPDX 与 notices 校验。可执行文件 SHA-256 为 `a8c6d66336327be4ea05a6cf8d32e3cf5d4979f1541800cad9184a89c06f3e4a`；DMG 为 `03d3c0fdf7a98be298fe96eb01a8329c443ac01d5e9f765f40ca7049245891d5`；SPDX 为 `fcd1f61459e83ffdb275192afbeb784be8b622f13a99b9427f94e9e71061b5f6`；notices 为 `aa89ad6d3eca9158c89ca1188e4ac56d5af23caf0c9c3974f32f0cd603228625`。先前已校验 checksum 的 `rc.5` 提供了用于正向和反向进程替换的独立二进制；这里不声称两次构建字节完全一致。
 
 主 DMG 以只读方式挂载，内容精确为 `SpaceTrace.app`、指向 `/Applications` 的符号链接、`READ-ME-FIRST.txt` 和 `THIRD-PARTY-NOTICES.txt`。带合成下载 quarantine 属性的复制 App 仍通过严格代码签名校验。`spctl` 返回 3 和 `rejected`；`syspolicy_check distribution` 返回 70，并独立报告 ad-hoc 签名与缺失公证票据。可执行文件和 `Info.plist` 都记录 macOS 15.6 最低版本。这些检查证明当前主机上的产物与信任边界，但不能替代干净账户的**仍要打开**启动或 macOS 15.6 运行资格。
 
 使用本机测试签名的 Xcode 沙盒 runner 完成了全部 15 个授权、历史、finding 和导出 UI 场景。诊断导出场景打开真实 `NSSavePanel`、确认用户选择的保存位置、从磁盘读取结果 JSON，并验证 2 MiB 上限、路径脱敏模式和不自动上传声明；该场景还连续聚焦运行 3 次通过。这证明当前主机签名沙盒保存路径，但不声称 quarantined ad-hoc RC 已在干净账户完成人工 Gatekeeper 例外，也不声称使用了 Developer ID 身份。
 
-在同一个一次性 Bundle ID 下，先使用保留的 App，再使用独立构建的替换 App；全新启动、同构建正常重启和替换后启动均通过。流程没有选择目录。macOS containermanager 隐私保护拒绝系统 `trash` 对约 984 KiB 一次性容器的操作，因此清理记录为阻塞而不是通过。当前主机的精确残留为：
+使用非 quarantine 的保留 App 和一次性 Bundle ID，`rc.5 → rc.6` 与 `rc.6 → rc.5` 都完成了全新启动、同构建正常重启、替换后启动和正常退出。流程没有选择目录，因此这只是进程替换证据，不是 bookmark 或数据库回滚资格。根因调查期间，曾启动一份带合成 quarantine 的 `rc.6` 副本：macOS 创建进程后由 Apple System Policy 主动终止，准确符合已披露的信任边界；资格脚本现在会在启动前拒绝此类输入。macOS containermanager 隐私保护拒绝系统 `trash` 对每个约 984 KiB 一次性容器的操作，因此清理记录为阻塞而不是通过。当前主机新增的三个精确残留为：
 
 ```text
-~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260813152142p80794
+~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260813161709p86005
+~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260813161920p86393
+~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260813162038p86552
 ```
 
-删除它需要另一次由用户明确授权 Full Disk Access 的操作。该容器只含资格测试数据，没有修改任何被监控目录。
+删除它们需要另一次由用户明确授权 Full Disk Access 的操作。这些容器只含资格测试数据，没有修改任何被监控目录。
 
 如果替换构建后需要重新选择目录，GitHub Release 说明必须在测试者安装前明确写出。
 

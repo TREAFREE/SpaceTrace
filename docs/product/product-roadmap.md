@@ -6,14 +6,14 @@
 |---|---|
 | Document status | Draft for product and engineering review |
 | Version | 0.1.0 |
-| Last updated | 2026-08-13 |
+| Last updated | 2026-08-14 |
 | Planning horizon | Eight weeks to Public Beta (Assumption); 1.0 date TBD |
 | Platform state | Accepted baseline: macOS 15.6+ on Apple Silicon. All Project/App/Unit Tests/UI Tests configurations are aligned; runtime qualification remains a Public Beta gate. |
 | Source of requirements | [Product Requirements Document](./product-requirements.md) |
 
 This roadmap is a sequencing and evidence plan, not a promise that every proposed feature will ship. Product scope and acceptance criteria remain authoritative in the PRD. A phase exits only when its evidence gate passes; reaching a calendar date is not sufficient.
 
-## Current Release Decision — NO-GO retained; evidence refreshed 2026-08-13
+## Current Release Decision — NO-GO retained; evidence refreshed 2026-08-14
 
 **Public Beta and GitHub Release: NO-GO. Local engineering RC generation: CONDITIONAL GO.** No tag, GitHub Release, or artifact upload was created by this decision. The local RC channel exists only to continue controlled qualification with the [ad-hoc release candidate checklist](../engineering/release-candidate-checklist.md).
 
@@ -21,13 +21,13 @@ This roadmap is a sequencing and evidence plan, not a promise that every propose
 |---|---|---|
 | Current-stable-macOS endurance and process-resource evidence | Passed for current-host ad-hoc scope | Corrected 25-hour run and deterministic Instruments analysis are recorded in the [background soak protocol](../engineering/background-soak-qualification.md); this is not watt/joule, Apple-identity, or minimum-OS evidence |
 | Current-host controlled UI/accessibility tree | Passed for automated fixture scope | Fifteen authorization/history/finding/export scenarios passed; the real signed-sandbox save panel produced a bounded redacted JSON file and passed three consecutive repetitions. Manual VoiceOver, Full Keyboard Access, contrast/motion/larger-text review remains open in the [visual design system](./visual-design-system.md) |
-| Ad-hoc RC artifact contract | Passed | The retained `0.1.0-rc.5` artifact and an independent replacement build from pushed commit `a6ba750` passed four-entry checksums, strict code signing, exact entitlements, final dependency audit, architecture, deployment target, read-only DMG, manifest, SPDX/notices, and process-replacement launch checks; a quarantined copy was rejected by Gatekeeper and distribution policy exactly as disclosed, while exact disposable-container cleanup remained privacy-blocked |
+| Ad-hoc RC artifact contract | Passed | The retained `0.1.0-rc.6` artifact from pushed commit `dd868eb` passed four-entry checksums, strict code signing, exact entitlements, final dependency audit, architecture, deployment target, read-only DMG, manifest, SPDX/notices, and quarantine-preserved copy checks; Gatekeeper and distribution policy rejected it exactly as disclosed, while exact disposable-container cleanup remained privacy-blocked |
 | Complete P0 product workflow | Passed for deterministic and current-host prototype scope; external qualification remains release-blocking | FR-002's safe restart/no-false-complete branch is implemented; in-enumerator midpoint continuation is a non-P0 performance enhancement, not a release requirement. The classifier corpus, immutable finding projection, schema-v13 ledger, complete-parent disappearance, APFS stable moves, append-only reconciliation revisions, registered correcting projections, versioned target-specific invalidation, durable status, Overview, and redacted export are implemented. The real 5 GiB gap→calibration→exact-subtree matrix passed 20 of 20 sequential APFS trials against the 19-of-20 threshold; macOS 15.6 and packaged permission/replacement qualification remain external gates |
 | macOS 15.6 Apple Silicon runtime | Blocked by unavailable qualified host | Compile/link target is 15.6, but no P0 runtime/benchmark evidence exists on that OS |
 | ADR-003, ADR-004, ADR-006, ADR-008, and ADR-009 | Open — release blocking | All remain Proposed. Genuine daemon drop/wrap, permission revocation, minimum-OS behavior, repeated correction KPI qualification, manual finding/reconciliation UI review, and maintainer review remain incomplete; automated versioned finding UI, explicit disappearance, APFS stable moves, correction chains, and target-specific invalidation pass current-host qualification |
 | Developer identity and notarization | Blocked for trusted public distribution | No stable Apple signing identity is installed. Ad-hoc tester risk has documentation but is not equivalent to Developer ID/notarization |
-| Fresh quarantined clean-account install | Partial — release blocking | The `rc.5` DMG mounted read-only, copied correctly, retained strict code-sign validity under quarantine, and was rejected for the disclosed ad-hoc/notary reasons; a clean-account per-app Gatekeeper exception and first-launch journey remain open |
-| Update/replacement and bookmark continuity | Partial — release blocking | `rc.5` fresh/same-build/independent-build process launch passed under a disposable ID; no bookmark was created, so cross-build restore/reselection behavior remains open |
+| Fresh quarantined clean-account install | Partial — release blocking | The `rc.6` DMG mounted read-only, copied correctly, retained strict code-sign validity under quarantine, and was rejected for the disclosed ad-hoc/notary reasons; a clean-account per-app Gatekeeper exception and first-launch journey remain open |
+| Update/replacement and bookmark continuity | Partial — release blocking | Non-quarantined `rc.5 → rc.6` and `rc.6 → rc.5` fresh/same-build/replacement process launches passed under disposable IDs. The qualifier rejects quarantined inputs before launch; no bookmark was created, so cross-build restore/reselection behavior remains open |
 | Migration, corruption, and retention | Partial | Deterministic current-schema/golden-fixture recovery and large-row benchmarks passed; packaged upgrade, downgrade, and rollback remain open |
 | Permission, stale, denial, and external-volume RC matrix | Partial | Deterministic and earlier sandbox/native rows exist; genuine stale/denial, different-UUID packaged UI, and active-scan revocation remain open |
 | License, notices, and SBOM | Partial — owner decision required | Deterministic SPDX 2.3 and third-party notices are generated, checksummed, and final-binary audited; no external Swift package or bundled third-party library was found. `licenseDeclared = NOASSERTION` remains until the owner approves `LICENSE` |

@@ -2,7 +2,7 @@
 
 Status: **Packaging contract implemented; public distribution not qualified**
 
-Last updated: 2026-08-13
+Last updated: 2026-08-14
 
 Chinese companion translation: [release-candidate-checklist.zh-CN.md](release-candidate-checklist.zh-CN.md). This English document remains the engineering source of truth.
 
@@ -117,32 +117,36 @@ make qualify-release-candidate \
 
 It separately reports fresh launch, graceful same-build restart, and independent-binary replacement launch. Container removal is fail-closed: if macOS container privacy denies Terminal access, the command returns `container-cleanup-blocked-by-macos-privacy`, prints the exact residual path, and never changes container metadata or broadens the deletion target. The flow deliberately does not select a directory, so it cannot qualify bookmark continuity, denial, stale authorization, or external-volume behavior.
 
+This non-interactive subset refuses either input when its top-level App bundle carries `com.apple.quarantine`. A downloaded ad-hoc candidate must first complete the separately disclosed, manual per-app Gatekeeper exception on a clean account; the qualifier never removes quarantine or treats that trust decision as automation.
+
 | Row | Expected result | Current qualification |
 |---|---|---|
-| Fresh copy from mounted DMG | App launches only after the disclosed per-app Gatekeeper exception; no fabricated history | Read-only mount, copy, quarantine, and expected Gatekeeper rejection passed for `0.1.0-rc.5`; clean-account **Open Anyway** launch remains open |
+| Fresh copy from mounted DMG | App launches only after the disclosed per-app Gatekeeper exception; no fabricated history | Read-only mount, copy, quarantine, and expected Gatekeeper rejection passed for `0.1.0-rc.6`; clean-account **Open Anyway** launch remains open |
 | Same-build quit and restart | Same bundle identity restores valid bookmarks without another picker | Process restart passed under a disposable identity; packaged bookmark continuity remains open |
-| Replace Applications copy with a separately built RC | App launches; existing bookmark either restores exactly or presents explicit reauthorization | Independent-binary process replacement passed; packaged bookmark continuity remains open and must not be assumed from ad-hoc signing |
+| Replace Applications copy with a separately built RC | App launches; existing bookmark either restores exactly or presents explicit reauthorization | Non-quarantined `rc.5 → rc.6` and `rc.6 → rc.5` process replacements passed; packaged bookmark continuity remains open and must not be assumed from ad-hoc signing |
 | Stale or revoked grant | No silent refresh or scope widening; user must select again | Deterministic fixture passed; genuine RC condition open |
 | Permission denied | Existing verified state is preserved or access is shown as unavailable; no scan starts from incomplete capability | Open for packaged RC |
 | External volume absent and same Volume UUID returns | Unavailable state while absent; exact authorization resumes when the same identity returns | Earlier signed-sandbox smoke passed; new RC row open |
 | Same-name replacement with a different Volume UUID | Old authorization does not transfer | Native lifecycle passed; packaged UI row open |
 | Database/schema replacement | Migration backup/recovery behavior matches released-schema fixtures; no silent rebuild | Deterministic tests passed; packaged upgrade row open |
 
-### Current-host candidate evidence (2026-08-13)
+### Current-host candidate evidence (2026-08-14)
 
-The retained `0.1.0-rc.5` artifact was built on macOS 26.6.1 with Xcode 26.1.1 from clean, pushed commit `a6ba750069f811a0bb333b0a844cfa2fea9eb27d`. Its packaging contract passed signature, exact-entitlement, architecture, deployment-target, final Mach-O dependency, DMG, manifest, four-entry checksum, SPDX, and notices verification. The executable SHA-256 is `cce21a395e90b4de5ee50528c655103824445a8828e8a92272a45f5ad37ca88b`; the DMG SHA-256 is `4e81871d0459ecca1e83a2ec77d5e8d91b47134259b175e0b1baa73b691f6fda`; the SPDX SHA-256 is `c235fc9ca731ff17556701d6d45387511a9ad050197011d3548efcc21be906f2`; and the notices SHA-256 is `0f9ca116241ac5621368ff3de4ae395970525018396901f3c236a9a4c8286590`. A second independently built package was used only as the replacement input and was removed after qualification; no byte-identical claim is made.
+The retained `0.1.0-rc.6` artifact was built on macOS 26.6.1 with Xcode 26.1.1 from clean, pushed commit `dd868eb3fee2191455a60c383bccd8820d5f4fb9`. Its packaging contract passed signature, exact-entitlement, architecture, deployment-target, final Mach-O dependency, DMG, manifest, four-entry checksum, SPDX, and notices verification. The executable SHA-256 is `a8c6d66336327be4ea05a6cf8d32e3cf5d4979f1541800cad9184a89c06f3e4a`; the DMG SHA-256 is `03d3c0fdf7a98be298fe96eb01a8329c443ac01d5e9f765f40ca7049245891d5`; the SPDX SHA-256 is `fcd1f61459e83ffdb275192afbeb784be8b622f13a99b9427f94e9e71061b5f6`; and the notices SHA-256 is `aa89ad6d3eca9158c89ca1188e4ac56d5af23caf0c9c3974f32f0cd603228625`. The prior checksummed `rc.5` artifact provided an independently built binary for the forward and reverse process-replacement rows; no byte-identical claim is made.
 
 The primary DMG mounted read-only and exposed exactly `SpaceTrace.app`, the `/Applications` symlink, `READ-ME-FIRST.txt`, and `THIRD-PARTY-NOTICES.txt`. A copied App carrying a synthetic download-quarantine attribute still passed strict code-sign verification. `spctl` returned 3 and `rejected`; `syspolicy_check distribution` returned 70 and independently reported an ad-hoc signature plus a missing notarization ticket. The executable and `Info.plist` both recorded macOS 15.6 as their minimum. These checks prove the declared artifact and trust boundary on the current host; they do not replace a clean-account **Open Anyway** launch or macOS 15.6 runtime qualification.
 
 The locally signed Xcode sandbox runner completed all 15 authorization/history/finding/export UI scenarios. The diagnostic-export case opened the real `NSSavePanel`, confirmed a user-selected destination, read the resulting JSON from disk, and verified the 2 MiB bound, redacted path mode, and no-upload declaration. That case also passed three consecutive focused repetitions. This qualifies the current-host signed-sandbox save path; it does not claim that a quarantined ad-hoc RC has completed the manual Gatekeeper exception on a clean account or that a Developer ID identity was used.
 
-Using the retained App and then the independently built replacement under one disposable Bundle ID, fresh launch, graceful same-build restart, and replacement launch all passed. No directory was selected. macOS containermanager privacy denied the system `trash` operation for the approximately 984 KiB disposable container, so cleanup is recorded as blocked rather than passed. The exact current-host residual is:
+Using non-quarantined retained Apps under disposable Bundle IDs, both `rc.5 → rc.6` and `rc.6 → rc.5` completed fresh launch, graceful same-build restart, replacement launch, and graceful quit. No directory was selected, so this is process replacement rather than bookmark or database rollback qualification. A copied `rc.6` carrying synthetic quarantine was launched once during root-cause investigation: macOS created the process and then Apple System Policy terminated it, exactly matching the disclosed trust boundary. The qualifier now rejects such input before launch. macOS containermanager privacy denied the system `trash` operation for each approximately 984 KiB disposable container, so cleanup is recorded as blocked rather than passed. The three new exact current-host residuals are:
 
 ```text
-~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260813152142p80794
+~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260813161709p86005
+~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260813161920p86393
+~/Library/Containers/com.TREAFREE.SpaceTrace.RCQualification.run20260813162038p86552
 ```
 
-Removing it requires a separate, explicit user-authorized Full Disk Access action. It contains qualification data only; no monitored directory was modified.
+Removing them requires a separate, explicit user-authorized Full Disk Access action. They contain qualification data only; no monitored directory was modified.
 
 If a replacement build requires directory reselection, the GitHub Release notes must state that plainly before testers install it.
 

@@ -2,7 +2,7 @@
 
 状态：**架构验证阶段；已具备目录权限、基线与历史概览流程**
 
-最近验证日期：2026-08-13
+最近验证日期：2026-08-14
 
 英文事实源：[implementation-status.md](implementation-status.md)。本文是便于中文阅读的对应译文；如两者存在差异，以英文文档为架构事实源，并应在同一次变更中修正译文。
 
@@ -39,7 +39,7 @@
 
 ## 验证证据
 
-以下门禁截至 2026-08-13 已使用 Swift 6.2.1 与 Xcode 26.1.1 通过：
+以下门禁截至 2026-08-14 已使用 Swift 6.2.1 与 Xcode 26.1.1 通过：
 
 - `swift test --package-path Packages/SpaceTraceKit`：611 个测试、80 个 suite（会改变测试环境的资格测试保持 opt-in，常规运行中显示为 skipped）；
 - 同一套 package 测试在完整严格并发诊断以及“编译器警告视为错误”条件下通过；
@@ -72,7 +72,7 @@
 - 修正后的 2026-07-30 当前主机 ad-hoc Release/App Sandbox 长跑自动生成 `PASSED`：单一 session 的 794 条无路径记录覆盖 90,529,656 ms，retention 成功且最终容量为 qualified；最大清醒间隔 62,097 ms、最大唤醒恢复 1 ms、最大 RSS 139,984,896 字节、最大数据库 613,696 字节、平均 CPU 0.011710%、p95 CPU 0.039200%。五段 Activity Monitor/thermal 导出全部完成且采集失败为 0；确定性后分析得到采集区间 CPU 0.401045252 秒、Idle Wake Ups 959 次、写入/读取 811,008/352,256 字节、最大 footprint 99,271,664 字节、未阻止睡眠、温度状态均为 Nominal。受保护的 Instruments 汇总不含路径并固定 SHA-256；这只关闭当前主机 ad-hoc 24 小时门禁。2026-08-10 又以独立 bundle identity 完成 60 秒 smoke，新的双分析器最终化在采集失败为 0、两个分析器退出码为 0、报告受保护以及 App/launchd 无残留的条件下通过；
 - 2026-07-31 使用独立 bundle identity 的临时签名 App，在 1080 × 720 下完成概览层级和图表布局的视觉检查；16–1024 px 图标资产完成 Alpha 校验；App 单元测试及 `make verify` 通过。同日 UI runner 无法初始化，因此该次尝试继续保留为历史阻塞证据，不报告为通过；
 - 使用本机测试签名运行真实 Xcode macOS UI runner：2026-08-10 在 macOS 26.5.2 上通过 8 个受控权限/不伪造历史场景，2026-08-13 又在 macOS 26.6.1 上通过 15 个授权/历史/finding/导出场景。测试会断言主要/更换/移除操作具有稳定名称且可点击，原始/更正 current 与证据失效 finding 分离，冻结分类/时间证据可见，History Off/baseline-unavailable 保持类型化，破坏性操作需要确认，并确认“只读、不删除文件”隐私边界进入可访问性树。签名沙盒诊断场景会操作真实 `NSSavePanel`、从磁盘读取脱敏 JSON，并额外连续聚焦运行 3 次通过。每次启动都会明确忽略 macOS 持久化窗口状态，确保测试拥有可见的全新窗口。这些确定性 fixture 不覆盖真实 bookmark 替换连续性，人工 VoiceOver/键盘/显示辅助检查也仍未完成；
-- 已实现 fail-closed 的 ad-hoc Release Candidate 打包器：要求明确 SemVer 与干净 commit provenance，检查 arm64/15.6/Bundle ID、精确三项沙盒 entitlement，以 Hardened Runtime 重签，固定六项产物契约，生成只读压缩 DMG、带 checksum 的 JSON 事实 manifest、确定性 SPDX 2.3 与 notices，并覆盖参数缺失/非法、脏源码和已有输出的反向测试。entitlement 契约把用户选择位置读写能力只用于精确 `NSSavePanel` 诊断目标，而监控 bookmark 仍显式只读。保留的 `0.1.0-rc.5` 包和来自已推送 commit `a6ba750` 的独立替换构建通过了打包与进程替换启动资格；精确临时容器清理仍被 macOS 隐私保护阻止。项目许可证在所有者批准前保持 `NOASSERTION`；
+- 已实现 fail-closed 的 ad-hoc Release Candidate 打包器：要求明确 SemVer 与干净 commit provenance，检查 arm64/15.6/Bundle ID、精确三项沙盒 entitlement，以 Hardened Runtime 重签，固定六项产物契约，生成只读压缩 DMG、带 checksum 的 JSON 事实 manifest、确定性 SPDX 2.3 与 notices，并覆盖参数缺失/非法、脏源码和已有输出的反向测试。entitlement 契约把用户选择位置读写能力只用于精确 `NSSavePanel` 诊断目标，而监控 bookmark 仍显式只读。保留的 `0.1.0-rc.6` 包来自已推送 commit `dd868eb`，已通过打包、保留 quarantine 属性的完整性，以及非 quarantine 的 `rc.5 ↔ rc.6` 双向进程替换。非交互资格脚本现在会在启动前拒绝带 quarantine 的输入；精确临时容器清理仍被 macOS 隐私保护阻止。该流程没有创建 bookmark，也没有验证 schema 降级；项目许可证在所有者批准前保持 `NOASSERTION`；
 - 早期当前主机 ad-hoc 签名 smoke App 的严格签名校验确认了旧的用户选择只读 entitlement 与 `LSMinimumSystemVersion = 15.6`；该证据只作为历史记录保留。新的“读写仅用于保存” entitlement 需要重新完成签名沙盒与 macOS 15.6 资格验证；
 - 当前主机签名沙盒 smoke 已证明精确 Powerbox 选择、正常退出后同一 bundle 无选择器恢复、App 内 bookmark 移除不删除夹具、一次性 APFS 镜像缺席时显示不可用，以及同一 Volume UUID 返回后自动恢复授权；
 - 已在当前主机检查普通单窗口外壳、概览准备状态、侧栏导航和嵌入式权限旅程的视觉布局与可访问性树；公开 SwiftUI `MenuBarExtra` 已编译进同一进程，其最终状态项点击矩阵仍属于签名 UI 资格验证；

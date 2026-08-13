@@ -6,9 +6,9 @@ DESTINATION := platform=macOS,arch=arm64
 PACKAGE_PATH := Packages/SpaceTraceKit
 DERIVED_DATA_ROOT := build/DerivedData
 
-.PHONY: verify hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy released-schema-fixtures package-test package-concurrency-audit package-background-lifecycle-qualification package-background-soak-qualification package-apfs-image-qualification package-apfs-reconciliation-qualification package-apfs-reconciliation-matrix-test package-apfs-reconciliation-matrix-qualification persistence-benchmark package-release-candidate package-release-candidate-test qualify-release-candidate xcode-list app-build-debug app-test-unit app-test-ui app-build-release
+.PHONY: verify hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy released-schema-fixtures package-test package-concurrency-audit package-background-lifecycle-qualification package-background-soak-qualification package-apfs-image-qualification package-apfs-reconciliation-qualification package-apfs-reconciliation-matrix-test package-apfs-reconciliation-matrix-qualification persistence-benchmark package-release-candidate package-release-candidate-test qualify-release-candidate-test qualify-release-candidate xcode-list app-build-debug app-test-unit app-test-ui app-build-release
 
-verify: hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy released-schema-fixtures package-apfs-reconciliation-matrix-test package-test package-concurrency-audit xcode-list app-build-debug app-test-unit app-build-release
+verify: hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy released-schema-fixtures package-apfs-reconciliation-matrix-test qualify-release-candidate-test package-test package-concurrency-audit xcode-list app-build-debug app-test-unit app-build-release
 
 hygiene:
 	git diff --check
@@ -68,6 +68,9 @@ package-release-candidate:
 package-release-candidate-test:
 	@test -n "$(VERSION)" || (echo "VERSION is required" >&2; exit 64)
 	./Scripts/test-release-candidate-packaging.sh "$(VERSION)"
+
+qualify-release-candidate-test:
+	bash Scripts/Tests/qualify-release-candidate-tests.sh
 
 qualify-release-candidate:
 	@test -n "$(PRIMARY_APP)" || (echo "PRIMARY_APP is required" >&2; exit 64)

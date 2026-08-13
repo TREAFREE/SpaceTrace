@@ -36,6 +36,14 @@ for app_path in "$primary_app" "$replacement_app"; do
         print -u2 "error: both app paths must be existing absolute directories"
         exit 64
     }
+    if /usr/bin/xattr -p com.apple.quarantine "$app_path" >/dev/null 2>&1; then
+        print -u2 "error: non-interactive qualification refuses quarantined app input"
+        print -u2 "action: complete the disclosed per-app Gatekeeper exception manually, or use a non-quarantined local build"
+        exit 2
+    fi
+done
+
+for app_path in "$primary_app" "$replacement_app"; do
     codesign --verify --deep --strict --verbose=2 "$app_path"
 done
 

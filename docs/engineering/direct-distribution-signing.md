@@ -39,6 +39,7 @@ An ad-hoc or local development signature is not accepted for notarization. The s
 - Never call the artifact “signed and notarized” or “Apple verified.”
 - Treat every new downloaded build as a fresh qualification case.
 - Use manual downloads only. The ad-hoc Public Beta must not enable an automatic updater or silently replace an installed build.
+- Generate the bilingual `READ-ME-FIRST.txt` from the release version and exact source commit. The mounted notice must give copyable checksum/manifest commands, the one-app exception path, the no-cleanup/no-deletion promise, and the manual-update/rollback limits; final readiness compares it byte-for-byte with a fresh source-generated copy.
 
 The fail-closed [Release Readiness Gate](release-readiness-gate.md) binds the final ad-hoc artifact to the explicit risk decision and every independent release receipt. A future Developer ID/notarized channel requires a separately reviewed verifier version.
 

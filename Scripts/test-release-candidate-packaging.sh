@@ -14,6 +14,7 @@ script_directory=${0:A:h}
 repository_root=${script_directory:h}
 packager="$script_directory/package-release-candidate.sh"
 metadata_generator="$script_directory/generate-release-metadata.sh"
+install_notice_generator="$script_directory/generate-public-beta-install-notice.sh"
 
 cd "$repository_root"
 [[ -z $(git status --porcelain=v1 --untracked-files=all) ]] || {
@@ -238,6 +239,12 @@ hdiutil attach -quiet -readonly -nobrowse -mountpoint "$mounted_path" "$dmg_path
 [[ -d "$mounted_path/SpaceTrace.app" ]]
 [[ -L "$mounted_path/Applications" ]]
 [[ -f "$mounted_path/READ-ME-FIRST.txt" ]]
+expected_install_notice="$temporary_root/expected-install-notice.txt"
+"$install_notice_generator" \
+    --version "$version" \
+    --commit "$(git rev-parse HEAD)" \
+    --output "$expected_install_notice"
+cmp "$expected_install_notice" "$mounted_path/READ-ME-FIRST.txt"
 cmp "$notices_path" "$mounted_path/THIRD-PARTY-NOTICES.txt"
 dmg_entries=("${(@f)$(find "$mounted_path" -mindepth 1 -maxdepth 1 -exec basename {} \; | sort)}")
 expected_dmg_entries=(

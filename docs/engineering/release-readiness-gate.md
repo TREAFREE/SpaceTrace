@@ -79,6 +79,7 @@ The artifact directory must be a regular directory containing exactly the six fi
 - exact three sandbox entitlements;
 - executable hash, arm64 slice, Info.plist identity, no bundled framework/dylib, and system-only dynamic linkage;
 - DMG verification, read-only mount, exact four mounted entries, `/Applications` link, notices equality, and mounted App code signature.
+- bilingual mounted install guidance byte-identical to a fresh version/source-bound generator output, including checksum, per-app Gatekeeper exception, manual-update, rollback, and no-deletion boundaries.
 
 The verifier also bounds the qualification, manifest, checksum, SPDX, notices, and DMG sizes before parsing or hashing them. It refuses symlink substitution at every top-level input boundary.
 

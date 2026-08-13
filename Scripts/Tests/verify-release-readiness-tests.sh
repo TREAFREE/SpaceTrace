@@ -4,9 +4,10 @@ set -euo pipefail
 
 repository_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 production_script="$repository_root/Scripts/verify-release-readiness.sh"
+install_notice_generator="$repository_root/Scripts/generate-public-beta-install-notice.sh"
 
-if [[ ! -x "$production_script" ]]; then
-    printf 'RED: production release-readiness verifier is missing\n' >&2
+if [[ ! -x "$production_script" || ! -x "$install_notice_generator" ]]; then
+    printf 'RED: production release-readiness dependency is missing\n' >&2
     exit 1
 fi
 
@@ -63,7 +64,11 @@ create_fixture_repository() {
     fixture_repository="$scratch_root/repository"
     mkdir -p "$fixture_repository/Scripts"
     cp "$production_script" "$fixture_repository/Scripts/verify-release-readiness.sh"
-    chmod +x "$fixture_repository/Scripts/verify-release-readiness.sh"
+    cp "$install_notice_generator" \
+        "$fixture_repository/Scripts/generate-public-beta-install-notice.sh"
+    chmod +x \
+        "$fixture_repository/Scripts/verify-release-readiness.sh" \
+        "$fixture_repository/Scripts/generate-public-beta-install-notice.sh"
     printf 'Synthetic SpaceTrace release-readiness fixture.\n' >"$fixture_repository/README.md"
 
     git -C "$fixture_repository" init -q -b main
@@ -71,7 +76,9 @@ create_fixture_repository() {
     git -C "$fixture_repository" config user.email "tests@example.invalid"
     git -C "$fixture_repository" add README.md
     git -C "$fixture_repository" commit -q -m base
-    git -C "$fixture_repository" add Scripts/verify-release-readiness.sh
+    git -C "$fixture_repository" add \
+        Scripts/verify-release-readiness.sh \
+        Scripts/generate-public-beta-install-notice.sh
     git -C "$fixture_repository" commit -q -m verifier
     fixture_commit=$(git -C "$fixture_repository" rev-parse HEAD)
     git -C "$fixture_repository" update-ref refs/remotes/origin/main "$fixture_commit"
@@ -129,7 +136,10 @@ EOF
     ditto "$app" "$dmg_root/SpaceTrace.app"
     ln -s /Applications "$dmg_root/Applications"
     cp "$notices" "$dmg_root/THIRD-PARTY-NOTICES.txt"
-    printf 'Synthetic tester image.\n' >"$dmg_root/READ-ME-FIRST.txt"
+    "$fixture_repository/Scripts/generate-public-beta-install-notice.sh" \
+        --version "$version" \
+        --commit "$fixture_commit" \
+        --output "$dmg_root/READ-ME-FIRST.txt"
     hdiutil create -quiet -fs HFS+ -format UDZO -volname "SpaceTrace RC $version" \
         -srcfolder "$dmg_root" "$dmg"
 

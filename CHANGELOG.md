@@ -6,6 +6,7 @@ All notable user-visible changes are recorded in this file.
 
 ### Added
 
+- Generate the bilingual `READ-ME-FIRST.txt` inside every ad-hoc Public Beta DMG from one deterministic, version/source-bound contract. It includes exact SHA-256 and manifest checks, the per-app **Open Anyway** flow, the no-global-Gatekeeper-bypass rule, manual-update-only and unqualified-rollback limits, and the promise that SpaceTrace never cleans or deletes user files. Packaging and final readiness compare the mounted notice byte-for-byte with a fresh source-generated copy.
 - Add a read-only, fail-closed ad-hoc Public Beta readiness gate that binds the exact six release artifacts to clean `main`/`origin/main`, source and checksum hashes, an approved non-`NOASSERTION` license, the accepted distribution-risk decision, and a path-free repository-integration receipt plus every minimum-OS, current-OS, Gatekeeper, replacement, permission, accessibility, usability, privacy, governance, severity, and final-GO receipt. Its disposable signed-App/read-only-DMG contract covers 23 positive and adversarial cases.
 - Add deterministic SPDX 2.3 and third-party-notices release metadata, final
   Mach-O dependency auditing, manifest hash binding, four-file checksum

@@ -48,11 +48,14 @@ print -r -- "$version" | /usr/bin/grep -Eq \
 script_directory=${0:A:h}
 repository_root=${script_directory:h}
 metadata_generator="$script_directory/generate-release-metadata.sh"
+install_notice_generator="$script_directory/generate-public-beta-install-notice.sh"
 cd "$repository_root"
 
 [[ $(git rev-parse --show-toplevel) == $repository_root ]] \
     || fail "script must run from the SpaceTrace Git worktree"
 [[ -x $metadata_generator ]] || fail "release metadata generator is missing or not executable"
+[[ -x $install_notice_generator ]] \
+    || fail "public Beta install-notice generator is missing or not executable"
 [[ -z $(git status --porcelain=v1 --untracked-files=all) ]] \
     || fail "release candidates require a clean source tree"
 
@@ -208,16 +211,10 @@ done <"$temporary_root/dependencies.txt"
 /usr/bin/ditto "$app_path" "$dmg_stage/SpaceTrace.app"
 /bin/ln -s /Applications "$dmg_stage/Applications"
 /bin/cp "$notices_path" "$dmg_stage/THIRD-PARTY-NOTICES.txt"
-cat >"$dmg_stage/READ-ME-FIRST.txt" <<'NOTICE'
-SpaceTrace release candidate / 测试候选版本
-
-This build is ad-hoc signed and not notarized. macOS cannot verify its publisher.
-Only continue if you trust the exact Git commit and have checked the published SHA-256.
-Do not disable Gatekeeper globally.
-
-此构建仅采用 ad-hoc 签名，且未经过 Apple 公证。macOS 无法验证发布者身份。
-请只在信任对应 Git commit 并核对发布的 SHA-256 后继续，不要全局关闭 Gatekeeper。
-NOTICE
+"$install_notice_generator" \
+    --version "$version" \
+    --commit "$commit" \
+    --output "$dmg_stage/READ-ME-FIRST.txt"
 
 hdiutil create -quiet \
     -fs HFS+ \

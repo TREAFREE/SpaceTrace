@@ -180,7 +180,9 @@ print -r -- "$license_identifier" \
 
 script_directory=${0:A:h}
 repository_root=${script_directory:h}
+install_notice_generator="$script_directory/generate-public-beta-install-notice.sh"
 cd "$repository_root"
+[[ -x $install_notice_generator ]] || nogo "artifact contract"
 [[ $(git rev-parse --show-toplevel 2>/dev/null) == $repository_root ]] \
     || nogo "repository integration"
 [[ -z $(git status --porcelain=v1 --untracked-files=all 2>/dev/null) ]] \
@@ -366,6 +368,14 @@ readonly expected_mounted_entries=(
     || nogo "artifact contract"
 /usr/bin/cmp -s "$notices_path" "$mounted_path/THIRD-PARTY-NOTICES.txt" \
     || nogo "artifact integrity"
+expected_install_notice="$temporary_root/expected-install-notice.txt"
+"$install_notice_generator" \
+    --version "$release_version" \
+    --commit "$source_commit" \
+    --output "$expected_install_notice" >/dev/null 2>&1 \
+    || nogo "artifact contract"
+/usr/bin/cmp -s "$expected_install_notice" "$mounted_path/READ-ME-FIRST.txt" \
+    || nogo "artifact contract"
 codesign --verify --deep --strict --verbose=2 "$mounted_path/SpaceTrace.app" \
     >/dev/null 2>&1 || nogo "artifact integrity"
 if : >"$mounted_path/.write-probe" 2>/dev/null; then

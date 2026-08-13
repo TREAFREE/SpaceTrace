@@ -122,6 +122,8 @@ make qualify-release-candidate \
 
 主 DMG 以只读方式挂载，内容精确为 `SpaceTrace.app`、指向 `/Applications` 的符号链接、`READ-ME-FIRST.txt` 和 `THIRD-PARTY-NOTICES.txt`。带合成下载 quarantine 属性的复制 App 仍通过严格代码签名校验。`spctl` 返回 3 和 `rejected`；`syspolicy_check distribution` 返回 70，并独立报告 ad-hoc 签名与缺失公证票据。可执行文件和 `Info.plist` 都记录 macOS 15.6 最低版本。这些检查证明当前主机上的产物与信任边界，但不能替代干净账户的**仍要打开**启动或 macOS 15.6 运行资格。
 
+打包器现在通过唯一的确定性版本/源码绑定生成器创建 `READ-ME-FIRST.txt`。集成测试和最终发布资格门禁都会独立重新生成并逐字节比较挂载内容。双语说明包含 checksum/manifest 命令、拖入“应用程序”与**仍要打开**流程、禁止全局绕过规则、手动更新/回滚限制，以及“不清理/不删除”的产品边界。
+
 使用本机测试签名的 Xcode 沙盒 runner 完成了全部 15 个授权、历史、finding 和导出 UI 场景。诊断导出场景打开真实 `NSSavePanel`、确认用户选择的保存位置、从磁盘读取结果 JSON，并验证 2 MiB 上限、路径脱敏模式和不自动上传声明；该场景还连续聚焦运行 3 次通过。这证明当前主机签名沙盒保存路径，但不声称 quarantined ad-hoc RC 已在干净账户完成人工 Gatekeeper 例外，也不声称使用了 Developer ID 身份。
 
 使用非 quarantine 的保留 App 和一次性 Bundle ID，`rc.6 → rc.7` 与 `rc.7 → rc.6` 都完成了全新启动、同构建正常重启、替换后启动和正常退出。流程没有选择目录，因此这只是进程替换证据，不是 bookmark 或数据库回滚资格。较早的根因调查期间，曾启动一份带合成 quarantine 的 `rc.6` 副本：macOS 创建进程后由 Apple System Policy 主动终止，准确符合已披露的信任边界；资格脚本会在启动前拒绝此类输入。macOS containermanager 隐私保护拒绝系统 `trash` 对每个约 984 KiB 一次性容器的操作，因此清理记录为阻塞而不是通过。rc.6 与 rc.7 边界资格产生的五个当前主机残留为：

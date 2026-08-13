@@ -37,6 +37,7 @@ ad-hoc 或本地开发签名不能用于提交公证。Apple Developer Program �
 - 绝不能把产物称为“已签名并公证”或“Apple 已验证”。
 - 每个重新下载的新构建都要当成新的资格验证对象。
 - 只能使用手动下载；ad-hoc Public Beta 不得启用自动更新器，也不得静默替换已安装构建。
+- 必须根据发布版本和精确源码提交生成双语 `READ-ME-FIRST.txt`。挂载后的说明必须包含可复制的 checksum/manifest 命令、单 App 例外路径、“不清理/不删除”承诺，以及手动更新/回滚限制；最终发布资格会把它与从源码重新生成的副本逐字节比较。
 
 fail-closed 的[发布资格门禁](release-readiness-gate.zh-CN.md)会把最终 ad-hoc 产物绑定到明确风险决策和每一份独立发布回执。未来 Developer ID/已公证渠道必须使用单独评审过的验证器版本。
 

@@ -79,6 +79,7 @@ make verify-release-readiness \
 - 精确 3 项沙盒 entitlement；
 - 可执行文件哈希、arm64 slice、Info.plist 身份、无内嵌 framework/dylib，以及仅动态链接系统库；
 - DMG 验证、只读挂载、精确 4 个挂载项、`/Applications` 链接、notices 一致和挂载 App 签名。
+- 挂载后的双语安装说明必须与按版本/源码重新生成的输出逐字节一致，并包含 checksum、单 App Gatekeeper 例外、手动更新、回滚和不删除边界。
 
 解析或计算哈希前，验证器还会限制 qualification、manifest、checksum、SPDX、notices 和 DMG 大小，并拒绝所有顶层输入边界上的符号链接替换。
 

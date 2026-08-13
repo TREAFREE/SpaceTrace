@@ -76,6 +76,8 @@ CI 集成测试禁止扫描 runner 的真实主目录。任何测试 helper 若�
 
 真实挂载生命周期使用显式 opt-in 的 `make package-apfs-image-qualification`。夹具只能在 UUID 命名的临时目录创建小型镜像，设备标识必须匹配受控 attach 响应和 `/dev/disk…` 白名单；正常路径使用普通 detach，强制 detach 仅可作为该临时设备的失败清理兜底。此测试不得进入通用并行 CI，也不得接触现有卷。
 
+FR-004 的 19/20 发布 KPI 使用显式 opt-in 的 `make package-apfs-reconciliation-matrix-qualification`。入口必须先确认唯一 SwiftPM 测试标识，再在 APFS 临时卷上顺序运行恰好 20 次生产校准链；同一时刻只允许一个 5 GiB 夹具，开始每轮前可用空间不得低于 8 GiB。19 次成功是最低门槛，失败轮次不能被自动重试或从分母移除。结果只保存 commit、主机/工具链/thermal 概况、每轮结果与有界耗时，不得保存测试路径或原始 Swift 输出；报告以 `0600` 创建并且不得覆盖已有证据。`make verify` 只验证这个 runner 的计数、阈值和 fail-closed 契约，不执行真实 100 GiB 累计分配工作。
+
 ### 2.3 UI and accessibility tests
 
 UI 测试聚焦关键旅程：首次启动、权限拒绝、部分覆盖、首次扫描、查看增长来源、暂停/恢复、清除历史、导出诊断。每个旅程至少有一条 automated smoke test 和一条 release 手测记录。

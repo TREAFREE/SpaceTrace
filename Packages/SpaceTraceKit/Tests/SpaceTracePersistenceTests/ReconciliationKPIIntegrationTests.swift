@@ -158,7 +158,25 @@ private struct ReconciliationKPIFixture {
     let databaseURL: URL
 
     init() throws {
-        root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        let fixtureParent: URL
+        if let configuredParent = ProcessInfo.processInfo.environment[
+            "SPACETRACE_RECONCILIATION_FIXTURE_PARENT"
+        ] {
+            fixtureParent = URL(
+                fileURLWithPath: configuredParent,
+                isDirectory: true
+            ).standardizedFileURL
+            let values = try fixtureParent.resourceValues(forKeys: [
+                .isDirectoryKey,
+                .isSymbolicLinkKey,
+            ])
+            guard values.isDirectory == true, values.isSymbolicLink != true else {
+                throw ReconciliationKPIFixtureError.invalidFixtureParent
+            }
+        } else {
+            fixtureParent = FileManager.default.temporaryDirectory
+        }
+        root = fixtureParent.appendingPathComponent(
             "SpaceTrace-Reconciliation-KPI-\(UUID().uuidString)",
             isDirectory: true
         )
@@ -220,6 +238,7 @@ private func allocatedByteCount(at url: URL) throws -> Int64 {
 
 private enum ReconciliationKPIFixtureError: Error {
     case insufficientCapacity
+    case invalidFixtureParent
     case cannotCreateFile
     case cannotOpenFile
     case cannotAllocateFile(Int32)

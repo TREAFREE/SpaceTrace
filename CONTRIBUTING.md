@@ -47,6 +47,14 @@ make app-test-ui
 
 该命令使用 Xcode 的本机 “Sign to Run Locally” 配置；在当前 Xcode 26.1.1、macOS 26.5.2 主机上，即使钥匙串没有 Apple 开发签名身份，ad-hoc 签名的 UI test runner 与沙盒 App 也可完成受控 DEBUG fixture。该结果只验证确定性的界面状态、操作名称与可访问性树，不替代真实 Powerbox/bookmark/重启流程，也不替代 Apple 身份签名、Developer ID 分发或 macOS 15.6 运行门禁。若 runner 无法初始化，应把主机、Xcode、签名与 Developer Mode 状态记为环境证据，不能把 `build-for-testing` 当作通过。完整的真实权限矩阵见[用户选择目录 UI 与沙盒资格验证](docs/engineering/user-selected-directory-qualification.zh-CN.md)。
 
+FR-004 的真实 APFS 重复资格矩阵必须明确选择执行，不能进入普通并行 CI：
+
+```bash
+make package-apfs-reconciliation-matrix-qualification
+```
+
+该入口先构建并确认唯一的 5 GiB 测试标识，再顺序运行 20 个相互独立的临时夹具；至少 19 次成功才通过。任一时刻只保留一个 5 GiB 夹具，且每轮结束后由测试夹具删除。无路径、权限为 `0600` 的结果默认写入 `build/Qualification/`，相同 commit 的既有报告不会被覆盖。脚本契约本身由 `make verify` 使用 fake Swift 边界持续验证；真实 20 次矩阵仍需维护者在内部 APFS 卷、至少 8 GiB 可用空间的受控主机上主动执行。
+
 ## Branches and commits
 
 从最新 `main` 创建短分支：

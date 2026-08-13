@@ -148,3 +148,5 @@ make qualify-release-candidate \
 ## 公开发布阻塞项
 
 这个测试渠道不会关闭 Developer ID 签名、公证/票据附加、带 quarantine 的干净账户**仍要打开**启动、macOS 15.6 真实运行、独立构建替换后的 bookmark 连续性、完整权限/替换矩阵、ADR-003/ADR-004/ADR-006/ADR-008/ADR-009 评审、项目许可证批准、人工无障碍/可用性复核或明确发布决策门禁。当前主机的重复校准矩阵已 20/20 通过，SBOM/第三方声明生成契约也已实现，但 `NOASSERTION` 会刻意保持许可证所有者决策未关闭。
+
+有日期的[发布集成审计](release-integration-audit.zh-CN.md)会单独记录 GitHub、受保护分支、托管 CI、许可证、发布源重建、运行时和人工资格门槛；任何产物成为公开 GitHub Release 之前，这些门槛都必须关闭。

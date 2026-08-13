@@ -162,3 +162,5 @@ If a replacement build requires directory reselection, the GitHub Release notes 
 ## Public-release blockers
 
 This tester channel does not close Developer ID signing, notarization/stapling, a quarantined clean-account **Open Anyway** launch, macOS 15.6 runtime qualification, bookmark continuity across an independently built replacement, the complete permission/replacement matrix, ADR-003/ADR-004/ADR-006/ADR-008/ADR-009 review, project-license approval, manual accessibility/usability review, or the explicit release decision gate. The current-host repeated reconciliation matrix passed 20 of 20 trials, and the SBOM/notices generation contract is implemented, but `NOASSERTION` deliberately keeps the owner license decision open.
+
+The dated [Release Integration Audit](release-integration-audit.md) records the separate GitHub, protected-branch, hosted-CI, license, release-source rebuild, runtime, and human-qualification gates that must close before any artifact becomes a public GitHub Release.

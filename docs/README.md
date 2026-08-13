@@ -38,7 +38,8 @@ This directory is the durable source of truth for product, architecture, enginee
 22. [Background Soak Qualification](engineering/background-soak-qualification.md) · [中文](engineering/background-soak-qualification.zh-CN.md)
 23. [Deterministic Storage Attribution](engineering/deterministic-attribution.md) · [中文](engineering/deterministic-attribution.zh-CN.md)
 24. [Immutable, Coverage-Aware Historical Findings](engineering/immutable-historical-findings.md) · [中文](engineering/immutable-historical-findings.zh-CN.md)
-25. [Contributing](../CONTRIBUTING.md)
+25. [Release Integration Audit](engineering/release-integration-audit.md) · [中文](engineering/release-integration-audit.zh-CN.md)
+26. [Contributing](../CONTRIBUTING.md)
 
 ### Product evidence
 

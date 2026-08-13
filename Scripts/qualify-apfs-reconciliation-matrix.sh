@@ -73,6 +73,17 @@ trap cleanup EXIT INT TERM
 
 module_cache="$repository_root/build/ModuleCache"
 mkdir -p "$module_cache"
+set +e
+CLANG_MODULE_CACHE_PATH="$module_cache" \
+SWIFTPM_MODULECACHE_OVERRIDE="$module_cache" \
+    swift test --package-path "$package_path" \
+        --filter ReconciliationKPIIntegrationTests >/dev/null 2>&1
+build_status=$?
+set -e
+[[ $build_status -eq 0 ]] || {
+    print -u2 'qualification test build failed'
+    exit 2
+}
 preflight_log=$(mktemp "${temporary_root%/}/spacetrace-reconciliation-preflight.XXXXXX")
 temporary_log=$preflight_log
 set +e
@@ -80,7 +91,7 @@ set +e
     ulimit -f $((maximum_log_bytes / 512))
     CLANG_MODULE_CACHE_PATH="$module_cache" \
     SWIFTPM_MODULECACHE_OVERRIDE="$module_cache" \
-        swift test --package-path "$package_path" list
+        swift test --package-path "$package_path" list --skip-build
 ) >"$preflight_log" 2>&1
 preflight_status=$?
 set -e
@@ -136,15 +147,12 @@ for trial in {1..20}; do
     temporary_log=$(mktemp "${temporary_root%/}/spacetrace-reconciliation-trial.XXXXXX")
     started_seconds=$(date +%s)
     set +e
-    (
-        ulimit -f $((maximum_log_bytes / 512))
-        SPACETRACE_RUN_APFS_RECONCILIATION_TESTS=1 \
-        SPACETRACE_RECONCILIATION_FIXTURE_PARENT="$fixture_parent" \
-        CLANG_MODULE_CACHE_PATH="$module_cache" \
-        SWIFTPM_MODULECACHE_OVERRIDE="$module_cache" \
-            swift test --package-path "$package_path" --skip-build \
-                --filter ReconciliationKPIIntegrationTests
-    ) >"$temporary_log" 2>&1
+    SPACETRACE_RUN_APFS_RECONCILIATION_TESTS=1 \
+    SPACETRACE_RECONCILIATION_FIXTURE_PARENT="$fixture_parent" \
+    CLANG_MODULE_CACHE_PATH="$module_cache" \
+    SWIFTPM_MODULECACHE_OVERRIDE="$module_cache" \
+        swift test --package-path "$package_path" --skip-build \
+            --filter ReconciliationKPIIntegrationTests >"$temporary_log" 2>&1
     trial_status=$?
     set -e
     duration_seconds=$(( $(date +%s) - started_seconds ))

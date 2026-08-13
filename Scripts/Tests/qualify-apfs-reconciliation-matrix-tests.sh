@@ -38,6 +38,11 @@ if [[ " $* " == *" list "* ]]; then
         'SpaceTracePersistenceTests.ReconciliationKPIIntegrationTests/recoversAllocatedFiveGiBChangeAfterContinuityLoss()'
     exit 0
 fi
+if [[ ${SPACETRACE_RUN_APFS_RECONCILIATION_TESTS:-} != "1" ]]; then
+    dd if=/dev/zero of="${count_file%/*}/swift-build-artifact.bin" \
+        bs=1048576 count=9 2>/dev/null
+    exit 0
+fi
 [[ -n ${SPACETRACE_RECONCILIATION_FIXTURE_PARENT:-} \
     && -d $SPACETRACE_RECONCILIATION_FIXTURE_PARENT ]] || exit 72
 count=0

@@ -1,14 +1,14 @@
 # DMG 直接分发与代码签名
 
-状态：**发布前策略；尚未完成公开分发资格验证**
+状态：**ad-hoc Public Beta 策略已接受；尚未完成公开分发资格验证**
 
-最近更新：2026-08-10
+最近更新：2026-08-14
 
 英文事实源：[direct-distribution-signing.md](direct-distribution-signing.md)。本文是便于中文阅读的对应译文；如两者存在差异，以英文文档为工程事实源，并应在同一次变更中修正译文。
 
 ## 当前决定
 
-在维护者尚未购买 Apple Developer Program 会员期间，SpaceTrace 可以向人数较少、明确互相信任的测试者提供 ad-hoc 签名 DMG。它属于测试渠道，不是已经获得 Gatekeeper 信任的公开发行版。
+2026-08-14，maintainer 明确接受了在没有付费 Apple Developer Program 会员期间，以 ad-hoc 签名、未公证方式提供 **Public Beta** 的分发风险。这个决定不会让产物获得 Gatekeeper 信任，也不代表 Apple 已验证、已公证或已经成为稳定版；它只批准分发政策。产品、仓库、最低系统、干净账户、权限、无障碍、许可证和最终发布门槛仍然是彼此独立的 NO-GO 条件。
 
 可执行的打包契约与安装/替换矩阵记录在 [ad-hoc Release Candidate 检查清单](release-candidate-checklist.zh-CN.md) 中。生成这些产物本身并不等于获得创建 GitHub Release 的授权。
 
@@ -36,6 +36,9 @@ ad-hoc 或本地开发签名不能用于提交公证。Apple Developer Program �
 - 清楚说明“仍要打开”的准确步骤，并说明 macOS 无法验证发布者身份或公证状态。
 - 绝不能把产物称为“已签名并公证”或“Apple 已验证”。
 - 每个重新下载的新构建都要当成新的资格验证对象。
+- 只能使用手动下载；ad-hoc Public Beta 不得启用自动更新器，也不得静默替换已安装构建。
+
+fail-closed 的[发布资格门禁](release-readiness-gate.zh-CN.md)会把最终 ad-hoc 产物绑定到明确风险决策和每一份独立发布回执。未来 Developer ID/已公证渠道必须使用单独评审过的验证器版本。
 
 ## SpaceTrace 特有的发布风险
 

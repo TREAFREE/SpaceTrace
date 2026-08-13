@@ -6,9 +6,9 @@ DESTINATION := platform=macOS,arch=arm64
 PACKAGE_PATH := Packages/SpaceTraceKit
 DERIVED_DATA_ROOT := build/DerivedData
 
-.PHONY: verify hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy released-schema-fixtures package-test package-concurrency-audit package-background-lifecycle-qualification package-background-soak-qualification package-apfs-image-qualification package-apfs-reconciliation-qualification package-apfs-reconciliation-matrix-test package-apfs-reconciliation-matrix-qualification persistence-benchmark package-release-candidate package-release-candidate-test qualify-release-candidate-test qualify-release-candidate xcode-list app-build-debug app-test-unit app-test-ui app-build-release
+.PHONY: verify hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy released-schema-fixtures package-test package-concurrency-audit package-background-lifecycle-qualification package-background-soak-qualification package-apfs-image-qualification package-apfs-reconciliation-qualification package-apfs-reconciliation-matrix-test package-apfs-reconciliation-matrix-qualification persistence-benchmark package-release-candidate package-release-candidate-test qualify-release-candidate-test qualify-release-candidate release-readiness-test verify-release-readiness xcode-list app-build-debug app-test-unit app-test-ui app-build-release
 
-verify: hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy released-schema-fixtures package-apfs-reconciliation-matrix-test qualify-release-candidate-test package-test package-concurrency-audit xcode-list app-build-debug app-test-unit app-build-release
+verify: hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy released-schema-fixtures package-apfs-reconciliation-matrix-test qualify-release-candidate-test release-readiness-test package-test package-concurrency-audit xcode-list app-build-debug app-test-unit app-build-release
 
 hygiene:
 	git diff --check
@@ -76,6 +76,14 @@ qualify-release-candidate:
 	@test -n "$(PRIMARY_APP)" || (echo "PRIMARY_APP is required" >&2; exit 64)
 	@test -n "$(REPLACEMENT_APP)" || (echo "REPLACEMENT_APP is required" >&2; exit 64)
 	./Scripts/qualify-release-candidate.sh --primary "$(PRIMARY_APP)" --replacement "$(REPLACEMENT_APP)"
+
+release-readiness-test:
+	bash Scripts/Tests/verify-release-readiness-tests.sh
+
+verify-release-readiness:
+	@test -n "$(QUALIFICATION)" || (echo "QUALIFICATION is required" >&2; exit 64)
+	@test -n "$(ARTIFACTS)" || (echo "ARTIFACTS is required" >&2; exit 64)
+	./Scripts/verify-release-readiness.sh --qualification "$(QUALIFICATION)" --artifacts "$(ARTIFACTS)"
 
 xcode-list:
 	xcodebuild -list -project "$(PROJECT)" -clonedSourcePackagesDirPath "$(DERIVED_DATA_ROOT)/SourcePackages"

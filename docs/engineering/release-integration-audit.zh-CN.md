@@ -27,8 +27,8 @@
 | Pull Request | 候选分支到 `main` 没有 PR | 不存在审查、required checks 和合并证据 |
 | GitHub Actions | 候选分支没有工作流运行记录 | CI 只对 PR 和推送到 `main` 触发；本地 `make verify` 不能替代 GitHub 托管证据 |
 | 分支保护 | GitHub 报告 `main` 未受保护 | 这与开发流程中禁止直接推送和强制推送的要求冲突 |
-| 项目许可证 | GitHub 未识别到许可证，仓库内也没有 `LICENSE`/`COPYING` 文件 | PRD 中的 MIT 仍只是未获所有者批准的假设 |
-| 分发身份 | 当前没有 Developer ID Application 身份；候选物使用 ad-hoc 签名且未公证 | 它最多只能成为明确接受风险的预发布 Beta，不能称为稳定版或 Apple 已验证版本 |
+| 项目许可证 | GitHub 未识别到许可证，仓库内也没有 `LICENSE`/`COPYING` 文件 | 所有者已在 2026-08-14 拒绝 MIT；仍需选择另一许可证 |
+| 分发身份 | 当前没有 Developer ID Application 身份；候选物使用 ad-hoc 签名且未公证 | 所有者已在 2026-08-14 接受这项已披露的 Public Beta 风险；它仍不能称为稳定版或 Apple 已验证版本 |
 | 本地产物 | `0.1.0-rc.7` 已通过校验和、manifest、SPDX、精确 entitlement、Hardened Runtime、arm64、macOS 15.6 部署目标、严格代码签名和 DMG 检查 | 字节和已披露的信任边界可审计，但运行时与支持门槛仍未关闭 |
 
 保留的 rc.7 manifest 将产物字节绑定到源码提交 `a3b8b45ca6f9dad752a9b750422b343d71c04dc8`。后续文档提交不会让该产物失效，但最终供下载的 DMG 必须从被选为发布源的精确 `main` 提交重新构建。Tag 或 Release 不得复用 rc.7 却声称它来自另一个源码提交。
@@ -39,7 +39,7 @@
 
 1. **所有者决策**
    - 批准一个明确的项目许可证，并加入一致的仓库元数据；
-   - 选择 Developer ID 签名/公证，或明确记录 maintainer 对 ad-hoc、未公证 Public Beta 的风险接受，并保持无自动更新；
+   - 选择一种非 MIT 项目许可证；ad-hoc、未公证 Public Beta 风险和无自动更新边界已经获得接受；
    - 审查仍处于 Proposed 状态且与发布相关的 ADR，并记录接受或延期边界。
 2. **Pull Request 与 CI**
    - 从 `agent/native-fsevents-integration` 向 `main` 创建 PR；
@@ -71,7 +71,7 @@
 
 | 门槛 | 当前证据 | 关闭条件 |
 |---|---|---|
-| 许可证 | `licenseInfo = null`；无许可证文件；SPDX 使用 `NOASSERTION` | 所有者选择并批准许可证，统一更新仓库元数据、notices 和 SPDX |
+| 许可证 | MIT 已被拒绝；`licenseInfo = null`；无许可证文件；SPDX 使用 `NOASSERTION` | 所有者选择并批准另一许可证，统一更新仓库元数据、notices 和 SPDX |
 | 仓库集成 | 功能分支领先 85 个提交；无 PR 或 GitHub Actions 运行 | 经过审查的 PR、托管 CI 全绿、受保护的 `main`、明确合并提交 |
 | 最低系统 | 部署目标为 15.6；当前构建主机版本更高 | 在物理机或虚拟机完成 macOS 15.6 P0 运行时矩阵 |
 | 当前稳定系统 | 已有当前主机自动化与签名沙盒证据 | 在届时最新稳定 macOS 上对发布源产物重复验证矩阵 |
@@ -80,7 +80,7 @@
 | 权限与卷 | 已有确定性/原生 fixture 和更早的签名沙盒 smoke | 完成拒绝、撤权、stale 授权和卷身份变化的真实打包 UI 矩阵 |
 | 无障碍与可用性 | 已有自动化 UI 覆盖 | 人工 VoiceOver/键盘/视觉无障碍审查，以及至少 6 次形成性测试 |
 | 治理 | ADR-003、ADR-004、ADR-006、ADR-008、ADR-009 仍为 Proposed | maintainer 审查并明确发布处置 |
-| 分发政策 | 已实现 ad-hoc 警告和校验和 | Developer ID/公证，或对明确标记的 Public Beta 记录 maintainer 风险接受 |
+| 分发政策 | 已实现 ad-hoc 警告/校验和，并记录 maintainer 风险接受 | 在明确标记、仅手动下载的 Public Beta 政策下完成其他产物/运行时/人工门槛 |
 
 ## 禁止的捷径
 
@@ -98,8 +98,7 @@
 
 1. 获批的项目许可证；
 2. 是否授权创建集成 PR，以及采用哪种 reviewer/例外流程；
-3. 下一个公开产物是等待 Developer ID/公证，还是以明确接受风险的 ad-hoc Public Beta 继续；
-4. 哪些物理机或虚拟机负责提供 macOS 15.6 与全新账户证据；
-5. 谁负责最终的人工无障碍、可用性和发布后验证。
+3. 哪些物理机或虚拟机负责提供 macOS 15.6 与全新账户证据；
+4. 谁负责最终的人工无障碍、可用性和发布后验证。
 
 在这些决策与外部资格验证完成之前，即使已经存在可审计的本地 DMG，正确的发布结论仍是 **NO-GO**。

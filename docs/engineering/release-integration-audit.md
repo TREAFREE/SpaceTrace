@@ -27,8 +27,8 @@ The following evidence was refreshed on 2026-08-14:
 | Pull request | No PR exists from the candidate branch to `main` | Review, required checks, and merge evidence do not exist |
 | GitHub Actions | No workflow run exists for the candidate branch | CI is configured for pull requests and pushes to `main`; the local `make verify` result cannot substitute for GitHub-hosted evidence |
 | Branch protection | GitHub reports `main` as unprotected | This conflicts with the development-process requirement that `main` reject direct and force pushes |
-| Project license | GitHub reports no detected license and the repository contains no `LICENSE`/`COPYING` file | The PRD's MIT value remains an assumption, not owner approval |
-| Distribution identity | No Developer ID Application identity is available; the candidate is ad-hoc signed and not notarized | It may only become an explicitly risk-accepted pre-release Beta, never a stable or Apple-verified release |
+| Project license | GitHub reports no detected license and the repository contains no `LICENSE`/`COPYING` file | The owner rejected MIT on 2026-08-14; a different license remains required |
+| Distribution identity | No Developer ID Application identity is available; the candidate is ad-hoc signed and not notarized | The owner accepted this disclosed Public Beta risk on 2026-08-14; it still cannot be called stable or Apple-verified |
 | Local artifact | `0.1.0-rc.7` passed the checksum, manifest, SPDX, exact-entitlement, Hardened Runtime, arm64, macOS 15.6 deployment-target, strict code-sign, and DMG checks | The bytes and disclosed trust boundary are inspectable; runtime/support gates remain open |
 
 The retained rc.7 manifest binds its bytes to source commit `a3b8b45ca6f9dad752a9b750422b343d71c04dc8`. Later documentation commits do not invalidate that artifact, but the final downloadable DMG must be rebuilt from the exact `main` commit selected for the release. A tag or Release must never reuse rc.7 while claiming a different source commit.
@@ -39,7 +39,7 @@ The release path is intentionally fail-closed:
 
 1. **Owner decisions**
    - approve a concrete project license and add the matching repository metadata;
-   - choose Developer ID signing/notarization, or record explicit maintainer acceptance of an ad-hoc, unnotarized Public Beta with no automatic updater;
+   - select a non-MIT project license; the ad-hoc, unnotarized Public Beta risk and no-automatic-updater boundary are already accepted;
    - review the still-Proposed release-relevant ADRs and record the accepted or deferred boundary.
 2. **Pull request and CI**
    - open a PR from `agent/native-fsevents-integration` to `main`;
@@ -71,7 +71,7 @@ The release path is intentionally fail-closed:
 
 | Gate | Current evidence | Required closure |
 |---|---|---|
-| License | `licenseInfo = null`; no license file; SPDX uses `NOASSERTION` | Owner selects/approves the license; repository metadata, notices, and SPDX are regenerated consistently |
+| License | MIT rejected; `licenseInfo = null`; no license file; SPDX uses `NOASSERTION` | Owner selects/approves a different license; repository metadata, notices, and SPDX are regenerated consistently |
 | Repository integration | Feature branch is 85 commits ahead; no PR or GitHub Actions run | Reviewed PR, green hosted CI, protected `main`, merge commit identified |
 | Minimum OS | Deployment target is 15.6; current build host is newer | Physical or virtual macOS 15.6 P0 runtime matrix |
 | Current stable OS | Current-host automated and signed-sandbox evidence exists | Repeat the release-source artifact matrix on the then-current stable macOS |
@@ -80,7 +80,7 @@ The release path is intentionally fail-closed:
 | Permissions and volumes | Deterministic/native fixtures and earlier signed-sandbox smokes exist | Complete genuine packaged UI matrix for denial, revocation, stale grants, and volume identity changes |
 | Accessibility and usability | Automated UI coverage exists | Manual VoiceOver/keyboard/visual-accessibility review plus at least six formative sessions |
 | Governance | ADR-003, ADR-004, ADR-006, ADR-008, and ADR-009 remain Proposed | Maintainer review and explicit release disposition |
-| Distribution policy | Ad-hoc warning/checksums are implemented | Developer ID/notarization, or recorded maintainer risk acceptance for a clearly labeled Public Beta |
+| Distribution policy | Ad-hoc warning/checksums are implemented and maintainer risk acceptance is recorded | Complete the remaining artifact/runtime/human gates under the clearly labeled manual-download Public Beta policy |
 
 ## Prohibited shortcuts
 
@@ -98,8 +98,7 @@ Before the next release-producing step, the maintainer must record:
 
 1. the approved project license;
 2. authorization to open the integration PR and the intended reviewer/exception path;
-3. whether the next public artifact will wait for Developer ID/notarization or proceed as an explicitly risk-accepted ad-hoc Public Beta;
-4. the machines or virtual machines that will provide macOS 15.6 and clean-account evidence;
-5. who owns the final manual accessibility, usability, and publication verification.
+3. the machines or virtual machines that will provide macOS 15.6 and clean-account evidence;
+4. who owns the final manual accessibility, usability, and publication verification.
 
 Until those decisions and external qualifications are complete, the correct release decision remains **NO-GO**, even though a locally inspectable DMG exists.

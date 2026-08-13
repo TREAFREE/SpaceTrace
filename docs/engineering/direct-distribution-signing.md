@@ -1,14 +1,14 @@
 # Direct DMG Distribution and Code Signing
 
-Status: **Pre-release policy; public distribution is not yet qualified**
+Status: **Ad-hoc Public Beta policy accepted; public distribution is not yet qualified**
 
-Last updated: 2026-08-10
+Last updated: 2026-08-14
 
 Chinese companion translation: [direct-distribution-signing.zh-CN.md](direct-distribution-signing.zh-CN.md). This English document remains the engineering source of truth.
 
 ## Current decision
 
-SpaceTrace may use an ad-hoc-signed DMG for a small, explicitly trusted tester group while the maintainer has no paid Apple Developer Program membership. This is a testing channel, not a Gatekeeper-trusted public release.
+On 2026-08-14, the maintainer explicitly accepted the distribution risk of an ad-hoc-signed, unnotarized **Public Beta** while no paid Apple Developer Program membership is available. This decision does not make the artifact Gatekeeper-trusted, Apple-verified, notarized, or stable. It authorizes only the distribution policy; the product, repository, minimum-OS, clean-account, permission, accessibility, license, and final release gates remain independent NO-GO conditions.
 
 The executable packaging contract and install/replacement matrix are maintained in the [ad-hoc release candidate checklist](release-candidate-checklist.md). Creating those artifacts does not itself authorize a GitHub Release.
 
@@ -38,6 +38,9 @@ An ad-hoc or local development signature is not accepted for notarization. The s
 - Explain the exact **Open Anyway** steps and that macOS cannot verify the publisher or notarization status.
 - Never call the artifact “signed and notarized” or “Apple verified.”
 - Treat every new downloaded build as a fresh qualification case.
+- Use manual downloads only. The ad-hoc Public Beta must not enable an automatic updater or silently replace an installed build.
+
+The fail-closed [Release Readiness Gate](release-readiness-gate.md) binds the final ad-hoc artifact to the explicit risk decision and every independent release receipt. A future Developer ID/notarized channel requires a separately reviewed verifier version.
 
 ## SpaceTrace-specific release risk
 

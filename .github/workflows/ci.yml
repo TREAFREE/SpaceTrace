@@ -28,6 +28,8 @@ jobs:
         run: |
           swift --version
           xcodebuild -version
+          sqlite3 --version
+          /bin/bash --version | head -n 1
 
       - name: Install verification dependencies
         run: brew install ripgrep

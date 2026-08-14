@@ -70,11 +70,13 @@ codesign -dvvv --entitlements :- SpaceTrace-0.1.0-rc.1.app
 hdiutil verify SpaceTrace-0.1.0-rc.1.dmg
 plutil -extract spdxVersion raw -o - SpaceTrace-0.1.0-rc.1.spdx.json
 plutil -extract packages.0.licenseDeclared raw -o - SpaceTrace-0.1.0-rc.1.spdx.json
+plutil -extract packages.0.licenseConcluded raw -o - SpaceTrace-0.1.0-rc.1.spdx.json
 spctl --assess --type execute --verbose=4 SpaceTrace-0.1.0-rc.1.app
 ```
 
-The first six checks must succeed; the SPDX values must be `SPDX-2.3` and
-`NOASSERTION`. `spctl` is expected to reject this ad-hoc, unnotarized artifact.
+The first seven checks must succeed; the SPDX values must be `SPDX-2.3`,
+`PolyForm-Noncommercial-1.0.0`, and `PolyForm-Noncommercial-1.0.0`.
+`spctl` is expected to reject this ad-hoc, unnotarized artifact.
 A rejection confirms the disclosed trust boundary; it is not a packaging
 failure. An unexpected acceptance must be investigated for a host-local
 Gatekeeper exception and must not be generalized to other Macs.
@@ -82,9 +84,10 @@ Gatekeeper exception and must not be generalized to other Macs.
 The SPDX document is a source/provenance and dependency inventory, not a
 vulnerability attestation. The current graph contains no external Swift
 package or bundled third-party library; Apple frameworks, the system Swift
-runtime, and system `libsqlite3` are platform-provided. `NOASSERTION` is
-intentional: metadata generation does not approve a project license on the
-owner's behalf.
+runtime, and system `libsqlite3` are platform-provided. ADR-010 fixes the
+project license to the official PolyForm Noncommercial 1.0.0 text; packaging
+fails if the repository text, SPDX declarations, notices, or DMG guidance
+drift from that decision.
 
 The automated contract is:
 
@@ -163,8 +166,8 @@ If a replacement build requires directory reselection, the GitHub Release notes 
 
 ## Public-release blockers
 
-This tester channel does not close Developer ID signing, notarization/stapling, a quarantined clean-account **Open Anyway** launch, macOS 15.6 runtime qualification, bookmark continuity across an independently built replacement, the complete permission/replacement matrix, ADR-003/ADR-004/ADR-006/ADR-008/ADR-009 review, project-license approval, manual accessibility/usability review, or the explicit release decision gate. The current-host repeated reconciliation matrix passed 20 of 20 trials, and the SBOM/notices generation contract is implemented, but `NOASSERTION` deliberately keeps the owner license decision open.
+This tester channel does not close Developer ID signing, notarization/stapling, a quarantined clean-account **Open Anyway** launch, macOS 15.6 runtime qualification, bookmark continuity across an independently built replacement, the complete permission/replacement matrix, ADR-003/ADR-004/ADR-006/ADR-008/ADR-009 review, manual accessibility/usability review, or the explicit release decision gate. The current-host repeated reconciliation matrix passed 20 of 20 trials. ADR-010 and the hash-frozen PolyForm/CLA tooling close the repository-license decision, but final release metadata must still be regenerated from the exact integrated release-source commit.
 
-The maintainer accepted the ad-hoc, unnotarized, manual-download Public Beta risk on 2026-08-14 and rejected MIT. Developer ID/notarization remains a stable-release requirement; a different approved project license and all independent Beta evidence are still required.
+The maintainer accepted the ad-hoc, unnotarized, manual-download Public Beta risk and approved PolyForm Noncommercial 1.0.0 plus the SpaceTrace CLA on 2026-08-14. Developer ID/notarization remains a stable-release requirement; all independent Beta evidence remains required.
 
 The dated [Release Integration Audit](release-integration-audit.md) records the separate GitHub, protected-branch, hosted-CI, license, release-source rebuild, runtime, and human-qualification gates that must close before any artifact becomes a public GitHub Release.

@@ -48,7 +48,7 @@ The input is a regular, non-symlink JSON file of at most 64 KiB. It is a flat ob
 | `sourceCommit` | 40-character lowercase Git SHA matching manifest, local `HEAD`, and `origin/main` |
 | `manifestSha256` | SHA-256 of the candidate manifest |
 | `checksumSha256` | SHA-256 of the four-entry checksum file |
-| `licenseIdentifier` | approved SPDX identifier or reviewed `LicenseRef-*`; never `NOASSERTION` or `NONE`, and exactly equal to the SPDX package declaration |
+| `licenseIdentifier` | exactly `PolyForm-Noncommercial-1.0.0`; it must equal both SPDX package declarations and the hash-frozen repository license |
 | `distributionMode` | exactly `adhoc-public-beta` in v1 |
 | `distributionRiskAccepted` | boolean `true`, recording the maintainer decision made on 2026-08-14 |
 | `artifactVerification` | `passed:<sha256>` |
@@ -74,7 +74,7 @@ The artifact directory must be a regular directory containing exactly the six fi
 - manifest and checksum hashes bound by the qualification file;
 - exactly four expected checksum entries and `shasum -a 256 -c` success;
 - manifest schema, version, clean-source claim, source commit, Bundle ID, macOS 15.6 deployment target, arm64-only architecture, filenames, and embedded hashes;
-- SPDX 2.3 version/package declaration and exact approved license match;
+- SPDX 2.3 version plus exact `licenseDeclared`/`licenseConcluded = PolyForm-Noncommercial-1.0.0`, repository-license hash, and notices match;
 - strict code-sign validity, ad-hoc/no-Team-ID truth, and Hardened Runtime;
 - exact three sandbox entitlements;
 - executable hash, arm64 slice, Info.plist identity, no bundled framework/dylib, and system-only dynamic linkage;
@@ -95,6 +95,6 @@ The test uses only disposable temporary data and removes it on exit. It does not
 
 ## Current expected result
 
-No qualification JSON is checked in because the remaining evidence must not be fabricated. The retained rc.7 is expected to fail this gate: it was built from a feature-branch commit, its SPDX license is deliberately `NOASSERTION`, and the macOS 15.6, clean-account, packaged replacement/permission, manual accessibility/usability, governance, and final-release receipts do not yet exist.
+No qualification JSON is checked in because the remaining evidence must not be fabricated. The retained historical rc.7 is expected to fail this gate: it was built from a feature-branch commit, predates the approved license and therefore has `NOASSERTION`, and the macOS 15.6, clean-account, packaged replacement/permission, manual accessibility/usability, governance, and final-release receipts do not yet exist.
 
-The maintainer has rejected MIT and accepted the ad-hoc Public Beta risk boundary. A different approved project license is still required before the SPDX/notices/qualification fields can close. Until every other evidence receipt exists and the final DMG is rebuilt from protected `main`, the correct result remains **NO-GO**.
+The maintainer has accepted the ad-hoc Public Beta risk boundary and ADR-010's PolyForm Noncommercial 1.0.0 plus CLA decision. The repository-license gate is closed, but until every other evidence receipt exists and the final DMG is rebuilt from protected `main` with the approved metadata, the correct result remains **NO-GO**.

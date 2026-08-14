@@ -6,13 +6,15 @@ All notable user-visible changes are recorded in this file.
 
 ### Added
 
-- Generate the bilingual `READ-ME-FIRST.txt` inside every ad-hoc Public Beta DMG from one deterministic, version/source-bound contract. It includes exact SHA-256 and manifest checks, the per-app **Open Anyway** flow, the no-global-Gatekeeper-bypass rule, manual-update-only and unqualified-rollback limits, and the promise that SpaceTrace never cleans or deletes user files. Packaging and final readiness compare the mounted notice byte-for-byte with a fresh source-generated copy.
-- Add a read-only, fail-closed ad-hoc Public Beta readiness gate that binds the exact six release artifacts to clean `main`/`origin/main`, source and checksum hashes, an approved non-`NOASSERTION` license, the accepted distribution-risk decision, and a path-free repository-integration receipt plus every minimum-OS, current-OS, Gatekeeper, replacement, permission, accessibility, usability, privacy, governance, severity, and final-GO receipt. Its disposable signed-App/read-only-DMG contract covers 23 positive and adversarial cases.
+- Accept the official PolyForm Noncommercial License 1.0.0 and a contributor-retaining CLA that gives the Project Owner commercial/relicensing rights. The official text is hash-frozen; README, CONTRIBUTING, the PR checkbox, SPDX, notices, DMG guidance, and release readiness all enforce the exact noncommercial/source-available boundary.
+- Add a manifest/executable/signature-bound minimum-OS preflight. Only the final ad-hoc RC running on arm64 macOS 15.6.x may produce a path-free `passed` receipt; newer hosts require an explicit smoke flag and can emit only `smoke`.
+- Generate the bilingual `READ-ME-FIRST.txt` inside every ad-hoc Public Beta DMG from one deterministic, version/source-bound contract. It includes exact SHA-256 and manifest checks, the PolyForm noncommercial boundary, the per-app **Open Anyway** flow, the no-global-Gatekeeper-bypass rule, manual-update-only and unqualified-rollback limits, and the promise that SpaceTrace never cleans or deletes user files. Packaging and final readiness compare the mounted notice byte-for-byte with a fresh source-generated copy.
+- Add a read-only, fail-closed ad-hoc Public Beta readiness gate that binds the exact six release artifacts to clean `main`/`origin/main`, source and checksum hashes, the exact approved PolyForm license, the accepted distribution-risk decision, and a path-free repository-integration receipt plus every minimum-OS, current-OS, Gatekeeper, replacement, permission, accessibility, usability, privacy, governance, severity, and final-GO receipt. Its disposable signed-App/read-only-DMG contract covers 24 positive and adversarial cases.
 - Add deterministic SPDX 2.3 and third-party-notices release metadata, final
   Mach-O dependency auditing, manifest hash binding, four-file checksum
   verification, and a six-artifact RC contract. The current build graph has no
-  external Swift package or bundled third-party library; project licensing
-  remains `NOASSERTION` pending owner approval.
+  external Swift package or bundled third-party library; both package license
+  fields now declare `PolyForm-Noncommercial-1.0.0`.
 - Add a previewed, user-initiated diagnostic JSON export with default
   per-export path tokenization, per-export full-path confirmation, bounded
   finding selection, no upload surface, cancellation-safe atomic writes, and
@@ -37,13 +39,17 @@ All notable user-visible changes are recorded in this file.
 - Allow users to replace or remove a watched-directory grant without deleting monitored files or historical measurements.
 - Add deterministic authorization coordinator, view-model, sandbox entitlement, and UI smoke coverage plus an English/Chinese qualification protocol.
 
+### Fixed
+
+- Align the native FSEvents replay integration test with Apple's per-device cursor contract: a mutation must be replayed after the earlier cursor before the history-complete sentinel, while live and persisted callbacks are allowed to carry different monotonically increasing IDs when FSEvents coalesces them differently.
+
 ### Release decision — NO-GO retained; evidence refreshed 2026-08-14
 
 - **Public Beta: NO-GO.** No tag, GitHub Release, or artifact upload is authorized by this record.
 - **Local engineering RC generation: CONDITIONAL GO.** Maintainers may generate `0.1.0-rc.7` ad-hoc artifacts to continue controlled testing. They are not Apple-verified, are expected to be rejected by Gatekeeper, and are limited to Apple Silicon with a declared—not runtime-qualified—macOS 15.6 minimum.
 - The current-host 25-hour ad-hoc endurance run and its Activity Monitor/thermal evidence passed. The current-host controlled UI runner passed fifteen authorization/history/finding/export scenarios; the real signed-sandbox save panel wrote a bounded redacted JSON export and passed three consecutive repetitions.
 - The retained `rc.7` package from pushed commit `a3b8b45` passed strict signing, exact-entitlement, final dependency audit, arm64, deployment-target, read-only DMG, manifest, four-entry checksum, SPDX/notices, and quarantined-copy integrity checks. Gatekeeper returned 3 and distribution policy returned 70 for the disclosed ad-hoc and missing-notary reasons. Non-quarantined `rc.6 → rc.7` and `rc.7 → rc.6` process replacement rows passed; they selected no directory and do not qualify bookmark or schema rollback. Exact disposable-container cleanup remained blocked by macOS privacy and is not counted as passed. The non-interactive qualifier refuses quarantined inputs before launch so the clean-account **Open Anyway** gate cannot be mistaken for a process failure.
-- On 2026-08-14 the maintainer accepted an ad-hoc, unnotarized, manual-download Public Beta with explicit Gatekeeper warnings and no automatic updater, and rejected MIT. Public blockers remain: macOS 15.6 runtime; genuine bookmark/permission/replacement matrices; manual assistive-technology review of the implemented finding/reconciliation/export UI; ADR-003/004/006/008/009 approval; clean-account Gatekeeper-exception launch and rollback; an approved non-MIT project license; and required usability evidence. The versioned correction implementation/current-host 20-of-20 5 GiB matrix, FR-007/KPI-03 corpus, FR-014 implementation/current-host signed-sandbox export, deterministic SBOM/notices generation, and Beta distribution-policy decision are closed.
+- On 2026-08-14 the maintainer accepted an ad-hoc, unnotarized, manual-download Public Beta with explicit Gatekeeper warnings and no automatic updater, and approved PolyForm Noncommercial 1.0.0 plus the SpaceTrace CLA. Public blockers remain: macOS 15.6 runtime; genuine bookmark/permission/replacement matrices; manual assistive-technology review of the implemented finding/reconciliation/export UI; ADR-003/004/006/008/009 approval; repository PR/hosted-CI/protected-main integration; clean-account Gatekeeper-exception launch and rollback; final release-source artifact regeneration; and required usability evidence. The license/CLA decision, versioned correction implementation/current-host 20-of-20 5 GiB matrix, FR-007/KPI-03 corpus, FR-014 implementation/current-host signed-sandbox export, deterministic SBOM/notices generation, and Beta distribution-policy decision are closed.
 
 ### Draft tester notes — not published
 

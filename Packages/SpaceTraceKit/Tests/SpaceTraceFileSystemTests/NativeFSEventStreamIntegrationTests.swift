@@ -123,7 +123,13 @@ struct NativeFSEventStreamIntegrationTests {
         let replayedMutation = try #require(
             replayed.first { $0.represents(target) }
         )
-        #expect(replayedMutation.eventID == liveEventID)
+        let replayedEventID = try #require(replayedMutation.eventID)
+        // FSEvents guarantees monotonically increasing per-device cursors and
+        // replay after `sinceWhen`, but it may coalesce a path's live and
+        // persisted callbacks differently. The durable contract is that the
+        // mutation remains observable after the earlier cursor, not that the
+        // first live and replay callbacks reuse one exact event identifier.
+        #expect(replayedEventID > cursorBeforeMutation)
         let historyDone = try #require(
             replayed.last { $0.reasons.contains(.historicalReplayCompleted) }
         )

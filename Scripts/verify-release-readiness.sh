@@ -181,8 +181,14 @@ print -r -- "$license_identifier" \
 script_directory=${0:A:h}
 repository_root=${script_directory:h}
 install_notice_generator="$script_directory/generate-public-beta-install-notice.sh"
+readonly approved_license_identifier=PolyForm-Noncommercial-1.0.0
+readonly approved_license_sha256=c0ea4a896d2c8c394b29f9427589996db826cd501c512279ff0ed3ef48fabbe5
+[[ $license_identifier == $approved_license_identifier ]] || nogo "license"
 cd "$repository_root"
 [[ -x $install_notice_generator ]] || nogo "artifact contract"
+[[ -f LICENSE.md && ! -L LICENSE.md \
+    && $(/usr/bin/shasum -a 256 LICENSE.md | /usr/bin/awk '{print $1}') \
+        == $approved_license_sha256 ]] || nogo "license"
 [[ $(git rev-parse --show-toplevel 2>/dev/null) == $repository_root ]] \
     || nogo "repository integration"
 [[ -z $(git status --porcelain=v1 --untracked-files=all 2>/dev/null) ]] \
@@ -294,7 +300,16 @@ manifest_value() {
 
 [[ $(plutil -extract spdxVersion raw -expect string -o - "$sbom_path" 2>/dev/null) == SPDX-2.3 \
     && $(plutil -extract packages.0.versionInfo raw -expect string -o - "$sbom_path" 2>/dev/null) == $release_version \
-    && $(plutil -extract packages.0.licenseDeclared raw -expect string -o - "$sbom_path" 2>/dev/null) == $license_identifier ]] \
+    && $(plutil -extract packages.0.licenseDeclared raw -expect string -o - "$sbom_path" 2>/dev/null) == $approved_license_identifier \
+    && $(plutil -extract packages.0.licenseConcluded raw -expect string -o - "$sbom_path" 2>/dev/null) == $approved_license_identifier ]] \
+    || nogo "license"
+/usr/bin/grep -Fxq \
+    'Project license: PolyForm Noncommercial License 1.0.0.' \
+    "$notices_path" || nogo "license"
+/usr/bin/grep -Fxq \
+    'https://polyformproject.org/licenses/noncommercial/1.0.0' \
+    "$notices_path" || nogo "license"
+/usr/bin/grep -Fxq 'Commercial use is not licensed.' "$notices_path" \
     || nogo "license"
 
 codesign --verify --deep --strict --verbose=2 "$app_path" >/dev/null 2>&1 \

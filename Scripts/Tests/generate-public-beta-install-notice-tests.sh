@@ -67,6 +67,16 @@ grep -Fq 'Manual downloads only; this Beta has no automatic updater.' "$first"
 grep -Fq '仅支持手动下载；此 Beta 不包含自动更新器。' "$first"
 grep -Fq 'SpaceTrace tracks storage change; it does not clean or delete files.' "$first"
 grep -Fq 'SpaceTrace 只跟踪存储变化，不会清理或删除文件。' "$first"
+grep -Fq \
+    'License: PolyForm Noncommercial 1.0.0; noncommercial use, modification, and sharing are permitted.' \
+    "$first"
+grep -Fq 'Commercial use is not licensed.' "$first"
+grep -Fq \
+    '许可证：PolyForm Noncommercial 1.0.0；允许非商业使用、修改与分享，不授予商业使用权。' \
+    "$first"
+grep -Fxq \
+    'https://polyformproject.org/licenses/noncommercial/1.0.0' \
+    "$first"
 
 if grep -Eq 'spctl[[:space:]]+--master-disable|xattr[[:space:]]+-[[:alnum:]]*r' "$first"; then
     printf 'FAIL: install notice contains a broad Gatekeeper bypass\n' >&2

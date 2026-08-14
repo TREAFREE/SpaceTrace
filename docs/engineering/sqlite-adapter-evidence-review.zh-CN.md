@@ -8,7 +8,7 @@
 
 ## 决策摘要
 
-GRDB 7.10.0 在技术和许可上都适用于 SpaceTrace：官方 package 支持 macOS 10.15+、Swift 6.1+/Xcode 16.3+、SPM、系统 SQLite、迁移、WAL 读连接池及备份 API。其 MIT 许可与计划中的开源应用兼容，但分发时必须保留版权和许可声明。
+GRDB 7.10.0 在技术和许可上都适用于 SpaceTrace：官方 package 支持 macOS 10.15+、Swift 6.1+/Xcode 16.3+、SPM、系统 SQLite、迁移、WAL 读连接池及备份 API。作为依赖，其宽松 MIT 条款与 SpaceTrace 的 PolyForm 非商业源码可见分发兼容，但分发时必须保留 GRDB 的版权和许可声明。
 
 不过，SpaceTrace 在第一阶段剩余工作中继续使用隔离在 repository 内的原生 SQLite 适配器。当前持久事件日志、校准发布和恢复契约仍在演进；此时引入 GRDB 会替换已经有测试保护的事务代码，却还没有经测量证明产品收益。当历史查询真正需要并发读快照时，GRDB 仍是首选候选，但必须先通过行为等价和性能 spike。
 

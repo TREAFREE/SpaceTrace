@@ -66,11 +66,29 @@ script_directory=${0:A:h}
 repository_root=${script_directory:h}
 cd "$repository_root"
 
+readonly project_license_identifier=PolyForm-Noncommercial-1.0.0
+readonly project_license_name='PolyForm Noncommercial License 1.0.0'
+readonly project_license_url='https://polyformproject.org/licenses/noncommercial/1.0.0'
+readonly project_license_sha256=c0ea4a896d2c8c394b29f9427589996db826cd501c512279ff0ed3ef48fabbe5
+
 [[ $(git rev-parse --show-toplevel) == $repository_root ]] \
     || fail "script must run from the SpaceTrace Git worktree"
 resolved_commit=$(git rev-parse --verify "$commit^{commit}" 2>/dev/null) \
     || fail "commit does not resolve to a local Git commit"
 [[ $resolved_commit == $commit ]] || fail "commit did not resolve exactly"
+
+[[ -f LICENSE.md && ! -L LICENSE.md ]] \
+    || fail "approved project license is missing or not a regular file"
+actual_license_sha256=$(/usr/bin/shasum -a 256 LICENSE.md \
+    | /usr/bin/awk '{print $1}')
+[[ $actual_license_sha256 == $project_license_sha256 ]] \
+    || fail "approved project license does not match the frozen official text"
+committed_license_sha256=$(git cat-file blob "$commit:LICENSE.md" 2>/dev/null \
+    | /usr/bin/shasum -a 256 \
+    | /usr/bin/awk '{print $1}') \
+    || fail "source commit does not contain the approved project license"
+[[ $committed_license_sha256 == $project_license_sha256 ]] \
+    || fail "source commit license does not match the frozen official text"
 
 [[ ! -e Packages/SpaceTraceKit/Package.resolved ]] \
     || fail "release metadata forbids a Swift package resolution file"
@@ -126,8 +144,10 @@ document_namespace="https://github.com/TREAFREE/SpaceTrace/spdx/SpaceTrace-$name
 /usr/bin/plutil -insert packages.0.downloadLocation -string \
     "https://github.com/TREAFREE/SpaceTrace/tree/$commit" "$plist_stage"
 /usr/bin/plutil -insert packages.0.filesAnalyzed -bool false "$plist_stage"
-/usr/bin/plutil -insert packages.0.licenseConcluded -string NOASSERTION "$plist_stage"
-/usr/bin/plutil -insert packages.0.licenseDeclared -string NOASSERTION "$plist_stage"
+/usr/bin/plutil -insert packages.0.licenseConcluded -string \
+    "$project_license_identifier" "$plist_stage"
+/usr/bin/plutil -insert packages.0.licenseDeclared -string \
+    "$project_license_identifier" "$plist_stage"
 /usr/bin/plutil -insert packages.0.copyrightText -string NOASSERTION "$plist_stage"
 /usr/bin/plutil -insert packages.0.primaryPackagePurpose -string APPLICATION "$plist_stage"
 /usr/bin/plutil -insert packages.0.summary -string \
@@ -163,8 +183,11 @@ document_namespace="https://github.com/TREAFREE/SpaceTrace/spdx/SpaceTrace-$name
     print 'and the system libsqlite3 supplied by macOS. Those components are provided by'
     print 'the operating system and are not redistributed as third-party packages here.'
     print
-    print 'Project license status: NOASSERTION. The repository owner has not yet approved'
-    print 'a project license, and this inventory does not make that legal decision.'
+    print "Project license: $project_license_name."
+    print "$project_license_url"
+    print 'Commercial use is not licensed.'
+    print 'Noncommercial use, modification, and distribution are permitted.'
+    print 'SpaceTrace is source-available and is not offered as OSI-approved open source.'
     print
     print "Release: $version"
     print "Source commit: $commit"
@@ -175,7 +198,10 @@ if /usr/bin/grep -Fq "$repository_root" "$sbom_stage" "$notices_stage"; then
 fi
 
 chmod 0644 "$sbom_stage" "$notices_stage"
-/bin/mv "$sbom_stage" "$sbom"
-/bin/mv "$notices_stage" "$notices"
+/bin/ln "$sbom_stage" "$sbom" || fail "SBOM output appeared concurrently"
+/bin/ln "$notices_stage" "$notices" || {
+    /bin/rm -f -- "$sbom"
+    fail "notices output appeared concurrently"
+}
 
 print "release metadata generation: PASS"

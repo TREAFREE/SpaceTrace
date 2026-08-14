@@ -77,6 +77,9 @@ Security notice
 ---------------
 This build is ad-hoc signed and not notarized. macOS cannot verify its publisher.
 SpaceTrace tracks storage change; it does not clean or delete files.
+License: PolyForm Noncommercial 1.0.0; noncommercial use, modification, and sharing are permitted.
+Commercial use is not licensed.
+https://polyformproject.org/licenses/noncommercial/1.0.0
 
 Before installation, download the DMG, manifest, SHA-256 file, SPDX document, and
 third-party notices from the same GitHub Release. In that download directory run:
@@ -102,6 +105,7 @@ A replacement may require directory reselection; rollback is not yet qualified.
 --------
 此构建仅采用 ad-hoc 签名且未经过 Apple 公证；macOS 无法验证发布者身份。
 SpaceTrace 只跟踪存储变化，不会清理或删除文件。
+许可证：PolyForm Noncommercial 1.0.0；允许非商业使用、修改与分享，不授予商业使用权。
 
 安装前，请从同一个 GitHub Release 下载 DMG、manifest、SHA-256 文件、SPDX 文档和
 第三方声明，并在这些下载文件所在的目录执行上面的两条命令。四项 checksum 必须全部
@@ -121,5 +125,7 @@ SpaceTrace 只跟踪存储变化，不会清理或删除文件。
 NOTICE
 
 /bin/chmod 644 "$temporary_output"
-/bin/mv "$temporary_output" "$output_path"
+/bin/ln "$temporary_output" "$output_path" \
+    || fail "output appeared concurrently"
+/bin/rm -f -- "$temporary_output" || fail "could not finalize output"
 temporary_output=""

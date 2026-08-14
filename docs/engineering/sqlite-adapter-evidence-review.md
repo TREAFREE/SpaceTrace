@@ -8,7 +8,7 @@ Chinese companion: [sqlite-adapter-evidence-review.zh-CN.md](sqlite-adapter-evid
 
 ## Decision summary
 
-GRDB 7.10.0 is technically and legally viable for SpaceTrace: its official package supports macOS 10.15+, Swift 6.1+/Xcode 16.3+, SPM integration, the system SQLite library, migrations, pooled WAL access, and backup APIs. Its MIT terms are compatible with the planned open-source application when the copyright and license notice are distributed.
+GRDB 7.10.0 is technically and legally viable for SpaceTrace: its official package supports macOS 10.15+, Swift 6.1+/Xcode 16.3+, SPM integration, the system SQLite library, migrations, pooled WAL access, and backup APIs. Its permissive MIT dependency terms are compatible with SpaceTrace's PolyForm noncommercial source-available distribution when the GRDB copyright and license notice are preserved.
 
 SpaceTrace will nevertheless retain the repository-isolated raw SQLite adapter for the remainder of phase one. Introducing GRDB while the durable journal, calibration publication, and recovery contracts are still changing would replace already-tested transaction code without yet providing a measured product benefit. GRDB remains the preferred candidate when history queries require concurrent read snapshots, provided a parity and performance spike passes first.
 

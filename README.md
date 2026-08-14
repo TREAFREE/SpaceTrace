@@ -52,12 +52,12 @@ The MVP does **not** promise exact process attribution, reproduce Apple's System
 - Minimum-version qualification: build/test configuration is aligned; a macOS 15.6 runtime matrix remains required before Public Beta
 - Proposed implementation: Swift, SwiftUI with targeted AppKit integration
 - Implemented foundation: local `SpaceTraceKit` modules for domain observations, deterministic path/context attribution with versioned evidence and Unknown fallback, bounded FSEvents and mount lifecycles, security-scoped directory authorization, a metadata-only bounded calibration scanner, revision-safe SQLite publication, multi-root baseline UI, monotonic startup-volume capacity history, conservative storage reconciliation, typed power/thermal/sleep pause-and-retry scheduling, and qualified 24-hour menu-bar evidence
-- Proposed license: MIT (**TBD until explicitly approved**)
+- License: [PolyForm Noncommercial License 1.0.0](LICENSE.md) — source-available; noncommercial use, modification, and distribution are permitted, while commercial use by ordinary recipients is not licensed
 - Distribution and signing: fail-closed ad-hoc RC packaging is implemented for trusted testing; Developer ID, notarization, the complete replacement matrix, and update strategy remain release blockers
 
 ## Contributing
 
-Contribution rules, review gates, and decision processes are defined in [CONTRIBUTING.md](CONTRIBUTING.md). Run `make verify` before submitting a change. Feature work should continue to prioritize validation spikes, fixtures, accepted decisions, and explicit evidence boundaries.
+Contribution rules, the [Contributor License Agreement](CONTRIBUTOR_LICENSE_AGREEMENT.md), review gates, and decision processes are defined in [CONTRIBUTING.md](CONTRIBUTING.md). Contributors retain ownership while granting the repository owner the additional rights needed for future commercial licensing. Run `make verify` before submitting a change. Feature work should continue to prioritize validation spikes, fixtures, accepted decisions, and explicit evidence boundaries.
 
 ## Decision hierarchy
 

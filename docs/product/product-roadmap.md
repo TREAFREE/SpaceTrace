@@ -30,10 +30,10 @@ This roadmap is a sequencing and evidence plan, not a promise that every propose
 | Update/replacement and bookmark continuity | Partial — release blocking | Non-quarantined `rc.6 → rc.7` and `rc.7 → rc.6` fresh/same-build/replacement process launches passed under disposable IDs. The qualifier rejects quarantined inputs before launch; no bookmark was created, so cross-build restore/reselection behavior remains open |
 | Migration, corruption, and retention | Partial | Deterministic current-schema/golden-fixture recovery and large-row benchmarks passed; packaged upgrade, downgrade, and rollback remain open |
 | Permission, stale, denial, and external-volume RC matrix | Partial | Deterministic and earlier sandbox/native rows exist; genuine stale/denial, different-UUID packaged UI, and active-scan revocation remain open |
-| License, notices, and SBOM | Partial — replacement license required | Deterministic SPDX 2.3 and third-party notices are generated, checksummed, and final-binary audited; no external Swift package or bundled third-party library was found. The owner rejected MIT on 2026-08-14, and `licenseDeclared = NOASSERTION` remains until a different license is explicitly approved |
+| License, notices, and SBOM | Passed for repository/tooling scope | ADR-010 accepts the exact official PolyForm Noncommercial License 1.0.0 plus a CLA. The official text is hash-frozen; SPDX `licenseDeclared`/`licenseConcluded`, notices, DMG instructions, README, contribution flow, and release readiness all enforce `PolyForm-Noncommercial-1.0.0`. No external Swift package or bundled third-party library was found. Final artifacts must still be regenerated from the selected release-source commit. |
 | Usability and severity gates | Open — release blocking | Required formative sessions, KPI review, and release-specific Sev-0/Sev-1 triage record are incomplete |
 
-The next release review may change `NO-GO` only after every release-blocking row has linked, current evidence. A paid signing identity alone is not sufficient because product-completeness, minimum-OS, usability, accessibility, license, and update/rollback gates are independent.
+The next release review may change `NO-GO` only after every release-blocking row has linked, current evidence. A paid signing identity alone is not sufficient because product-completeness, minimum-OS, usability, accessibility, repository-integration, and update/rollback gates are independent.
 
 ## Planning Rules
 
@@ -41,7 +41,7 @@ The next release review may change `NO-GO` only after every release-blocking row
 2. Work is organized around risk retirement: measurement semantics and overhead first; polish and scope expansion later.
 3. “Done” means code, tests, documentation, accessibility, privacy review, migration impact, and observable acceptance evidence are complete in the same change.
 4. Any feature that deletes user data, terminates a process, modifies a system database, uploads diagnostics, or depends on an opaque AI decision is out of scope.
-5. The ad-hoc, unnotarized, manual-download Public Beta distribution policy is accepted; Developer ID/notarization remains required for stable. Beta languages, Intel support, and the 1.0 date remain TBD until their stated decision points.
+5. The ad-hoc, unnotarized, manual-download Public Beta distribution policy is accepted; Developer ID/notarization remains required for stable. PolyForm Noncommercial 1.0.0 plus the CLA is the accepted source-available licensing model. Beta languages, Intel support, and the 1.0 date remain TBD until their stated decision points.
 6. Discovery can invalidate or materially narrow the plan. A stop or pivot is a valid outcome when the core attribution cannot meet credibility and overhead gates.
 
 ## Milestone Summary
@@ -104,7 +104,7 @@ Convert the opportunity research into validated user problems, precise size sema
 - Representative users consistently want one-time cleanup rather than longitudinal explanation.
 - A useful selected-folder experience is impossible without mandatory Full Disk Access.
 - Public APIs cannot produce a credible delta after reconciliation on supported OS versions.
-- A direct maintained competitor already provides the same longitudinal evidence, privacy model, and open-source position with no meaningful differentiation.
+- A direct maintained competitor already provides the same longitudinal evidence, privacy model, and source-availability position with no meaningful differentiation.
 
 ### Dependencies
 
@@ -350,7 +350,7 @@ Each milestone produces an evidence pack containing:
 | Qualify the accepted macOS 15.6 Apple Silicon baseline on the minimum-runtime matrix | Engineering + Product owners (TBD) | Public Beta entry | Public compatibility claim and Beta release remain blocked |
 | Approve core architecture and persistence choice | Architecture owner (TBD) | Prototype exit | Alpha cannot start |
 | Approve size semantics and unknown/coverage language | Product + Engineering (TBD) | Prototype exit | No user-visible attribution |
-| Approve a non-MIT project license and regenerate repository/release metadata | Project owner (TBD) | Before Public Beta artifact publication | No public release |
+| Preserve the accepted PolyForm/CLA contract and regenerate exact release metadata from the release-source commit | Project owner | Decided 2026-08-14; verify for every RC | Metadata mismatch blocks publication |
 | Confirm Full Disk Access UX and selected-folder fallback | Product + Security (TBD) | Alpha exit | Beta blocked |
 | Select Beta language(s) | Product owner (TBD) | Alpha exit | Localization/documentation freeze blocked |
 | Qualify the accepted ad-hoc, unnotarized Public Beta policy | Project owner + QA (TBD) | Beta entry | Public Beta remains blocked until clean-account and full readiness receipts pass; Developer ID remains required for stable |

@@ -1,8 +1,8 @@
 # 后台长时间运行资格验证
 
-状态：**当前主机 ad-hoc 长跑已通过；Apple 身份与 macOS 15.6 矩阵仍待完成**
+状态：**当前主机 ad-hoc 长跑已通过；最终 RC 的 macOS 15.6 矩阵仍待完成**
 
-最后复核：2026-08-10
+最后复核：2026-08-14
 
 英文原文：[Background Soak Qualification](background-soak-qualification.md)
 
@@ -57,7 +57,7 @@ SpaceTrace/Diagnostics/BackgroundQualification/
 
 开启后，菜单栏会持续显示“正在本机记录”的提示。如果 writer 创建失败，正常监控仍会继续，但 UI 不会谎称诊断正在工作。
 
-正式发布证据必须使用签名沙盒构建。ad-hoc 签名可用于当前主机的工程 smoke，但不能作为 Developer ID 分发证据。
+正式发布证据必须使用与 manifest 精确绑定的最终签名沙盒 RC。maintainer 已批准的 Public Beta 采用 ad-hoc 签名且不公证；这一事实只适用于明确披露的 Beta，不构成 Developer ID、公证、发布者身份或未来稳定版证据。
 
 ## 自动分析器
 
@@ -80,12 +80,14 @@ swift run --package-path Packages/SpaceTraceKit \
 
 ```bash
 Scripts/qualify-background-soak.sh \
-  "/path/to/SpaceTrace.app" \
+  "/path/to/SpaceTrace-0.1.0-beta.1.app" \
+  "/path/to/SpaceTrace-0.1.0-beta.1.manifest.json" \
   "/path/to/BackgroundQualification" \
-  "/path/to/qualification-report.json"
+  "/path/to/qualification-report.json" \
+  "/path/to/minimum-os-preflight.json"
 ```
 
-既有的 `SPACETRACE_ALLOW_NEWER_HOST_SMOKE` 与 `SPACETRACE_ALLOW_ADHOC_SMOKE` 只允许产生清楚标记为“不计入资格”的预检结果；设置 `SPACETRACE_SOAK_SMOKE_SECONDS` 时，分析器也会切换为 smoke 策略。
+`SPACETRACE_SOAK_SMOKE_SECONDS` 会同时选择分析器 smoke 策略和显式的较新系统预检模式；wrapper 最终只能报告 `SMOKE`，不能报告 `PASS`。旧的签名/主机 override 环境变量已不再接受。未启用 smoke 策略时，只有 macOS 15.6.x arm64 的预检回执才能进入资格分析。
 
 默认策略要求全部满足：
 
@@ -123,7 +125,8 @@ Scripts/qualify-background-soak.sh \
 
 ```bash
 Scripts/run-current-host-soak.sh start \
-  "/path/to/SpaceTrace.app" \
+  "/path/to/SpaceTrace-0.1.0-beta.1.app" \
+  "/path/to/SpaceTrace-0.1.0-beta.1.manifest.json" \
   "$HOME/Library/Application Support/SpaceTraceQualification/<run-id>" \
   90000
 ```

@@ -1,10 +1,10 @@
 # 用户选择目录 UI 与沙盒资格验证
 
-**状态：** 已实现；当前主机 smoke 已完成；macOS 15.6 运行门禁等待 15.6 环境和稳定 Apple 签名身份
+**状态：** 已实现；与 manifest 绑定的 ad-hoc Public Beta 自动预检已完成；由于当前没有 15.6 环境，macOS 15.6 真实运行和人工矩阵仍保持开放
 
 **范围：** FR-001、FR-011、FR-015、FR-016、NFR-008
 
-**最后更新：** 2026-07-19
+**最后更新：** 2026-08-14
 
 ## 1. 目的与证据边界
 
@@ -17,7 +17,7 @@
 5. 移除授权会先停止监控，只移除 bookmark，再恢复监控；不会删除用户文件或历史测量；
 6. 暂时缺席的外置卷可以恢复，但 scope 不能静默扩大。
 
-在更新版本 macOS 上编译通过，不代表应用已在 macOS 15.6 正确运行。本机 ad-hoc 签名可用于实现 smoke 测试，但不能作为分发、公证或稳定容器身份的资格证据。
+在更新版本 macOS 上编译通过，不代表应用已在 macOS 15.6 正确运行。maintainer 已接受明确披露的 ad-hoc、未公证 Public Beta，因此最终 ad-hoc 产物可以在 macOS 15.6 上关闭本 Beta 的自动最低系统预检；但它绝不证明 Developer ID、公证、发布者身份或未来稳定版的容器策略。
 
 ## 2. 被验证的架构
 
@@ -43,27 +43,32 @@ flowchart LR
 make verify
 ```
 
-在 Apple Silicon macOS 15.6 主机上，对使用 Apple Development 或 Developer ID Application 身份签名的 App 运行：
+在 Apple Silicon macOS 15.6 主机上，对最终解包 RC App 及其 manifest 运行：
 
 ```bash
-Scripts/qualify-user-selected-directory.sh /absolute/path/to/SpaceTrace.app
+make qualify-user-selected-directory \
+  APP=/绝对路径/SpaceTrace-0.1.0-beta.1.app \
+  MANIFEST=/绝对路径/SpaceTrace-0.1.0-beta.1.manifest.json \
+  REPORT=/绝对路径/minimum-os-preflight.json
 ```
 
-脚本采用 fail-closed：只有主机为 macOS 15.6.x、架构为 arm64、签名严格校验通过、`LSMinimumSystemVersion` 恰为 15.6，且以下 entitlement 为 true 时才通过：
+脚本采用 fail-closed：只有 manifest 精确且绑定干净源码，App 版本、提交、可执行文件哈希、架构、部署目标、Bundle 身份、ad-hoc/无 Team ID 签名和 Hardened Runtime 全部一致，主机为 macOS 15.6.x arm64，并且以下 entitlement 精确存在时才通过：
 
 - `com.apple.security.app-sandbox`
 - `com.apple.security.files.user-selected.read-write`（仅用于 `NSSavePanel` 中用户选择的诊断导出文件；监控 bookmark 仍使用 `.securityScopeAllowOnlyReadAccess`）
 - `com.apple.security.files.bookmarks.app-scope`
 
-只在更新系统和 ad-hoc 签名上做“不计入资格”的 smoke 预检时，可运行：
+只在更新系统上做“不计入资格”的 smoke 预检时，可运行：
 
 ```bash
-SPACETRACE_ALLOW_NEWER_HOST_SMOKE=1 \
-SPACETRACE_ALLOW_ADHOC_SMOKE=1 \
-Scripts/qualify-user-selected-directory.sh /absolute/path/to/SpaceTrace.app
+make qualify-user-selected-directory \
+  APP=/绝对路径/SpaceTrace-0.1.0-beta.1.app \
+  MANIFEST=/绝对路径/SpaceTrace-0.1.0-beta.1.manifest.json \
+  REPORT=/绝对路径/current-host-smoke.json \
+  ALLOW_NEWER_HOST_SMOKE=1
 ```
 
-输出中的 warning 是证据的一部分：它防止开发机 smoke 被误报为最低支持系统或分发签名资格。
+该模式只会打印 `SMOKE`，JSON 中写入 `status: "smoke"`，绝不会打印 `PASS`。旧环境变量 override 已不再接受。权限为 `0600` 的 JSON 回执不包含 App、manifest、主目录或卷路径；它绑定版本/源码/manifest/可执行文件身份，并明确 Q-01 至 Q-06 仍需人工执行。预检通过只是人工矩阵的一项输入，不能替代矩阵结论。
 
 ## 4. 受控测试夹具
 
@@ -84,7 +89,7 @@ Scripts/qualify-user-selected-directory.sh /absolute/path/to/SpaceTrace.app
 3. 用键盘操作“选择目录…”；
 4. 选择受控子目录，而不是其父目录；
 5. 确认 UI 显示“目录已授权”和精确 root；
-6. 确认没有写权限 entitlement，也没有 Full Disk Access 提示。
+6. 确认监控 scope 由只读 bookmark 恢复、没有修改被监控文件，也没有 Full Disk Access 提示；单独的“用户选择位置读写” entitlement 只保留给 `NSSavePanel` 中精确选择的诊断导出目标。
 
 通过标准：系统选择器只能由用户触发；取消后状态不变；只有持久化与 runtime 重启都成功后才显示授权成功。
 
@@ -133,7 +138,7 @@ Scripts/qualify-user-selected-directory.sh /absolute/path/to/SpaceTrace.app
 
 在物理或虚拟 Apple Silicon macOS 15.6.x 环境中：
 
-1. 不设置任何 smoke override，运行自动预检；
+1. 不带 `--allow-newer-host-smoke` 运行自动预检，并保留 `passed` JSON 回执；
 2. 执行 Q-01 至 Q-05；
 3. 运行 package tests、App 单元测试，以及该系统可运行的 UI/可访问性 smoke 矩阵；
 4. 记录准确的 `sw_vers` product/build 和 Xcode 版本；
@@ -148,12 +153,13 @@ Scripts/qualify-user-selected-directory.sh /absolute/path/to/SpaceTrace.app
 | App commit | 完整 Git commit SHA |
 | App 版本/build | `CFBundleShortVersionString` / `CFBundleVersion` |
 | 主机 | `ProductVersion`、`BuildVersion`、arm64 |
-| 签名 | Apple 身份类别；ad-hoc 只能用于 smoke |
-| Entitlement | sandbox、用户选择只读、app-scoped bookmark |
+| 签名 | 本次获批 Beta 的精确 ad-hoc/无 Team ID/Hardened Runtime 事实；不声称 Apple 身份 |
+| 自动预检 | 不含路径的 JSON 回执 SHA-256；只有 macOS 15.6.x 才能写 `passed` |
+| Entitlement | sandbox、仅用于诊断保存的用户选择读写、app-scoped bookmark；监控 bookmark 明确只读 |
 | Q-01…Q-06 | 通过 / 失败 / 阻塞及稳定原因码 |
 | 敏感证据 | 无 |
 
-绝不能把“没有 macOS 15.6 主机或 Apple 签名身份而阻塞”改写为通过。
+绝不能把“没有 macOS 15.6 主机而阻塞”改写为通过。Developer ID/公证仍是未来稳定版的独立门禁，不是已接受 ad-hoc Beta 的隐藏前提。
 
 ## 7. 当前主机 smoke 记录 — 2026-07-19
 
@@ -177,7 +183,7 @@ Scripts/qualify-user-selected-directory.sh /absolute/path/to/SpaceTrace.app
 | Q-03 App 内撤权 | **Smoke 通过** | UI 立即回到未配置，再次重启后仍保持未配置。合成见证文件的内容和大小未变化。本项是 bookmark 移除，不是 TCC 撤权。 |
 | Q-04 真实 stale bookmark | **未观察到** | 确定性单元测试和 UI model 测试通过。本机没有强制造成不可复现的 stale 状态，因此不声称真实 stale 通过。 |
 | Q-05 同一外置卷返回 | **返回路径 Smoke 通过** | 卸载 64 MB 一次性 APFS 镜像后，重启显示不可用且不弹选择器；重挂同一镜像后自动恢复授权，前后 Volume UUID 完全一致，见证文件保留。本次 smoke 未重新执行不同 UUID 的 UI 换卷子项；隔离的非 UI APFS 生命周期测试继续作为该子项的回归证据。 |
-| Q-06 macOS 15.6 资格 | **阻塞** | 严格预检在 macOS 26.5.2 上正确 fail-closed。仍需 Apple Silicon macOS 15.6.x 环境和稳定 Apple 签名身份。 |
-| UI XCTest 启动 | **当前环境阻塞** | ad-hoc 测试 runner 无法提供稳定沙盒容器身份。同一流程已对签名沙盒 App 完成人工实机操作；自动 UI 执行必须在 Apple 身份签名后重跑。 |
+| Q-06 macOS 15.6 资格 | **阻塞** | 历史严格预检在 macOS 26.5.2 上正确 fail-closed。仍需真实 Apple Silicon macOS 15.6.x 环境和新的最终 ad-hoc RC；获批 Beta 模式不要求 Apple 身份。 |
+| UI XCTest 启动 | **当前环境阻塞** | 历史 ad-hoc 测试 runner 无法提供稳定沙盒容器身份。同一流程已对签名沙盒 App 完成人工实机操作；自动化属于独立 runner 问题，不会把 Apple 身份变成 Beta 前提。 |
 
-显式启用 smoke override 的预检带 warning 通过；不带 override 的同一预检因主机不是 macOS 15.6.x，以状态码 2 退出。测试结束后已卸载一次性镜像并移除测试 bookmark；镜像文件保留在合成临时夹具中，便于复核。
+历史 smoke override 预检曾带 warning 通过，但它早于 manifest 绑定的 JSON 契约，不能复用为发布证据。不带 override 的同一预检因主机不是 macOS 15.6.x，以状态码 2 退出。测试结束后已卸载一次性镜像并移除测试 bookmark；镜像文件保留在合成临时夹具中，便于复核。

@@ -48,7 +48,7 @@ make verify-release-readiness \
 | `sourceCommit` | 40 字符小写 Git SHA，且与 manifest、本地 `HEAD`、`origin/main` 都一致 |
 | `manifestSha256` | 候选 manifest 的 SHA-256 |
 | `checksumSha256` | 四项 checksum 文件的 SHA-256 |
-| `licenseIdentifier` | 获批 SPDX identifier 或经过审查的 `LicenseRef-*`；不能是 `NOASSERTION`/`NONE`，并且必须与 SPDX package declaration 精确相等 |
+| `licenseIdentifier` | 必须精确等于 `PolyForm-Noncommercial-1.0.0`，并同时等于两项 SPDX package 声明和冻结哈希的仓库许可证 |
 | `distributionMode` | v1 中只能是 `adhoc-public-beta` |
 | `distributionRiskAccepted` | 布尔值 `true`，记录 maintainer 在 2026-08-14 作出的决策 |
 | `artifactVerification` | `passed:<sha256>` |
@@ -74,7 +74,7 @@ make verify-release-readiness \
 - qualification 文件绑定的 manifest/checksum 哈希；
 - 精确 4 项预期 checksum，以及 `shasum -a 256 -c` 成功；
 - manifest Schema、版本、干净源码声明、源码提交、Bundle ID、macOS 15.6 部署目标、纯 arm64 架构、文件名和内嵌哈希；
-- SPDX 2.3 版本/package declaration 与获批许可证精确一致；
+- SPDX 2.3 版本、精确的 `licenseDeclared`/`licenseConcluded = PolyForm-Noncommercial-1.0.0`、仓库许可证哈希和 notices 一致；
 - 严格代码签名有效、ad-hoc/无 Team ID 事实和 Hardened Runtime；
 - 精确 3 项沙盒 entitlement；
 - 可执行文件哈希、arm64 slice、Info.plist 身份、无内嵌 framework/dylib，以及仅动态链接系统库；
@@ -95,6 +95,6 @@ make release-readiness-test
 
 ## 当前预期结果
 
-仓库不会检入 qualification JSON，因为不能伪造尚未完成的证据。保留的 rc.7 预期无法通过本门禁：它来自功能分支提交，SPDX 许可证刻意保持 `NOASSERTION`，并且 macOS 15.6、干净账户、打包替换/权限、人工无障碍/可用性、治理和最终发布回执尚不存在。
+仓库不会检入 qualification JSON，因为不能伪造尚未完成的证据。保留的历史 rc.7 预期无法通过本门禁：它来自功能分支提交，构建时间早于许可证获批、因此 SPDX 仍为 `NOASSERTION`，并且 macOS 15.6、干净账户、打包替换/权限、人工无障碍/可用性、治理和最终发布回执尚不存在。
 
-maintainer 已拒绝 MIT，并接受 ad-hoc Public Beta 风险边界；但仍需选择另一种获批项目许可证，才能关闭 SPDX/notices/qualification 字段。在全部其他证据回执存在、且最终 DMG 从受保护的 `main` 重新构建前，正确结果仍然是 **NO-GO**。
+maintainer 已接受 ad-hoc Public Beta 风险边界，以及 ADR-010 的 PolyForm Noncommercial 1.0.0 加 CLA 决策。仓库许可证门禁已经关闭，但在全部其他证据回执存在、且最终 DMG 从受保护的 `main` 使用获批元数据重新构建前，正确结果仍然是 **NO-GO**。

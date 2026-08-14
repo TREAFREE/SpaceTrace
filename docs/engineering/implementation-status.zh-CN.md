@@ -72,7 +72,7 @@
 - 修正后的 2026-07-30 当前主机 ad-hoc Release/App Sandbox 长跑自动生成 `PASSED`：单一 session 的 794 条无路径记录覆盖 90,529,656 ms，retention 成功且最终容量为 qualified；最大清醒间隔 62,097 ms、最大唤醒恢复 1 ms、最大 RSS 139,984,896 字节、最大数据库 613,696 字节、平均 CPU 0.011710%、p95 CPU 0.039200%。五段 Activity Monitor/thermal 导出全部完成且采集失败为 0；确定性后分析得到采集区间 CPU 0.401045252 秒、Idle Wake Ups 959 次、写入/读取 811,008/352,256 字节、最大 footprint 99,271,664 字节、未阻止睡眠、温度状态均为 Nominal。受保护的 Instruments 汇总不含路径并固定 SHA-256；这只关闭当前主机 ad-hoc 24 小时门禁。2026-08-10 又以独立 bundle identity 完成 60 秒 smoke，新的双分析器最终化在采集失败为 0、两个分析器退出码为 0、报告受保护以及 App/launchd 无残留的条件下通过；
 - 2026-07-31 使用独立 bundle identity 的临时签名 App，在 1080 × 720 下完成概览层级和图表布局的视觉检查；16–1024 px 图标资产完成 Alpha 校验；App 单元测试及 `make verify` 通过。同日 UI runner 无法初始化，因此该次尝试继续保留为历史阻塞证据，不报告为通过；
 - 使用本机测试签名运行真实 Xcode macOS UI runner：2026-08-10 在 macOS 26.5.2 上通过 8 个受控权限/不伪造历史场景，2026-08-13 又在 macOS 26.6.1 上通过 15 个授权/历史/finding/导出场景。测试会断言主要/更换/移除操作具有稳定名称且可点击，原始/更正 current 与证据失效 finding 分离，冻结分类/时间证据可见，History Off/baseline-unavailable 保持类型化，破坏性操作需要确认，并确认“只读、不删除文件”隐私边界进入可访问性树。签名沙盒诊断场景会操作真实 `NSSavePanel`、从磁盘读取脱敏 JSON，并额外连续聚焦运行 3 次通过。每次启动都会明确忽略 macOS 持久化窗口状态，确保测试拥有可见的全新窗口。这些确定性 fixture 不覆盖真实 bookmark 替换连续性，人工 VoiceOver/键盘/显示辅助检查也仍未完成；
-- 已实现 fail-closed 的 ad-hoc Release Candidate 打包器：要求明确 SemVer 与干净 commit provenance，检查 arm64/15.6/Bundle ID、精确三项沙盒 entitlement，以 Hardened Runtime 重签，固定六项产物契约，生成只读压缩 DMG、带 checksum 的 JSON 事实 manifest、确定性 SPDX 2.3 与 notices，并覆盖参数缺失/非法、脏源码和已有输出的反向测试。另有只读发布资格门禁，要求干净的 `main`/`origin/main`、源码/哈希/许可证/分发绑定、一份无路径的仓库集成回执，以及其他全部外部/人工门槛回执；其真实一次性签名 App/只读 DMG 契约覆盖 23 项正向和对抗场景。entitlement 契约把用户选择位置读写能力只用于精确 `NSSavePanel` 诊断目标，而监控 bookmark 仍显式只读。保留的 `0.1.0-rc.7` 包来自已推送 commit `a3b8b45`，已通过打包、保留 quarantine 属性的完整性，以及非 quarantine 的 `rc.6 ↔ rc.7` 双向进程替换。非交互资格脚本会在启动前拒绝带 quarantine 的输入；精确临时容器清理仍被 macOS 隐私保护阻止。该流程没有创建 bookmark，也没有验证 schema 降级。所有者已拒绝 MIT 并接受 ad-hoc Public Beta 策略；在另一许可证获批前，项目许可证保持 `NOASSERTION`；
+- 已实现 fail-closed 的 ad-hoc Release Candidate 打包器：要求明确 SemVer 与干净 commit provenance，检查 arm64/15.6/Bundle ID、精确三项沙盒 entitlement，以 Hardened Runtime 重签，固定六项产物契约，生成只读压缩 DMG、带 checksum 的 JSON 事实 manifest、确定性 SPDX 2.3 与 notices，并覆盖参数缺失/非法、脏源码和已有输出的反向测试。另有只读发布资格门禁，要求干净的 `main`/`origin/main`、源码/哈希/许可证/分发绑定、一份无路径的仓库集成回执，以及其他全部外部/人工门槛回执；其真实一次性签名 App/只读 DMG 契约覆盖 24 项正向和对抗场景。最低系统预检会独立绑定 manifest、可执行文件与签名：只有在 arm64 macOS 15.6.x 上运行最终 ad-hoc RC 才能生成不含路径的 `passed` 回执，较新系统只能生成 `smoke`。entitlement 契约把用户选择位置读写能力只用于精确 `NSSavePanel` 诊断目标，而监控 bookmark 仍显式只读。保留的历史 `0.1.0-rc.7` 包来自已推送 commit `a3b8b45`，已通过打包、保留 quarantine 属性的完整性，以及非 quarantine 的 `rc.6 ↔ rc.7` 双向进程替换，但它早于许可证获批。非交互资格脚本会在启动前拒绝带 quarantine 的输入；精确临时容器清理仍被 macOS 隐私保护阻止。该流程没有创建 bookmark，也没有验证 schema 降级。ADR-010 已接受冻结哈希的官方 PolyForm Noncommercial License 1.0.0 加 CLA：普通接收者可以非商业使用、修改和分享，但没有商业使用权；贡献者保留所有权，同时向项目所有者授予商业/再许可权；
 - 早期当前主机 ad-hoc 签名 smoke App 的严格签名校验确认了旧的用户选择只读 entitlement 与 `LSMinimumSystemVersion = 15.6`；该证据只作为历史记录保留。新的“读写仅用于保存” entitlement 需要重新完成签名沙盒与 macOS 15.6 资格验证；
 - 当前主机签名沙盒 smoke 已证明精确 Powerbox 选择、正常退出后同一 bundle 无选择器恢复、App 内 bookmark 移除不删除夹具、一次性 APFS 镜像缺席时显示不可用，以及同一 Volume UUID 返回后自动恢复授权；
 - 已在当前主机检查普通单窗口外壳、概览准备状态、侧栏导航和嵌入式权限旅程的视觉布局与可访问性树；公开 SwiftUI `MenuBarExtra` 已编译进同一进程，其最终状态项点击矩阵仍属于签名 UI 资格验证；
@@ -86,9 +86,9 @@
 ## 明确不作出的声明
 
 - 面向用户的多目录权限列表、批量基线、启动卷容量历史、版本/Schema 元数据、重启恢复、电源/温度/睡眠感知、schema v10 概览/菜单栏历史、不可变 finding 概览、schema v13 持久化、完整扫描 paired finalization、完整父级消失对账、合格 APFS 稳定移动、有界即时/启动投影、FR-007/KPI-03 仓库语料门禁，以及用户控制的脱敏诊断导出均已实现。生产扫描会在同一次遍历中冻结仅目录 logical/allocated 证据、直接子级覆盖、分类与 APFS 对象/复用证据；真实 Foundation 增长/重命名/删除与受控 APFS 镜像测试均已通过。概览直接读取终态版本化 current-effective 与失效审计记录，不重新分类，展示耐久校准状态与类型化 History Off/baseline-unavailable 状态。中断基线会安全丢弃未完成 staging，并重新扫描受影响的持久 dirty root，因此在不声称内存枚举偏移续跑的前提下满足 FR-002；真正中点续跑保留为非 P0 性能增强。Schema v12 修订/更正与纯追加 schema v13 更正 finding 失效记录现在覆盖 current-effective/审计查询、耐久状态、恢复/保留、诊断、UI，并在 19/20 门槛下完成当前主机 20/20 次真实 5 GiB 资格。未经证明的缺失行和不受支持的文件系统仍会被抑制。APFS 唯一块核算也仍未完成。导出 entitlement 与真实签名沙盒保存流程已通过当前主机资格；人工辅助技术、干净账户 Gatekeeper 例外、打包 bookmark 连续性和 macOS 15.6 资格仍未完成。
-- 修正后的当前主机运行关闭了提交 `ed0d660` 的 ad-hoc 24 小时进程/耐久门禁。Activity Monitor 的 CPU、唤醒、内存、I/O 与 thermal 区间仍只是能耗相关证据，不是直接瓦特/焦耳测量；该结果也不能证明普遍的系统调度到达保证、签名状态项交互矩阵、Apple 身份分发、Release Candidate 替换或 macOS 15.6 运行资格。
+- 修正后的当前主机运行关闭了提交 `ed0d660` 的 ad-hoc 24 小时进程/耐久门禁。Activity Monitor 的 CPU、唤醒、内存、I/O 与 thermal 区间仍只是能耗相关证据，不是直接瓦特/焦耳测量；该结果也不能证明普遍的系统调度到达保证、签名状态项交互矩阵、Developer ID/公证稳定分发、Release Candidate 替换或 macOS 15.6 运行资格。
 - 用户主动基线调度会响应休眠、低电量模式、严重/危急温度，并观察当前供电来源。后台速率预算、系统负载调度以及架构中的 token bucket 尚未实现。硬链接去重受条目预算限制，但每次扫描运行期间仍保存在内存中。
-- 真实 sandbox Powerbox 展示以及 stale/身份失败的重新授权 UI 已实现；当前主机上的持久选择、同一 bundle 重启、明确 App 内移除和同镜像外置卷返回已经通过。真实 stale 证据、UI 流程中的不同 UUID 换卷子项、Apple 身份签名以及 macOS 15.6 运行矩阵仍未完成，或受到当前环境阻塞。
+- 真实 sandbox Powerbox 展示以及 stale/身份失败的重新授权 UI 已实现；当前主机上的持久选择、同一 bundle 重启、明确 App 内移除和同镜像外置卷返回已经通过。真实 stale 证据、UI 流程中的不同 UUID 换卷子项以及 macOS 15.6 运行矩阵仍未完成，或受到当前环境阻塞。Apple 身份签名属于未来稳定分发门禁，不是已接受 ad-hoc Beta 的前提。
 - 当前主机的受控 UI fixture 已 15/15 通过，并检查关键辅助功能名称、value 与可点击性，包括原始/更正 finding、History Off 和真实保存面板导出流程；这不是人工辅助技术资格验证，不能证明 VoiceOver 发音、Full Keyboard Access 顺序，或增强对比度、减少动态效果和更大系统文字下的布局。
 - ad-hoc RC 打包只适合人数较少、明确互相信任的测试者；它没有 Developer ID 签名或公证，在用户授予单 App 例外前应被 Gatekeeper 拒绝，也不能证明 bookmark 跨替换连续、真实拒绝/stale 授权、外置卷替换、干净 Mac quarantine 启动、自动更新、回滚或完整容器移除。
 - 不会依据 FSEvents 推断精确字节差值或进程归因。
@@ -100,11 +100,11 @@
 
 ## 下一批验收门禁
 
-1. 使用 Apple 身份签名 sandbox App 在 macOS 15.6 上完成同一套真实 24 小时运行、睡眠/唤醒、时间/时区变化、交流电/电池、低电量模式和安全可控温度转换的生产信号资格验证；并在当前稳定版 macOS 上以 Release Candidate 重跑，验证 retention 到达、菜单栏资格/降级、能耗相关进程证据、内存和数据库增长。只有具备 benchmark 证据后才增加后台 token bucket/速率策略。
+1. 使用与 manifest 精确绑定的最终 ad-hoc RC，在 macOS 15.6 上完成同一套真实 24 小时运行、睡眠/唤醒、时间/时区变化、交流电/电池、低电量模式和安全可控温度转换的生产信号资格验证；并在当前稳定版 macOS 上使用同一 RC 重跑，验证 retention 到达、菜单栏资格/降级、能耗相关进程证据、内存和数据库增长。只有具备 benchmark 证据后才增加后台 token bucket/速率策略。
 2. 只有在符合连续性丢失资格规程且能够安全复现时，才采集真实守护进程 drop/wrap 证据，并在最低支持 macOS 运行时验证恢复行为。
 3. 扩展页级主库/WAL 损坏场景和已发布 fixture，且不得静默重建。
 4. 在接受 ADR-004 前，于最低参考 macOS 15.6 机器上复跑 50 万/100 万行 benchmark。
-5. 使用稳定 Apple 身份在 Apple Silicon macOS 15.6 上重跑签名沙盒协议，并覆盖真实 stale 证据、UI 的不同 UUID 换卷子项和系统菜单栏交互矩阵；不得以已完成的当前主机 ad-hoc smoke 代替该门禁。
+5. 使用精确的最终 ad-hoc RC，在 Apple Silicon macOS 15.6 上重跑签名沙盒协议，并覆盖真实 stale 证据、UI 的不同 UUID 换卷子项和系统菜单栏交互矩阵；不得用较新系统的 `smoke` 回执代替。Developer ID/公证继续作为未来稳定版的独立路线。
 6. 在签名沙盒矩阵中验证活跃扫描期间撤权和多目录列表变更。
 7. 在把相应界面视为 Beta 就绪或具备发布资格之前，为用户可见的基线/历史切片完成 ADR-003 与 ADR-004 维护者评审，并为不可变 finding 完成 ADR-006 维护者评审。
 8. 在 macOS 15.6 与当前稳定版 macOS 上，为已实现的 finding 概览完成人工键盘、VoiceOver、对比度、大字体和不确定性措辞复核。不受支持的文件系统与未经证明的缺失行必须继续被抑制。v12 更正链与 v13 目标专属失效记录已经实现，但产品措辞仍需该人工复核。
@@ -114,5 +114,5 @@
 
 - **本地工程 RC 生成：CONDITIONAL GO（有条件继续）。** 可以使用 fail-closed ad-hoc 打包器，为明确互相信任的维护者/测试者生成带 provenance 的受控测试产物。
 - **GitHub Release 与 Public Beta：NO-GO（暂不发布）。** 本次没有创建 tag、Release 或上传产物。
-- 阻塞门禁包括：macOS 15.6 运行；人工辅助功能/可用性和真实 bookmark/权限/换卷矩阵；ADR-003/004/006/008/009 接受；在已接受 ad-hoc 策略下完成干净账户 Gatekeeper 例外启动；打包升级/回滚；以及仓库所有者批准一种非 MIT 项目许可证。重复 FR-004 矩阵、确定性 SBOM/notices 生成、自动化 finding/History-Off/校准概览、FR-007 语料、FR-014 实现/当前主机真实签名沙盒导出，以及 ad-hoc Public Beta 分发政策决策已经关闭，但打包/人工辅助技术与最低系统资格验证尚未完成。
+- 阻塞门禁包括：macOS 15.6 运行；人工辅助功能/可用性和真实 bookmark/权限/换卷矩阵；ADR-003/004/006/008/009 接受；在已接受 ad-hoc 策略下完成干净账户 Gatekeeper 例外启动；打包升级/回滚；仓库 PR/托管 CI/受保护 main 集成；以及从最终发布源重新生成产物。PolyForm/CLA 许可证决策、重复 FR-004 矩阵、确定性 SBOM/notices 生成、自动化 finding/History-Off/校准概览、FR-007 语料、FR-014 实现/当前主机真实签名沙盒导出，以及 ad-hoc Public Beta 分发政策决策已经关闭，但打包/人工辅助技术与最低系统资格验证尚未完成。
 - 逐行门禁表和未发布的测试者说明见[产品路线图](../product/product-roadmap.md)与 [Changelog](../../CHANGELOG.md)。

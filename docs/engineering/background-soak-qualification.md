@@ -1,8 +1,8 @@
 # Background Soak Qualification
 
-Status: **Current-host ad-hoc endurance passed; Apple-identity and macOS 15.6 matrices remain open**
+Status: **Current-host ad-hoc endurance passed; final-RC macOS 15.6 matrix remains open**
 
-Last reviewed: 2026-08-10
+Last reviewed: 2026-08-14
 
 Chinese translation: [后台长时间运行资格验证](background-soak-qualification.zh-CN.md)
 
@@ -71,9 +71,10 @@ The menu bar then displays a persistent local-recording notice. If the writer
 cannot be created, monitoring continues without diagnostics and the indicator
 does not claim that recording is active.
 
-Use a signed sandbox build for release evidence. An ad-hoc signed build is
-acceptable for a current-host engineering smoke, but it is not Developer ID
-distribution evidence.
+Use the exact manifest-bound signed sandbox RC for release evidence. The
+maintainer-approved Public Beta is ad-hoc signed and unnotarized; that truth is
+accepted only for this explicitly disclosed Beta and is not Developer ID,
+notarization, publisher-identity, or future stable-release evidence.
 
 ## Analyzer
 
@@ -96,15 +97,18 @@ For the signed-app preflight and analysis in one fail-closed command:
 
 ```bash
 Scripts/qualify-background-soak.sh \
-  "/path/to/SpaceTrace.app" \
+  "/path/to/SpaceTrace-0.1.0-beta.1.app" \
+  "/path/to/SpaceTrace-0.1.0-beta.1.manifest.json" \
   "/path/to/BackgroundQualification" \
-  "/path/to/qualification-report.json"
+  "/path/to/qualification-report.json" \
+  "/path/to/minimum-os-preflight.json"
 ```
 
-The existing `SPACETRACE_ALLOW_NEWER_HOST_SMOKE` and
-`SPACETRACE_ALLOW_ADHOC_SMOKE` flags are accepted only for a clearly labeled
-non-qualifying preflight. `SPACETRACE_SOAK_SMOKE_SECONDS` additionally selects
-the analyzer's smoke policy.
+`SPACETRACE_SOAK_SMOKE_SECONDS` selects both the analyzer's smoke policy and
+the explicit newer-host preflight mode. The wrapper then reports `SMOKE`, not
+`PASS`; the old signing/host override environment variables are no longer
+accepted. Without the smoke policy, only a macOS 15.6.x arm64 preflight receipt
+can proceed to a qualifying analysis.
 
 The default policy fails unless the evidence has:
 
@@ -151,7 +155,8 @@ Monitor slices at 0, 6, 12, 18, and 24 hours:
 
 ```bash
 Scripts/run-current-host-soak.sh start \
-  "/path/to/SpaceTrace.app" \
+  "/path/to/SpaceTrace-0.1.0-beta.1.app" \
+  "/path/to/SpaceTrace-0.1.0-beta.1.manifest.json" \
   "$HOME/Library/Application Support/SpaceTraceQualification/<run-id>" \
   90000
 ```

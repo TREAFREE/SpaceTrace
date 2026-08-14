@@ -8,7 +8,7 @@ Date: 2026-07-18
 
 ## Context
 
-SpaceTrace is a menu-bar-oriented utility whose differentiating work depends on macOS-specific capabilities: FSEvents, filesystem metadata, APFS volume semantics, power and thermal state, permissions, launch at login, Developer ID distribution, and notarization. It has no backend and is expected to be maintained initially by a small open-source team.
+SpaceTrace is a menu-bar-oriented utility whose differentiating work depends on macOS-specific capabilities: FSEvents, filesystem metadata, APFS volume semantics, power and thermal state, permissions, launch at login, Developer ID distribution, and notarization. It has no backend and is expected to be maintained initially by a small source-available project team.
 
 The initial Xcode scaffold used macOS 26.1. On 2026-07-18, the project owner selected macOS 15.6 as the product floor. The project-level, application, unit-test, and UI-test Debug/Release configurations now declare:
 

@@ -41,7 +41,7 @@ Existing storage visualizers answer “what is large now.” SpaceTrace is diffe
 - Make every finding traceable to observations, coverage, a deterministic classification rule, and a confidence level.
 - Keep the UI, domain rules, platform APIs, persistence, and optional command execution independently testable.
 - Permit future support for external volumes and additional classifiers without changing the core truth model.
-- Keep operational ownership appropriate for a small open-source team: one application, one local database, no backend.
+- Keep operational ownership appropriate for a small source-available project: one application, one local database, no backend.
 
 ### 2.3 Non-goals for MVP
 

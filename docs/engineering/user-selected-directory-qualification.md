@@ -1,10 +1,10 @@
 # User-Selected Directory UI and Sandbox Qualification
 
-**Status:** Implemented; current-host smoke complete; macOS 15.6 runtime gate pending a 15.6 environment and stable Apple signing identity
+**Status:** Implemented; manifest-bound ad-hoc Public Beta preflight automated; macOS 15.6 runtime and manual matrices remain open because no 15.6 environment is currently available
 
 **Scope:** FR-001, FR-011, FR-015, FR-016, NFR-008
 
-**Last updated:** 2026-07-19
+**Last updated:** 2026-08-14
 
 ## 1. Purpose and evidence boundary
 
@@ -17,7 +17,7 @@ This protocol qualifies the smallest trustworthy permission journey:
 5. removing a grant stops monitoring, removes only the bookmark, and restarts monitoring without deleting user files or historical measurements;
 6. a temporarily absent external volume can recover without silently widening the scope.
 
-A build on a newer macOS host is not evidence that the app ran correctly on macOS 15.6. A local ad-hoc signature is useful for implementation smoke testing, but it is not a distribution, notarization, or stable-container-identity qualification.
+A build on a newer macOS host is not evidence that the app ran correctly on macOS 15.6. The maintainer has accepted an explicitly disclosed ad-hoc, unnotarized Public Beta. Therefore the exact final ad-hoc artifact may close this Beta's automated minimum-OS preflight on macOS 15.6, but it never proves Developer ID/notarization, publisher identity, or a future stable-release container policy.
 
 ## 2. Architecture under test
 
@@ -43,13 +43,16 @@ Run the repository gate:
 make verify
 ```
 
-Run the signed-app preflight on a macOS 15.6 Apple Silicon machine using a build signed with an Apple Development or Developer ID Application identity:
+Run the artifact-bound preflight on the final extracted RC App and its manifest on an Apple Silicon macOS 15.6 machine:
 
 ```bash
-Scripts/qualify-user-selected-directory.sh /absolute/path/to/SpaceTrace.app
+make qualify-user-selected-directory \
+  APP=/absolute/path/to/SpaceTrace-0.1.0-beta.1.app \
+  MANIFEST=/absolute/path/to/SpaceTrace-0.1.0-beta.1.manifest.json \
+  REPORT=/absolute/path/minimum-os-preflight.json
 ```
 
-The script fails closed unless the host is macOS 15.6.x, the architecture is arm64, the code signature verifies, `LSMinimumSystemVersion` is exactly 15.6, and these entitlements are true:
+The script fails closed unless the manifest is exact and clean-source-bound; the App version, commit, executable hash, architecture, deployment target, bundle identity, ad-hoc/no-Team-ID signature and Hardened Runtime agree with it; the host is macOS 15.6.x arm64; and exactly these entitlements are true:
 
 - `com.apple.security.app-sandbox`
 - `com.apple.security.files.user-selected.read-write` (only for the exact
@@ -57,15 +60,17 @@ The script fails closed unless the host is macOS 15.6.x, the architecture is arm
   `.securityScopeAllowOnlyReadAccess`)
 - `com.apple.security.files.bookmarks.app-scope`
 
-For a newer-host, ad-hoc, non-qualifying smoke preflight only:
+For a newer-host, non-qualifying smoke preflight only:
 
 ```bash
-SPACETRACE_ALLOW_NEWER_HOST_SMOKE=1 \
-SPACETRACE_ALLOW_ADHOC_SMOKE=1 \
-Scripts/qualify-user-selected-directory.sh /absolute/path/to/SpaceTrace.app
+make qualify-user-selected-directory \
+  APP=/absolute/path/to/SpaceTrace-0.1.0-beta.1.app \
+  MANIFEST=/absolute/path/to/SpaceTrace-0.1.0-beta.1.manifest.json \
+  REPORT=/absolute/path/current-host-smoke.json \
+  ALLOW_NEWER_HOST_SMOKE=1
 ```
 
-The warnings in that output are part of the evidence: they prevent the smoke run from being reported as oldest-supported-OS or distribution-signing qualification.
+The script prints `SMOKE`, writes `status: "smoke"`, and never prints `PASS` in this mode. The old environment overrides are no longer accepted. The regular `0600` JSON receipt contains no App, manifest, home-directory, or volume path. It binds release/source/manifest/executable identity and records that Q-01 through Q-06 still require manual execution. A passing preflight is one input to that matrix, not the matrix result itself.
 
 ## 4. Controlled fixtures
 
@@ -86,7 +91,10 @@ Record only the synthetic scope ID, state code, OS build, architecture, app vers
 3. Press **Select Directory…** using keyboard navigation.
 4. Select the controlled child directory, not its parent.
 5. Verify the UI shows **Directory authorized** and the exact selected root.
-6. Verify no write entitlement and no Full Disk Access prompt exists.
+6. Verify the monitored scope is restored from a read-only bookmark, no monitored
+   file is mutated, and no Full Disk Access prompt exists. The separate
+   user-selected read/write entitlement is reserved for the exact diagnostic
+   export destination chosen through `NSSavePanel`.
 
 Pass criteria: the system panel is user-triggered; cancel leaves state unchanged; authorization shows only after persistence and runtime restart succeed.
 
@@ -135,7 +143,7 @@ Pass criteria: the original volume returns without reauthorization; the differen
 
 On a physical or virtual Apple Silicon macOS 15.6.x environment:
 
-1. run the automated preflight without either smoke override;
+1. run the automated preflight without `--allow-newer-host-smoke` and retain its `passed` JSON receipt;
 2. execute Q-01 through Q-05;
 3. run package tests, app unit tests, and the UI/accessibility smoke matrix that the OS supports;
 4. record the exact `sw_vers` product/build version and Xcode version;
@@ -150,12 +158,13 @@ Pass criteria: every step passes on 15.6.x. A build or run on macOS 16/26 does n
 | App commit | Full Git commit SHA |
 | App version/build | `CFBundleShortVersionString` / `CFBundleVersion` |
 | Host | `ProductVersion`, `BuildVersion`, arm64 |
-| Signature | Apple identity class; ad-hoc only for smoke |
+| Signature | Exact ad-hoc/no-Team-ID/Hardened-Runtime truth for this approved Beta; Apple identity is not claimed |
+| Automated preflight | Path-free JSON receipt SHA-256; `passed` only on macOS 15.6.x |
 | Entitlements | sandbox, user-selected read/write for diagnostic save only, app-scoped bookmarks; watched bookmark is explicitly read-only |
 | Q-01…Q-06 | Pass / fail / blocked with stable reason code |
 | Sensitive evidence | None |
 
-Never collapse **blocked because no macOS 15.6 host or Apple signing identity is available** into pass.
+Never collapse **blocked because no macOS 15.6 host is available** into pass. Developer ID/notarization remains a separate future stable-release gate, not a hidden requirement for the accepted ad-hoc Beta.
 
 ## 7. Current-host smoke record — 2026-07-19
 
@@ -179,7 +188,7 @@ This record is implementation evidence, not macOS 15.6 or distribution-signing q
 | Q-03 app-level revocation | **Smoke pass** | The UI returned to unconfigured immediately and remained unconfigured after another process restart. A synthetic witness file retained the same content and size. This is bookmark removal, not TCC revocation. |
 | Q-04 real stale bookmark | **Not observed** | Deterministic unit/UI-model coverage passes. The host was not forced into a non-reproducible stale state, so no real stale claim is made. |
 | Q-05 same external volume returns | **Smoke pass for return path** | A 64 MB disposable APFS image was detached. Relaunch showed unavailable without a picker. Reattaching the same image automatically restored authorization; the pre/post Volume UUID was identical and the witness file survived. The different-UUID UI replacement subcase was not rerun in this smoke record; the isolated non-UI APFS lifecycle test remains its regression evidence. |
-| Q-06 macOS 15.6 eligibility | **Blocked** | The strict preflight correctly failed closed on macOS 26.5.2. A real Apple Silicon macOS 15.6.x runner and stable Apple signing identity are still required. |
-| UI XCTest launch | **Blocked in this environment** | The ad-hoc test runner did not provide a stable sandbox container identity. The same flow was completed manually against the signed sandbox app; automated UI execution must be rerun with an Apple identity. |
+| Q-06 macOS 15.6 eligibility | **Blocked** | The historical strict preflight correctly failed closed on macOS 26.5.2. A real Apple Silicon macOS 15.6.x runner and a fresh final ad-hoc RC are still required; an Apple identity is not required for the accepted Beta mode. |
+| UI XCTest launch | **Blocked in this environment** | The historical ad-hoc test runner did not provide a stable sandbox container identity. The same flow was completed manually against the signed sandbox App; automation remains a separate runner concern and does not turn Apple identity into a Beta prerequisite. |
 
-The smoke override preflight passed with explicit warnings. The same preflight without overrides exited with status 2 because the host was not macOS 15.6.x. The disposable image was detached after the test, the test bookmark was removed, and the image file was retained under the synthetic temporary fixture for reproducibility.
+The historical smoke override preflight passed with explicit warnings. It predates the manifest-bound JSON contract and cannot be reused as release evidence. The same preflight without overrides exited with status 2 because the host was not macOS 15.6.x. The disposable image was detached after the test, the test bookmark was removed, and the image file was retained under the synthetic temporary fixture for reproducibility.

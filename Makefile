@@ -6,9 +6,9 @@ DESTINATION := platform=macOS,arch=arm64
 PACKAGE_PATH := Packages/SpaceTraceKit
 DERIVED_DATA_ROOT := build/DerivedData
 
-.PHONY: verify hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy released-schema-fixtures package-test package-concurrency-audit package-background-lifecycle-qualification package-background-soak-qualification package-apfs-image-qualification package-apfs-reconciliation-qualification package-apfs-reconciliation-matrix-test package-apfs-reconciliation-matrix-qualification persistence-benchmark package-release-candidate package-release-candidate-test qualify-release-candidate-test qualify-release-candidate public-beta-install-notice-test release-readiness-test verify-release-readiness xcode-list app-build-debug app-test-unit app-test-ui app-build-release
+.PHONY: verify hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy released-schema-fixtures release-metadata-test contribution-licensing-test pull-request-cla-test qualification-wrapper-test package-test package-concurrency-audit package-background-lifecycle-qualification package-background-soak-qualification package-apfs-image-qualification package-apfs-reconciliation-qualification package-apfs-reconciliation-matrix-test package-apfs-reconciliation-matrix-qualification persistence-benchmark package-release-candidate package-release-candidate-test qualify-release-candidate-test qualify-release-candidate user-selected-directory-preflight-test qualify-user-selected-directory public-beta-install-notice-test release-readiness-test verify-release-readiness xcode-list app-build-debug app-test-unit app-test-ui app-build-release
 
-verify: hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy released-schema-fixtures package-apfs-reconciliation-matrix-test qualify-release-candidate-test public-beta-install-notice-test release-readiness-test package-test package-concurrency-audit xcode-list app-build-debug app-test-unit app-build-release
+verify: hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy released-schema-fixtures release-metadata-test contribution-licensing-test pull-request-cla-test qualification-wrapper-test package-apfs-reconciliation-matrix-test qualify-release-candidate-test user-selected-directory-preflight-test public-beta-install-notice-test release-readiness-test package-test package-concurrency-audit xcode-list app-build-debug app-test-unit app-build-release
 
 hygiene:
 	git diff --check
@@ -26,6 +26,18 @@ historical-ledger-privacy:
 
 released-schema-fixtures:
 	bash Scripts/verify-released-schema-fixtures.sh
+
+release-metadata-test:
+	bash Scripts/Tests/generate-release-metadata-tests.sh
+
+contribution-licensing-test:
+	bash Scripts/Tests/verify-contribution-licensing-tests.sh
+
+pull-request-cla-test:
+	bash Scripts/Tests/check-pull-request-cla-tests.sh
+
+qualification-wrapper-test:
+	bash Scripts/Tests/qualification-wrapper-tests.sh
 
 package-test:
 	swift test --package-path "$(PACKAGE_PATH)"
@@ -76,6 +88,21 @@ qualify-release-candidate:
 	@test -n "$(PRIMARY_APP)" || (echo "PRIMARY_APP is required" >&2; exit 64)
 	@test -n "$(REPLACEMENT_APP)" || (echo "REPLACEMENT_APP is required" >&2; exit 64)
 	./Scripts/qualify-release-candidate.sh --primary "$(PRIMARY_APP)" --replacement "$(REPLACEMENT_APP)"
+
+user-selected-directory-preflight-test:
+	bash Scripts/Tests/qualify-user-selected-directory-tests.sh
+
+qualify-user-selected-directory:
+	@test -n "$(APP)" || (echo "APP is required" >&2; exit 64)
+	@test -n "$(MANIFEST)" || (echo "MANIFEST is required" >&2; exit 64)
+	@test -n "$(REPORT)" || (echo "REPORT is required" >&2; exit 64)
+	./Scripts/qualify-user-selected-directory.sh \
+		--app "$(APP)" \
+		--manifest "$(MANIFEST)" \
+		--distribution-mode adhoc-public-beta \
+		--accept-risk \
+		$(if $(filter 1,$(ALLOW_NEWER_HOST_SMOKE)),--allow-newer-host-smoke) \
+		--output "$(REPORT)"
 
 release-readiness-test:
 	bash Scripts/Tests/verify-release-readiness-tests.sh

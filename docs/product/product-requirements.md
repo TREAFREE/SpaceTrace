@@ -10,7 +10,7 @@
 | Product owner | TBD |
 | Engineering owner | TBD |
 | Target | Public Beta by the end of Week 8 (Assumption) |
-| License | TBD — the owner rejected MIT on 2026-08-14; no replacement license is approved |
+| License | PolyForm Noncommercial License 1.0.0 (`PolyForm-Noncommercial-1.0.0`); source-available, not OSI open source. Noncommercial use, modification, and sharing are permitted; commercial use by ordinary recipients is not licensed. External PRs require the SpaceTrace CLA so the Project Owner retains commercial/relicensing rights. |
 | Platforms | macOS 15.6 or later on Apple Silicon. The deployment floor is accepted in ADR-001; Public Beta still requires runtime qualification on macOS 15.6 and the current stable macOS. Intel is unsupported until separately qualified. |
 | Related roadmap | [Product Roadmap](./product-roadmap.md) |
 | Research baseline | [macOS Opportunity Research 2026](../research/macos-opportunity-research-2026.md) |
@@ -340,7 +340,7 @@ KPI thresholds are initial targets (**Assumption**) and must be validated during
 
 ##### FR-104 — Community classification rule packs
 
-**Story:** As an open-source contributor, I want to add deterministic application classifications so that SpaceTrace recognizes more workflows without changing the core engine.
+**Story:** As a source-available project contributor, I want to add deterministic application classifications so that SpaceTrace recognizes more workflows without changing the core engine.
 
 **Acceptance criteria:**
 
@@ -513,7 +513,7 @@ Authentication is not applicable because SpaceTrace has no account or remote ser
 
 #### Distribution security
 
-- MIT was explicitly rejected by the owner on 2026-08-14. A different project license remains **TBD** and must be approved and reflected consistently in repository metadata, notices, SPDX, and the release qualification before Beta.
+- On 2026-08-14, the owner approved the unmodified PolyForm Noncommercial License 1.0.0 and a contributor agreement that preserves contributor ownership while granting the Project Owner commercial and relicensing rights. Repository metadata, notices, SPDX, DMG instructions, and release qualification must use the exact `PolyForm-Noncommercial-1.0.0` identifier. SpaceTrace must be described as source-available rather than OSI open source; ordinary recipients are not licensed for commercial use.
 - The owner accepted an ad-hoc-signed, unnotarized Public Beta distribution policy on 2026-08-14. The release page must disclose that macOS cannot verify the publisher, provide checksums/provenance and exact per-app **Open Anyway** steps, disable automatic updates, and never describe the artifact as stable, notarized, or Apple-verified. Developer ID signing/notarization remains required for a future stable direct-distribution release.
 - Every published artifact requires a reproducible version, commit reference, checksum, and documented provenance.
 - App Store distribution is not committed.
@@ -683,7 +683,7 @@ No metric justifies adding silent analytics. Any future telemetry proposal requi
 | OD-01 | Initial audience | 256–512 GB Mac developers, creative professionals, and power users (Assumption) | End of Discovery |
 | OD-02 | Platform qualification | macOS 15.6+ on Apple Silicon is confirmed as the baseline. Runtime P0 qualification on 15.6 remains required; Intel and macOS 14 are unsupported. | Public Beta entry |
 | OD-03 | Implementation | Swift/SwiftUI with limited AppKit (Assumption) | Prototype exit |
-| OD-04 | License | TBD — MIT rejected by owner on 2026-08-14; replacement not approved | Before Public Beta artifact publication |
+| OD-04 | License | Decided 2026-08-14 — PolyForm Noncommercial License 1.0.0 plus the SpaceTrace CLA; see ADR-010 | Any change requires maintainer, legal, PRD, metadata, and release-gate review |
 | OD-05 | Privacy | Local-first, no account, no telemetry; treated as a hard product constraint | Any change requires new PRD/security review |
 | OD-06 | Full Disk Access | Optional enhancement; useful selected-folder mode without it | Alpha exit |
 | OD-07 | Retention | 30-day default (Assumption) | Alpha usability/performance review |

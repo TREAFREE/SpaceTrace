@@ -10,7 +10,7 @@ worker_cleanup_failure_reason="unexpected_worker_exit"
 
 usage() {
     print -u2 "usage:"
-    print -u2 "  $0 start /absolute/path/to/SpaceTrace.app /absolute/path/to/evidence <duration-seconds>"
+    print -u2 "  $0 start /absolute/path/to/SpaceTrace.app /absolute/path/to/manifest.json /absolute/path/to/evidence <duration-seconds>"
     print -u2 "  $0 status /absolute/path/to/evidence"
     print -u2 "  $0 finalize /absolute/path/to/evidence"
     exit 64
@@ -30,6 +30,14 @@ require_absolute_directory() {
     local path=$1
     if [[ $path != /* || ! -d $path ]]; then
         print -u2 "error: expected an existing absolute directory: $path"
+        exit 64
+    fi
+}
+
+require_absolute_file() {
+    local path=$1
+    if [[ $path != /* || ! -f $path || -L $path ]]; then
+        print -u2 "error: expected an existing absolute regular file"
         exit 64
     fi
 }
@@ -113,8 +121,9 @@ status_command() {
 
 write_metadata() {
     local app_path=$1
-    local evidence_directory=$2
-    local duration_seconds=$3
+    local manifest_path=$2
+    local evidence_directory=$3
+    local duration_seconds=$4
     local app_binary="$app_path/Contents/MacOS/SpaceTrace"
     local info_plist="$app_path/Contents/Info.plist"
     local bundle_identifier
@@ -130,7 +139,8 @@ write_metadata() {
         print "host_version=$(sw_vers -productVersion)"
         print "host_build=$(sw_vers -buildVersion)"
         print "host_architecture=$(uname -m)"
-        print "git_commit=$(git -C "$repository_root" rev-parse HEAD)"
+        print "source_commit=$(plutil -extract sourceCommit raw -expect string -o - "$manifest_path")"
+        print "manifest_sha256=$(shasum -a 256 "$manifest_path" | awk '{print $1}')"
         print "bundle_identifier=$bundle_identifier"
         print "minimum_system=$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$info_plist")"
         print "binary_sha256=$(shasum -a 256 "$app_binary" | awk '{print $1}')"
@@ -183,14 +193,16 @@ write_energy_capability_evidence() {
 }
 
 start_command() {
-    if (( $# != 3 )); then
+    if (( $# != 4 )); then
         usage
     fi
     local source_app_path=$1
-    local evidence_directory=$2
-    local duration_seconds=$3
+    local source_manifest_path=$2
+    local evidence_directory=$3
+    local duration_seconds=$4
 
     require_absolute_directory "$source_app_path"
+    require_absolute_file "$source_manifest_path"
     require_absolute_directory "$evidence_directory"
     if [[ $source_app_path != *.app ]]; then
         print -u2 "error: app path must end in .app"
@@ -213,16 +225,19 @@ start_command() {
     chmod 700 "$evidence_directory" "$evidence_directory/instruments" \
         "$evidence_directory/reports" "$evidence_directory/runtime"
 
-    SPACETRACE_ALLOW_NEWER_HOST_SMOKE=1 \
-    SPACETRACE_ALLOW_ADHOC_SMOKE=1 \
-        "$script_directory/qualify-user-selected-directory.sh" \
-        "$source_app_path" \
-        >"$evidence_directory/signature-preflight.txt" 2>&1
+    "$script_directory/qualify-user-selected-directory.sh" \
+        --app "$source_app_path" \
+        --manifest "$source_manifest_path" \
+        --distribution-mode adhoc-public-beta \
+        --accept-risk \
+        --allow-newer-host-smoke \
+        --output "$evidence_directory/signature-preflight.json" \
+        >"$evidence_directory/signature-preflight.output" 2>&1
     local preflight_status=$?
-    chmod 600 "$evidence_directory/signature-preflight.txt"
+    chmod 600 "$evidence_directory/signature-preflight.output"
     if (( preflight_status != 0 )); then
         print -u2 "error: signed sandbox preflight failed"
-        sed -n '1,120p' "$evidence_directory/signature-preflight.txt"
+        sed -n '1,120p' "$evidence_directory/signature-preflight.output"
         exit "$preflight_status"
     fi
 
@@ -262,14 +277,18 @@ start_command() {
         "$runtime_directory/SpaceTraceSoakAnalyzer" \
         "$runtime_directory/SpaceTraceInstrumentsAnalyzer"
     codesign --verify --deep --strict "$runtime_app" \
-        >>"$evidence_directory/signature-preflight.txt" 2>&1
+        >>"$evidence_directory/signature-preflight.output" 2>&1
     local runtime_signature_status=$?
     if (( runtime_signature_status != 0 )); then
         print -u2 "error: copied runtime app failed signature verification"
         exit "$runtime_signature_status"
     fi
 
-    write_metadata "$runtime_app" "$evidence_directory" "$duration_seconds"
+    write_metadata \
+        "$runtime_app" \
+        "$source_manifest_path" \
+        "$evidence_directory" \
+        "$duration_seconds"
     write_energy_capability_evidence "$evidence_directory"
 
     local supervisor_label
@@ -586,7 +605,7 @@ finalize_command() {
 
     local privacy_status="PASS"
     if /usr/bin/grep -ERn \
-        '/Users/|bookmark|volumeUUID|availableBytes|environment|commandLine|fileName|volumeName' \
+        '/''Users/|bookmark|volumeUUID|availableBytes|environment|commandLine|fileName|volumeName' \
         "$diagnostics_directory" \
         >"$evidence_directory/reports/privacy-scan.txt"
     then

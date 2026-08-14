@@ -198,13 +198,20 @@ hdiutil verify "$dmg_path" >/dev/null
 [[ $(plutil -extract spdxVersion raw -o - "$sbom_path") == SPDX-2.3 ]]
 [[ $(plutil -extract dataLicense raw -o - "$sbom_path") == CC0-1.0 ]]
 [[ $(plutil -extract packages.0.versionInfo raw -o - "$sbom_path") == "$version" ]]
-[[ $(plutil -extract packages.0.licenseDeclared raw -o - "$sbom_path") == NOASSERTION ]]
+[[ $(plutil -extract packages.0.licenseDeclared raw -o - "$sbom_path") \
+    == PolyForm-Noncommercial-1.0.0 ]]
+[[ $(plutil -extract packages.0.licenseConcluded raw -o - "$sbom_path") \
+    == PolyForm-Noncommercial-1.0.0 ]]
 [[ $(plutil -extract packages.0.filesAnalyzed raw -o - "$sbom_path") == false ]]
 [[ $(plutil -extract packages.0.downloadLocation raw -o - "$sbom_path") == \
     "https://github.com/TREAFREE/SpaceTrace/tree/$(git rev-parse HEAD)" ]]
 [[ $(plutil -extract packages.0.externalRefs.0.referenceLocator raw -o - "$sbom_path") == \
     "pkg:github/TREAFREE/SpaceTrace@$(git rev-parse HEAD)" ]]
 grep -Fq 'No third-party libraries are embedded in SpaceTrace.app.' "$notices_path"
+grep -Fxq 'Project license: PolyForm Noncommercial License 1.0.0.' "$notices_path"
+grep -Fxq \
+    'https://polyformproject.org/licenses/noncommercial/1.0.0' \
+    "$notices_path"
 for regular_artifact in "$dmg_path" "$manifest_path" "$checksum_path" "$sbom_path" "$notices_path"; do
     [[ $(stat -f '%Lp' "$regular_artifact") == 644 ]]
 done

@@ -13,6 +13,7 @@ This directory records durable technical, data, permission, distribution, and se
 | [ADR-007](ADR-007-user-initiated-diagnostic-export.md) | User-initiated, previewed diagnostic export with default redaction and a narrow save capability | Accepted; deterministic and cancellation tests passed; signed-sandbox/manual accessibility/DMG qualification pending |
 | [ADR-008](ADR-008-append-only-reconciliation-corrections.md) | Append-only provisional-history revisions and registered same-evidence correcting projections | Proposed; schema-v12/v13 implementation, migration, benchmark, terminal queries, status UI, and the current-host 20-of-20 real 5 GiB matrix complete; maintainer adoption and external release gates pending |
 | [ADR-009](ADR-009-corrected-finding-identity-and-invalidation.md) | Versioned original/corrected identities and append-only corrected-finding invalidation | Proposed; schema-v13 migration, query, retention, diagnostics, fixture, and UI integration complete; maintainer adoption and release gates pending |
+| [ADR-010](ADR-010-noncommercial-source-available-licensing.md) | PolyForm noncommercial source-available distribution plus a contributor agreement that preserves Project Owner commercial rights | Accepted |
 
 ## Status lifecycle
 

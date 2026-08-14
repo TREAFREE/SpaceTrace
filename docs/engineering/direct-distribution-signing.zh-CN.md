@@ -8,7 +8,7 @@
 
 ## 当前决定
 
-2026-08-14，maintainer 明确接受了在没有付费 Apple Developer Program 会员期间，以 ad-hoc 签名、未公证方式提供 **Public Beta** 的分发风险。这个决定不会让产物获得 Gatekeeper 信任，也不代表 Apple 已验证、已公证或已经成为稳定版；它只批准分发政策。产品、仓库、最低系统、干净账户、权限、无障碍、许可证和最终发布门槛仍然是彼此独立的 NO-GO 条件。
+2026-08-14，maintainer 明确接受了在没有付费 Apple Developer Program 会员期间，以 ad-hoc 签名、未公证方式提供 **Public Beta** 的分发风险。这个决定不会让产物获得 Gatekeeper 信任，也不代表 Apple 已验证、已公证或已经成为稳定版；它只批准分发政策。产品、仓库、最低系统、干净账户、权限、无障碍、精确许可证产物绑定和最终发布门槛仍然彼此独立。ADR-010 已关闭许可证选择，但每个最终产物仍必须证明获批的 PolyForm 文本与元数据。
 
 可执行的打包契约与安装/替换矩阵记录在 [ad-hoc Release Candidate 检查清单](release-candidate-checklist.zh-CN.md) 中。生成这些产物本身并不等于获得创建 GitHub Release 的授权。
 

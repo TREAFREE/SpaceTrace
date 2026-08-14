@@ -8,7 +8,7 @@ Chinese companion translation: [direct-distribution-signing.zh-CN.md](direct-dis
 
 ## Current decision
 
-On 2026-08-14, the maintainer explicitly accepted the distribution risk of an ad-hoc-signed, unnotarized **Public Beta** while no paid Apple Developer Program membership is available. This decision does not make the artifact Gatekeeper-trusted, Apple-verified, notarized, or stable. It authorizes only the distribution policy; the product, repository, minimum-OS, clean-account, permission, accessibility, license, and final release gates remain independent NO-GO conditions.
+On 2026-08-14, the maintainer explicitly accepted the distribution risk of an ad-hoc-signed, unnotarized **Public Beta** while no paid Apple Developer Program membership is available. This decision does not make the artifact Gatekeeper-trusted, Apple-verified, notarized, or stable. It authorizes only the distribution policy; the product, repository, minimum-OS, clean-account, permission, accessibility, exact-license-artifact binding, and final release gates remain independent conditions. ADR-010 closes license selection, but each final artifact must still prove the approved PolyForm text and metadata.
 
 The executable packaging contract and install/replacement matrix are maintained in the [ad-hoc release candidate checklist](release-candidate-checklist.md). Creating those artifacts does not itself authorize a GitHub Release.
 

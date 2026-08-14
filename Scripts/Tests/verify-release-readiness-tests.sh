@@ -16,7 +16,8 @@ trap 'rm -rf "$scratch_root"' EXIT
 
 passed_cases=0
 failed_cases=0
-readonly expected_cases=23
+readonly expected_cases=24
+readonly approved_license=PolyForm-Noncommercial-1.0.0
 
 pass_case() {
     passed_cases=$((passed_cases + 1))
@@ -66,6 +67,7 @@ create_fixture_repository() {
     cp "$production_script" "$fixture_repository/Scripts/verify-release-readiness.sh"
     cp "$install_notice_generator" \
         "$fixture_repository/Scripts/generate-public-beta-install-notice.sh"
+    cp "$repository_root/LICENSE.md" "$fixture_repository/LICENSE.md"
     chmod +x \
         "$fixture_repository/Scripts/verify-release-readiness.sh" \
         "$fixture_repository/Scripts/generate-public-beta-install-notice.sh"
@@ -78,7 +80,8 @@ create_fixture_repository() {
     git -C "$fixture_repository" commit -q -m base
     git -C "$fixture_repository" add \
         Scripts/verify-release-readiness.sh \
-        Scripts/generate-public-beta-install-notice.sh
+        Scripts/generate-public-beta-install-notice.sh \
+        LICENSE.md
     git -C "$fixture_repository" commit -q -m verifier
     fixture_commit=$(git -C "$fixture_repository" rev-parse HEAD)
     git -C "$fixture_repository" update-ref refs/remotes/origin/main "$fixture_commit"
@@ -128,9 +131,13 @@ EOF
     codesign --force --deep --sign - --timestamp=none --options runtime \
         --entitlements "$entitlements" "$app" >/dev/null 2>&1
 
-    printf 'Synthetic license fixture; not a SpaceTrace license decision.\n' >"$notices"
+    printf '%s\n' \
+        'Project license: PolyForm Noncommercial License 1.0.0.' \
+        'https://polyformproject.org/licenses/noncommercial/1.0.0' \
+        'Commercial use is not licensed.' \
+        >"$notices"
     cat >"$sbom" <<EOF
-{"spdxVersion":"SPDX-2.3","dataLicense":"CC0-1.0","packages":[{"name":"SpaceTrace","versionInfo":"$version","licenseDeclared":"LicenseRef-Synthetic-Testing","filesAnalyzed":false,"downloadLocation":"https://github.com/TREAFREE/SpaceTrace/tree/$fixture_commit"}]}
+{"spdxVersion":"SPDX-2.3","dataLicense":"CC0-1.0","packages":[{"name":"SpaceTrace","versionInfo":"$version","licenseDeclared":"$approved_license","licenseConcluded":"$approved_license","filesAnalyzed":false,"downloadLocation":"https://github.com/TREAFREE/SpaceTrace/tree/$fixture_commit"}]}
 EOF
 
     ditto "$app" "$dmg_root/SpaceTrace.app"
@@ -168,8 +175,31 @@ create_qualification() {
     manifest_sha=$(shasum -a 256 "$canonical_artifacts/SpaceTrace-$version.manifest.json" | awk '{print $1}')
     checksum_sha=$(shasum -a 256 "$canonical_artifacts/SpaceTrace-$version.sha256" | awk '{print $1}')
     cat >"$destination" <<EOF
-{"schemaVersion":1,"releaseVersion":"$version","sourceCommit":"$fixture_commit","manifestSha256":"$manifest_sha","checksumSha256":"$checksum_sha","licenseIdentifier":"LicenseRef-Synthetic-Testing","distributionMode":"adhoc-public-beta","distributionRiskAccepted":true,"artifactVerification":"passed:0000000000000000000000000000000000000000000000000000000000000001","repositoryIntegration":"passed:0000000000000000000000000000000000000000000000000000000000000002","minimumOSQualification":"passed:0000000000000000000000000000000000000000000000000000000000000003","currentOSQualification":"passed:0000000000000000000000000000000000000000000000000000000000000004","cleanAccountGatekeeper":"passed:0000000000000000000000000000000000000000000000000000000000000005","replacementContinuity":"passed:0000000000000000000000000000000000000000000000000000000000000006","permissionsAndVolumes":"passed:0000000000000000000000000000000000000000000000000000000000000007","accessibilityReview":"passed:0000000000000000000000000000000000000000000000000000000000000008","usabilityResearch":"passed:0000000000000000000000000000000000000000000000000000000000000009","privacyOfflineReview":"passed:000000000000000000000000000000000000000000000000000000000000000a","governanceDisposition":"passed:000000000000000000000000000000000000000000000000000000000000000b","severityReview":"passed:000000000000000000000000000000000000000000000000000000000000000c","finalReleaseDecision":"go:000000000000000000000000000000000000000000000000000000000000000d"}
+{"schemaVersion":1,"releaseVersion":"$version","sourceCommit":"$fixture_commit","manifestSha256":"$manifest_sha","checksumSha256":"$checksum_sha","licenseIdentifier":"$approved_license","distributionMode":"adhoc-public-beta","distributionRiskAccepted":true,"artifactVerification":"passed:0000000000000000000000000000000000000000000000000000000000000001","repositoryIntegration":"passed:0000000000000000000000000000000000000000000000000000000000000002","minimumOSQualification":"passed:0000000000000000000000000000000000000000000000000000000000000003","currentOSQualification":"passed:0000000000000000000000000000000000000000000000000000000000000004","cleanAccountGatekeeper":"passed:0000000000000000000000000000000000000000000000000000000000000005","replacementContinuity":"passed:0000000000000000000000000000000000000000000000000000000000000006","permissionsAndVolumes":"passed:0000000000000000000000000000000000000000000000000000000000000007","accessibilityReview":"passed:0000000000000000000000000000000000000000000000000000000000000008","usabilityResearch":"passed:0000000000000000000000000000000000000000000000000000000000000009","privacyOfflineReview":"passed:000000000000000000000000000000000000000000000000000000000000000a","governanceDisposition":"passed:000000000000000000000000000000000000000000000000000000000000000b","severityReview":"passed:000000000000000000000000000000000000000000000000000000000000000c","finalReleaseDecision":"go:000000000000000000000000000000000000000000000000000000000000000d"}
 EOF
+}
+
+rebind_case_hashes() {
+    local manifest="$case_artifacts/SpaceTrace-$version.manifest.json"
+    local checksum="$case_artifacts/SpaceTrace-$version.sha256"
+    local sbom="$case_artifacts/SpaceTrace-$version.spdx.json"
+    local sbom_sha manifest_sha checksum_sha
+
+    sbom_sha=$(shasum -a 256 "$sbom" | awk '{print $1}')
+    plutil -replace artifacts.sbomSha256 -string "$sbom_sha" "$manifest"
+    (
+        cd "$case_artifacts"
+        shasum -a 256 \
+            "SpaceTrace-$version.dmg" \
+            "SpaceTrace-$version.manifest.json" \
+            "SpaceTrace-$version.spdx.json" \
+            "SpaceTrace-$version.third-party-notices.txt" \
+            >"SpaceTrace-$version.sha256"
+    )
+    manifest_sha=$(shasum -a 256 "$manifest" | awk '{print $1}')
+    checksum_sha=$(shasum -a 256 "$checksum" | awk '{print $1}')
+    plutil -replace manifestSha256 -string "$manifest_sha" "$case_qualification"
+    plutil -replace checksumSha256 -string "$checksum_sha" "$case_qualification"
 }
 
 copy_case() {
@@ -234,6 +264,14 @@ expect_result unapproved-license 1 'release readiness: NO-GO (license)' "$case_q
 copy_case license-mismatch
 plutil -replace licenseIdentifier -string Apache-2.0 "$case_qualification"
 expect_result license-mismatch 1 'release readiness: NO-GO (license)' "$case_qualification" "$case_artifacts"
+
+copy_case consistently-wrong-license
+plutil -replace licenseIdentifier -string Apache-2.0 "$case_qualification"
+plutil -replace packages.0.licenseDeclared -string Apache-2.0 \
+    "$case_artifacts/SpaceTrace-$version.spdx.json"
+rebind_case_hashes
+expect_result consistently-wrong-license 1 'release readiness: NO-GO (license)' \
+    "$case_qualification" "$case_artifacts"
 
 copy_case risk-not-accepted
 plutil -replace distributionRiskAccepted -bool false "$case_qualification"

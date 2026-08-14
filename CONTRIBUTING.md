@@ -2,6 +2,8 @@
 
 感谢你帮助 SpaceTrace 更准确、更节能、更值得信任。SpaceTrace 会观察用户的磁盘元数据，因此一个看似普通的路径、日志或权限改动也可能产生隐私影响。请先阅读本指南，以及：
 
+- [PolyForm Noncommercial License 1.0.0](LICENSE.md)
+- [SpaceTrace Contributor License Agreement](CONTRIBUTOR_LICENSE_AGREEMENT.md)
 - [Development Process](docs/engineering/development-process.md)
 - [Quality Strategy](docs/engineering/quality-strategy.md)
 - [Privacy and Security Baseline](docs/security/privacy-and-security.md)
@@ -14,6 +16,7 @@
 - Feature：先描述用户问题和期望结果，不要只提交实现方案。超过 5 个工作日、引入权限/依赖/数据字段或改变核心架构的工作，必须先完成 RFC。
 - Security/privacy issue：不要公开 issue；使用仓库 GitHub Security 页的 private vulnerability reporting。
 - 小型文档/拼写修复可直接 PR；其余变更应先有关联 issue。
+- 你可以为非商业目的 fork、修改和分享仓库，也可以创建 PR。项目并未授予普通下载者商业使用权。
 
 维护者确认方向前，请不要投入大型实现。标记为 `help wanted` / `good first issue` 的 issue 已具备基本边界，但 acceptance criteria 仍是最终依据。
 
@@ -97,10 +100,11 @@ docs/57-threat-model
 ## Pull request process
 
 1. 将 PR 标为 Draft，关联 issue，并完整填写模板。
-2. 自审整个 diff，包括生成物、日志、entitlement、依赖和失败路径。
-3. 确保 required checks 在最新 commit 全绿；不要用无说明 retry 掩盖 flaky test。
-4. 回应每条 blocking comment，说明如何解决；如果不同意，请提供契约、测试或数据依据。
-5. Maintainer squash merge。合并不保证立即发布。
+2. 明确勾选 PR 模板中的 CLA 同意项。PR 不得合并，除非所有贡献者都已明确接受当前 [SpaceTrace Contributor License Agreement](CONTRIBUTOR_LICENSE_AGREEMENT.md)。CLA 让贡献者保留版权，同时授予仓库所有者将贡献用于未来商业版及另行许可所需的附加权利。
+3. 自审整个 diff，包括生成物、日志、entitlement、依赖和失败路径。
+4. 确保 required checks 在最新 commit 全绿；不要用无说明 retry 掩盖 flaky test。
+5. 回应每条 blocking comment，说明如何解决；如果不同意，请提供契约、测试或数据依据。
+6. Maintainer squash merge。合并不保证立即发布。
 
 风险级别：
 
@@ -129,4 +133,4 @@ High-risk 改动原则上需要独立 reviewer；单维护者例外有 48 小时
 - 不公开上传 `.sqlite`、`.xcresult`、crash memory 或完整 Console log；
 - 通过 maintainer 指定的私密渠道提交诊断包，并说明删除期限。
 
-提交贡献即表示你有权提交相关内容并同意按仓库许可证分发；如果许可证尚未建立，请先等待 maintainer 完成许可基线，不要引入第三方代码片段。
+SpaceTrace 的公开代码按 PolyForm Noncommercial License 1.0.0 提供：允许非商业使用、修改和分享，不允许普通接收者商业使用。提交贡献还必须明确接受 CLA；这不会转让贡献者版权，但会单独授予项目所有者商业使用和再许可贡献的权利。不得引入权利不清或与这些条款不兼容的第三方代码片段。

@@ -65,12 +65,13 @@ codesign -dvvv --entitlements :- SpaceTrace-0.1.0-rc.1.app
 hdiutil verify SpaceTrace-0.1.0-rc.1.dmg
 plutil -extract spdxVersion raw -o - SpaceTrace-0.1.0-rc.1.spdx.json
 plutil -extract packages.0.licenseDeclared raw -o - SpaceTrace-0.1.0-rc.1.spdx.json
+plutil -extract packages.0.licenseConcluded raw -o - SpaceTrace-0.1.0-rc.1.spdx.json
 spctl --assess --type execute --verbose=4 SpaceTrace-0.1.0-rc.1.app
 ```
 
-前六项必须成功，两个 SPDX 值应分别为 `SPDX-2.3` 和 `NOASSERTION`。`spctl` 应拒绝这个 ad-hoc、未公证产物；拒绝结果证明文档披露的信任边界，并不等于打包失败。如果某台机器意外接受，需要检查它是否保存过本机 Gatekeeper 例外，不能推广为其他 Mac 也会接受。
+前七项必须成功，三个 SPDX 值应分别为 `SPDX-2.3`、`PolyForm-Noncommercial-1.0.0` 和 `PolyForm-Noncommercial-1.0.0`。`spctl` 应拒绝这个 ad-hoc、未公证产物；拒绝结果证明文档披露的信任边界，并不等于打包失败。如果某台机器意外接受，需要检查它是否保存过本机 Gatekeeper 例外，不能推广为其他 Mac 也会接受。
 
-SPDX 文档是源码来源、构建来源和依赖清单，不是漏洞证明。当前依赖图没有外部 Swift package 或内嵌第三方库；Apple frameworks、系统 Swift runtime 和系统 `libsqlite3` 由 macOS 平台提供。`NOASSERTION` 是刻意保留的边界：生成元数据不能代替仓库所有者批准项目许可证。
+SPDX 文档是源码来源、构建来源和依赖清单，不是漏洞证明。当前依赖图没有外部 Swift package 或内嵌第三方库；Apple frameworks、系统 Swift runtime 和系统 `libsqlite3` 由 macOS 平台提供。ADR-010 已把项目许可证固定为官方 PolyForm Noncommercial 1.0.0；仓库文本、SPDX 声明、notices 或 DMG 安装说明只要发生漂移，打包就会封闭失败。
 
 自动化契约入口：
 
@@ -149,8 +150,8 @@ make qualify-release-candidate \
 
 ## 公开发布阻塞项
 
-这个测试渠道不会关闭 Developer ID 签名、公证/票据附加、带 quarantine 的干净账户**仍要打开**启动、macOS 15.6 真实运行、独立构建替换后的 bookmark 连续性、完整权限/替换矩阵、ADR-003/ADR-004/ADR-006/ADR-008/ADR-009 评审、项目许可证批准、人工无障碍/可用性复核或明确发布决策门禁。当前主机的重复校准矩阵已 20/20 通过，SBOM/第三方声明生成契约也已实现，但 `NOASSERTION` 会刻意保持许可证所有者决策未关闭。
+这个测试渠道不会关闭 Developer ID 签名、公证/票据附加、带 quarantine 的干净账户**仍要打开**启动、macOS 15.6 真实运行、独立构建替换后的 bookmark 连续性、完整权限/替换矩阵、ADR-003/ADR-004/ADR-006/ADR-008/ADR-009 评审、人工无障碍/可用性复核或明确发布决策门禁。当前主机的重复校准矩阵已 20/20 通过。ADR-010 与冻结哈希的 PolyForm/CLA 工具链已经关闭仓库许可证决策，但最终发布元数据仍必须从精确的已集成发布源提交重新生成。
 
-maintainer 已在 2026-08-14 接受 ad-hoc、未公证、仅手动下载的 Public Beta 风险，并拒绝 MIT。Developer ID/公证仍是稳定版要求；Public Beta 仍需另一种获批项目许可证和全部独立证据。
+maintainer 已在 2026-08-14 接受 ad-hoc、未公证、仅手动下载的 Public Beta 风险，并批准 PolyForm Noncommercial 1.0.0 加 SpaceTrace CLA。Developer ID/公证仍是稳定版要求；Public Beta 仍需全部独立证据。
 
 有日期的[发布集成审计](release-integration-audit.zh-CN.md)会单独记录 GitHub、受保护分支、托管 CI、许可证、发布源重建、运行时和人工资格门槛；任何产物成为公开 GitHub Release 之前，这些门槛都必须关闭。

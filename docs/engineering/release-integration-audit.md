@@ -27,7 +27,7 @@ The following evidence was refreshed on 2026-08-14:
 | Pull request | No PR exists from the candidate branch to `main` | Review, required checks, and merge evidence do not exist |
 | GitHub Actions | No workflow run exists for the candidate branch | CI is configured for pull requests and pushes to `main`; the local `make verify` result cannot substitute for GitHub-hosted evidence |
 | Branch protection | GitHub reports `main` as unprotected | This conflicts with the development-process requirement that `main` reject direct and force pushes |
-| Project license | GitHub reports no detected license and the repository contains no `LICENSE`/`COPYING` file | The owner rejected MIT on 2026-08-14; a different license remains required |
+| Project license | ADR-010 accepts the hash-frozen official `LICENSE.md` text for PolyForm Noncommercial 1.0.0 plus a CLA; release tooling enforces the exact SPDX identifier and notices | Repository-license selection is closed. GitHub may categorize the non-OSI license as “Other”; that UI label does not change the controlling text. |
 | Distribution identity | No Developer ID Application identity is available; the candidate is ad-hoc signed and not notarized | The owner accepted this disclosed Public Beta risk on 2026-08-14; it still cannot be called stable or Apple-verified |
 | Local artifact | `0.1.0-rc.7` passed the checksum, manifest, SPDX, exact-entitlement, Hardened Runtime, arm64, macOS 15.6 deployment-target, strict code-sign, and DMG checks | The bytes and disclosed trust boundary are inspectable; runtime/support gates remain open |
 
@@ -38,8 +38,8 @@ The retained rc.7 manifest binds its bytes to source commit `a3b8b45ca6f9dad752a
 The release path is intentionally fail-closed:
 
 1. **Owner decisions**
-   - approve a concrete project license and add the matching repository metadata;
-   - select a non-MIT project license; the ad-hoc, unnotarized Public Beta risk and no-automatic-updater boundary are already accepted;
+   - preserve ADR-010's accepted PolyForm/CLA model and its matching repository/release metadata;
+   - preserve the accepted ad-hoc, unnotarized Public Beta risk and no-automatic-updater boundary;
    - review the still-Proposed release-relevant ADRs and record the accepted or deferred boundary.
 2. **Pull request and CI**
    - open a PR from `agent/native-fsevents-integration` to `main`;
@@ -67,11 +67,11 @@ The release path is intentionally fail-closed:
    - publish the DMG, manifest, checksum file, SPDX document, third-party notices, source/tag link, exact support matrix, installation instructions, and signing/notarization disclosure together;
    - download the published assets into a clean directory and re-run checksum, mounted-content, and installation verification before announcing availability.
 
-## Current open gates
+## Current gate status
 
 | Gate | Current evidence | Required closure |
 |---|---|---|
-| License | MIT rejected; `licenseInfo = null`; no license file; SPDX uses `NOASSERTION` | Owner selects/approves a different license; repository metadata, notices, and SPDX are regenerated consistently |
+| License | Closed for repository/tooling scope: PolyForm Noncommercial 1.0.0 plus CLA, exact official-text hash, SPDX/notices/DMG/readiness enforcement | Regenerate the final metadata from the integrated release-source commit and confirm no drift |
 | Repository integration | Feature branch is 85 commits ahead; no PR or GitHub Actions run | Reviewed PR, green hosted CI, protected `main`, merge commit identified |
 | Minimum OS | Deployment target is 15.6; current build host is newer | Physical or virtual macOS 15.6 P0 runtime matrix |
 | Current stable OS | Current-host automated and signed-sandbox evidence exists | Repeat the release-source artifact matrix on the then-current stable macOS |
@@ -87,17 +87,17 @@ The release path is intentionally fail-closed:
 - Do not create a tag from the feature branch or from an unverified local commit.
 - Do not publish rc.7 after merging while presenting it as built from the merge result.
 - Do not label an ad-hoc/unnotarized build as stable, verified by Apple, or frictionless to install.
-- Do not add MIT or any other license merely because the PRD lists it as an assumption.
+- Do not replace or weaken ADR-010's PolyForm/CLA contract without an explicit maintainer, legal, PRD, metadata, and release-gate change.
 - Do not disable Gatekeeper globally, strip quarantine recursively, or automate the user's trust decision.
 - Do not interpret deployment-target metadata or newer-host tests as macOS 15.6 runtime qualification.
 - Do not weaken privacy, corruption-recovery, or release checks to make the status appear green.
 
 ## Decision record required from the maintainer
 
-Before the next release-producing step, the maintainer must record:
+Before the next release-producing step, the maintainer must record or preserve:
 
-1. the approved project license;
-2. authorization to open the integration PR and the intended reviewer/exception path;
+1. the approved PolyForm/CLA decision and exact license-tooling evidence (recorded in ADR-010);
+2. authorization to open the integration PR (granted on 2026-08-14) and the intended reviewer/exception path;
 3. the machines or virtual machines that will provide macOS 15.6 and clean-account evidence;
 4. who owns the final manual accessibility, usability, and publication verification.
 

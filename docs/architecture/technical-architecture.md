@@ -4,11 +4,11 @@
 | --- | --- |
 | Status | Proposed for MVP design review |
 | Document version | 0.1 |
-| Last updated | 2026-07-18 |
+| Last updated | 2026-08-11 |
 | Current project target | macOS 15.6, Swift version setting 5.0 |
 | Accepted product baseline | macOS 15.6+, Apple Silicon first; Intel deferred |
 | Architecture owner | SpaceTrace maintainers |
-| Related decisions | [ADR-001](decisions/ADR-001-native-macos-platform.md), [ADR-002](decisions/ADR-002-read-only-optional-full-disk-access.md), [ADR-003](decisions/ADR-003-fsevents-and-calibration-scans.md), [ADR-004](decisions/ADR-004-sqlite-persistence-and-retention.md), [ADR-005](decisions/ADR-005-system-command-adapter.md) |
+| Related decisions | [ADR-001](decisions/ADR-001-native-macos-platform.md), [ADR-002](decisions/ADR-002-read-only-optional-full-disk-access.md), [ADR-003](decisions/ADR-003-fsevents-and-calibration-scans.md), [ADR-004](decisions/ADR-004-sqlite-persistence-and-retention.md), [ADR-005](decisions/ADR-005-system-command-adapter.md), [ADR-006](decisions/ADR-006-immutable-observations-and-findings.md), [ADR-007](decisions/ADR-007-user-initiated-diagnostic-export.md) |
 
 ## 1. Executive summary
 
@@ -41,7 +41,7 @@ Existing storage visualizers answer “what is large now.” SpaceTrace is diffe
 - Make every finding traceable to observations, coverage, a deterministic classification rule, and a confidence level.
 - Keep the UI, domain rules, platform APIs, persistence, and optional command execution independently testable.
 - Permit future support for external volumes and additional classifiers without changing the core truth model.
-- Keep operational ownership appropriate for a small open-source team: one application, one local database, no backend.
+- Keep operational ownership appropriate for a small source-available project: one application, one local database, no backend.
 
 ### 2.3 Non-goals for MVP
 
@@ -89,7 +89,7 @@ The architecture uses precise terms so the UI cannot accidentally overstate what
 | Unattributed volume change | Volume-level change not explained by comparable scanned paths | Automatically “System Data” |
 | Coverage | What was visited, skipped, inaccessible, raced, or unknown during a scan | A permission grant status |
 
-Core invariant: **unknown is not zero**. An inaccessible, unmounted, evicted, or raced path never overwrites the last complete measurement with zero and is never reported as deletion without complete parent coverage.
+Core invariant: **unknown is not zero**. An inaccessible, unmounted, evicted, or raced path never overwrites the last complete measurement with zero. A disappearance requires a later explicit `absent` endpoint plus complete same-frame direct-parent evidence; a missing row is never disappearance evidence.
 
 ## 4. Quality attributes and priorities
 
@@ -139,7 +139,7 @@ flowchart TB
         Attribution["AttributionEngine\nVersioned deterministic rules"]
         Volumes["Volume and power adapters"]
         CommandAdapter["SystemCommandAdapter\nOptional and read-only"]
-        Store["Persistence adapter\nGRDB/SQLite, WAL"]
+        Store["Persistence adapter\nSQLite, WAL; GRDB candidate"]
         Diagnostics["Local diagnostics\nos.Logger and signposts"]
     end
 
@@ -170,14 +170,14 @@ Dependencies point inward:
 ```text
 SpaceTraceApp / SpaceTraceUI
               ↓
-SpaceTraceApplication (use cases and orchestration)
-              ↓
-SpaceTraceDomain (entities, policies, ports)
-              ↑
-SpaceTraceFileSystem / SpaceTracePersistence / SpaceTracePlatform
+SpaceTraceApplication (use cases and orchestration) ──→ SpaceTraceAttribution
+              │                                             │
+              └──────────────────→ SpaceTraceDomain ←────────┘
+                                         ↑
+              SpaceTraceFileSystem / SpaceTracePersistence / SpaceTracePlatform
 ```
 
-`SpaceTraceDomain` imports Foundation only where value types require it and never imports SwiftUI, AppKit, CoreServices, DiskArbitration, GRDB, or process APIs. Infrastructure modules implement protocols owned by the domain/application boundary. CI enforces forbidden imports and rejects cycles.
+`SpaceTraceAttribution` depends only on `SpaceTraceDomain`; `SpaceTraceApplication` composes both and neither module imports an adapter. `SpaceTraceDomain` imports Foundation only where value types require it and never imports SwiftUI, AppKit, CoreServices, DiskArbitration, GRDB, or process APIs. Infrastructure modules implement protocols owned by the domain/application boundary. CI enforces forbidden imports and rejects cycles.
 
 ## 6. Module and repository layout
 
@@ -198,6 +198,7 @@ SpaceTrace/
 │       │   ├── SpaceTracePersistence/
 │       │   ├── SpaceTraceAttribution/
 │       │   ├── SpaceTracePlatform/
+│       │   ├── SpaceTraceMonitoring/
 │       │   └── SpaceTraceUI/
 │       └── Tests/
 │           ├── SpaceTraceDomainTests/
@@ -218,6 +219,7 @@ SpaceTrace/
 | `SpaceTracePersistence` | Schema, migrations, repositories, staging/finalization, retention | Product policy beyond data integrity |
 | `SpaceTraceAttribution` | Versioned path classifiers and evidence generation | Running shell commands or guessing processes |
 | `SpaceTracePlatform` | Volume, mount, power, thermal, launch-at-login, optional commands | Domain decisions |
+| `SpaceTraceMonitoring` | Non-UI native composition and owned lifecycle tasks | UI state and user-visible policy |
 | `SpaceTraceUI` | Menu bar, timeline, findings, health, permission education | Filesystem scanning |
 | `SpaceTraceApp` | Composition root, signing settings, app lifecycle | Business logic |
 
@@ -227,6 +229,8 @@ SpaceTrace/
 
 MVP uses one menu-bar-capable application process. Closing the main window does not stop monitoring; quitting the app does. Optional launch at login uses the public Service Management API and is user-controlled. There is no LaunchDaemon, XPC helper, login-item helper executable, or root process.
 
+The supported application shell is a conventional Dock application with one main window plus a public SwiftUI `MenuBarExtra` for lightweight status and window access. The main window owns data-rich investigation, history, evidence, and permission education. The menu-bar surface remains small and does not become the only route to an essential action. Its 24-hour delta is read from persisted monotonic-sequence history and is shown only for a fresh, gap-bounded, same-volume, monotonic-time window; incomplete evidence is never replaced by zero or an earlier cached delta. SpaceTrace does not position a custom window around the camera housing or depend on display-notch geometry: `NSScreen` safe-area APIs are treated only as layout-avoidance evidence, not as a product surface or persistent attachment point.
+
 This choice keeps FDA scope, code signing, crash recovery, and updates understandable. A helper may only be reconsidered if measured app-lifecycle constraints prevent the agreed freshness SLO.
 
 ### 7.2 Concurrency ownership
@@ -235,8 +239,9 @@ This choice keeps FDA scope, code signing, crash recovery, and updates understan
 | --- | --- | --- |
 | UI state | `@MainActor` | Render cached state, send intents, consume progress snapshots |
 | `ScanCoordinator` | Swift actor | State machine, queues, leases, policy, cancellation, backpressure |
+| `StorageHistoryBackgroundCoordinator` | Swift actor with one bounded worker | Serialize startup/wake/time-change/hourly capacity samples with deferrable daily retention and publish bounded health state |
 | FSEvents callback | Dedicated serial `DispatchQueue` | Copy callback data into owned values and enqueue it; never scan or query UI |
-| Database | `DatabaseActor` wrapping GRDB `DatabasePool` | One logical writer, migrations, durable work, consistent reads |
+| Database | `DatabaseActor` wrapping a repository-isolated SQLite adapter | One logical writer, migrations, durable work; GRDB remains a gated candidate for future pooled reads |
 | File metadata | Dedicated utility QoS worker pool | Blocking enumeration/stat calls with at most two workers |
 | Classification | Pure tasks, bounded | Transform completed observations into evidence; no I/O |
 
@@ -321,11 +326,16 @@ FSEvents is an advisory, coalescing change journal. It tells SpaceTrace where ca
 ### 9.1 Stream strategy
 
 - Maintain one stream per observed volume and map one or more watch scopes to it.
-- Prefer per-device streams for durable cursors. Persist the volume UUID because device IDs may change across reboots.
+- Prefer per-device streams for durable cursors. Persist both the filesystem volume UUID and FSEvents journal UUID; the current `dev_t` may change across reboots and is never part of durable identity.
+- When the approved volume exposes no journal UUID, fall back to an absolute-path host live stream. Its stream ID is scoped to the active mount generation and is never replayed after remount.
 - Request file event flags when available to reduce dirty-region breadth, but correctness cannot depend on item-level delivery.
 - Use a default latency of 3 seconds. `NoDefer` is not enabled for background monitoring.
 - Never purge the system FSEvents journal.
 - An explicit mount generation separates observations across unmount/remount boundaries.
+
+Volume lifecycle composition is ordered and non-UI: Disk Arbitration callback → normalized application signal → exact configured mount-root match → approved-scope evidence resolution → transactional generation activation/closure → conditional FSEvents stop/restart. Disk Arbitration volume names and `dev_t` values are runtime evidence only. A callback-bridge overflow closes every correlated generation and recreates the observation session so enumeration repairs the lost callback interval. If a started stream terminates unexpectedly, its supervisor first persists scope-level continuity loss, re-resolves the approved volume evidence, and attempts a `sinceNow` stream under the same mount generation. Exponential backoff, a fixed circuit breaker, stability-based attempt reset, and generation-bound cancellation prevent an infinite restart loop or resurrection after unmount.
+
+The application boundary owns a typed lifecycle read model with `inactive`, `active`, `recovering`, and `failed` states. The native supervisor publishes bounded newest-state updates for one approved scope, and `SpaceTraceMonitoring` forwards that stream without translating it into user-visible policy. An observer receives the current state immediately; intermediate updates may be coalesced under consumer pressure, because the stream is a health snapshot rather than an audit log. The future `SpaceTraceUI` layer may project this model onto `@MainActor`, but must not inspect CoreServices types or infer continuity from polling gaps.
 
 ### 9.2 Durable cursor protocol
 
@@ -351,8 +361,9 @@ The scanner leases a dirty region together with its current `max_event_id`. On s
 | `RootChanged` | Resolve scope and volume identity again; do not infer deletion |
 | `Mount` / `Unmount` | Pause affected scope, close generation, and revalidate on mount notification |
 | Event ID lower than persisted with same expected stream | Treat as journal reset/restore; invalidate cursor and calibrate |
-| Volume UUID mismatch | Create a new volume generation; never apply the old cursor or deltas |
+| Volume UUID or FSEvents journal UUID mismatch | Create a new stream generation; never apply the old cursor or deltas |
 | Stream start failure | Fall back to scheduled calibration and surface degraded freshness |
+| Unexpected post-start termination | Persist stale calibration work, revalidate volume evidence, and recover with bounded `sinceNow` retries; remain degraded after circuit-breaker exhaustion |
 
 ### 9.4 Reconciliation state machine
 
@@ -391,7 +402,7 @@ A long scan does not hold a database transaction. Batches are written to `scan_n
 
 1. verifies scope identity and scan state;
 2. merges stage rows into `node_current`;
-3. marks missing nodes deleted only beneath completely covered parents;
+3. in schema v10, updates a current-state tombstone only beneath a completely covered parent; the schema-v11 finalizer must additionally persist an explicit `absent` endpoint backed by a complete present direct parent and complete direct-child enumeration in the same frame, while a missing row remains missing evidence;
 4. writes observations and deltas;
 5. clears eligible dirty work using the leased high-water mark;
 6. marks the run complete.
@@ -458,7 +469,7 @@ The UI must let users switch metric or clearly label it; metrics are never added
 | Type | Purpose |
 | --- | --- |
 | `WatchScope` | User-approved root, volume identity, inclusion/exclusion policy, lifecycle state |
-| `VolumeIdentity` | Stable volume UUID plus ephemeral device/mount generation |
+| `VolumeIdentity` | Stable volume UUID, durable mount generation, and current-process-only device identifier |
 | `EventCursor` | Last durably represented FSEvent ID for one stream generation |
 | `DirtyRegion` | Smallest safe path requiring reconciliation, reasons, priority, high-water mark |
 | `ScanPlan` | Scope, region set, mode, budget, coverage requirements, trigger |
@@ -466,7 +477,9 @@ The UI must let users switch metric or clearly label it; metrics are never added
 | `NodeAggregate` | Current directory or retained file metadata and size metrics |
 | `CoverageReport` | Complete, partial, stale, or unknown plus typed gaps and counts |
 | `Observation` | Metric values for a node/scope at a time bucket under a rule/schema version |
+| `StartupVolumeCapacitySample` | Path-free startup-volume capacity, volume identity, UTC wall time, and monotonic commit sequence |
 | `StorageChange` | Difference between compatible observations, never process attribution |
+| `StorageReconciliation` | Startup-volume loss, non-overlapping authorized-root allocated growth, credited explanation, and optional unattributed remainder |
 | `Attribution` | Category, confidence, explanation code, rule version, and evidence references |
 | `Finding` | User-facing, immutable explanation derived from one or more changes |
 
@@ -474,11 +487,45 @@ The UI must let users switch metric or clearly label it; metrics are never added
 
 - A cursor advances only with durable dirty work covering every event in that batch.
 - A `completed` scan has a terminal coverage report and no unfinalized stage rows.
-- Observations are comparable only when scope identity, metric, path semantics, classifier schema, and required coverage match.
-- Missing nodes become deleted only under complete parent coverage for the same mount generation.
+- Observations are comparable only when scope identity, persistent volume,
+  mount generation, coverage epoch, metric, path semantics, measurement
+  semantics, subject identity, and required coverage match, and their durable
+  commit sequences are strictly ordered. Classifier catalog/rule versions do
+  not change byte-measurement compatibility; classification is frozen only
+  after a compatible change exists.
+- Only an explicit `absent` endpoint resolved to a complete present direct parent with complete direct-child enumeration in the same mount generation may support a disappearance; a missing row never does.
 - `allocatedDelta`, `logicalDelta`, and `volumeAvailableDelta` are different value types and cannot be added accidentally.
-- A finding references source observation IDs and classifier version; recomputation cannot silently rewrite historical wording.
+- Startup-volume samples are ordered by a database-generated monotonic
+  sequence; wall-clock rollback cannot reverse commit order.
+- Startup-volume loss is reconciled only against allocated-size net growth
+  from topmost authorized roots on the same known volume. Missing directory
+  evidence remains unknown rather than becoming zero.
+- A finding references immutable source observation IDs, finding/ranking
+  algorithm versions, and frozen catalog/rule evidence. A typed integrity
+  reconciliation may append an independent `evidence_invalidated` retraction
+  that removes the finding from the current-effective view without changing the
+  original audit record. Schema v11 has no corrected successor or replacement
+  surface; explicit recomputation/replacement requires a later approved model
+  and migration and can never silently update historical wording.
 - Confidence can decrease as new gaps are discovered; it cannot increase without new evidence.
+
+The complete endpoint, explicit-absence, move-proof, exclusive-contribution,
+stable-ordering, evidence-invalidated retraction, future replacement, and
+schema-v11 obligations are specified in
+[ADR-006](decisions/ADR-006-immutable-observations-and-findings.md).
+The public history repository has no retraction mutation. Only an
+Application-internal typed integrity authorizer can create an evidence-
+invalidation capability from the stored audit record, and Persistence accepts
+that non-`Codable` capability through a package-scoped reconciliation port while
+revalidating its finding ID and draft digest transactionally.
+
+[ADR-008](decisions/ADR-008-append-only-reconciliation-corrections.md)
+proposes the separate schema-v12 correction boundary. Provisional hourly/daily
+summary changes become append-only reconciliation revisions, while an
+audit-grade correcting projection may replace only a projection over the exact
+same immutable frame pair through a registered deterministic generator. A
+later scan over a different interval can invalidate earlier evidence or create
+ordinary later findings, but it cannot rewrite the earlier interval.
 
 ### 12.3 Attribution confidence
 
@@ -494,7 +541,7 @@ No level is named “process attribution.”
 
 ## 13. SQLite persistence design
 
-SQLite runs in WAL mode with foreign keys enabled, a bounded busy timeout, `synchronous=NORMAL` for routine writes, and an explicit checkpoint policy. The persistence adapter uses GRDB for migrations, typed records, transactions, and observation; domain modules do not expose GRDB types.
+SQLite runs in WAL mode with foreign keys enabled, a bounded busy timeout, `synchronous=NORMAL` for routine writes, and an explicit checkpoint policy. The phase-one persistence adapter uses the native SQLite C API behind repository boundaries. GRDB 7.10.0 is a validated candidate for later pooled history reads, subject to ADR-004's parity, performance, signing, and runtime gates; domain modules expose neither SQLite nor GRDB types.
 
 ### 13.1 Suggested schema
 
@@ -651,9 +698,12 @@ CREATE INDEX finding_window
 
 Default rolling policy:
 
-- `node_current`: the minimum active baseline needed to compare currently watched directories, plus explicitly required selected files. It is current state rather than an historical event log and is deleted when the scope/history is removed.
+- `node_current`: the minimum active state needed to compare currently watched directories, plus explicitly required selected files. It is current state rather than an historical event log. Removing a watched scope or performing the separately confirmed Clear History full reset deletes it; History Off preserves live current state while removing historical baselines and comparisons.
 - Hourly path-level samples: 7 days.
 - Daily path-level samples, path-bearing findings, and deleted-node history: through day 30, then transactionally deleted.
+- Path-free startup-volume capacity samples: through day 30. Missing API values
+  remain nullable attempted observations, and the monotonic sequence is not
+  reused.
 - Detailed scan-run paths/errors: at most 30 days. After expiry, only the minimum **path-free** gap/health marker needed to explain discontinuity may remain.
 - Staging for completed/abandoned runs: removed within 24 hours.
 - Dirty regions: removed after safe finalization. If unresolved path-bearing work reaches the 30-day boundary, replace it with a path-free scope-level `requiresCalibration` marker and delete the path; the next observation performs a safe calibration.
@@ -672,10 +722,18 @@ A retention option beyond 30 days is not part of the accepted baseline. It requi
 
 There is no stable public API that proves FDA globally. The application infers effective coverage from typed `EACCES`/`EPERM` observations at known protected regions and explains that this is evidence, not an authoritative permission-state query.
 
-### 14.2 Degradation behavior
+### 14.2 User-selected bookmark lifecycle
+
+The non-UI user-selected path is capability-based: the UI eventually supplies the original URL returned by the system selection surface; `SpaceTracePlatform` creates a read-only app-scoped bookmark and immediately proves it can resolve; `SpaceTracePersistence` stores only the opaque bookmark plus the exact normalized root and volume UUID; a restorable catalog retains the balanced security-scope lease for as long as native monitoring may touch that scope.
+
+On launch, bookmark resolution uses no UI and does not mount an absent volume. `mountPath` is never accepted from persistence: it is freshly derived from the resolved URL's volume resource and must contain the exact authorized root. Stale bookmarks, root drift, volume-UUID replacement, symlinks, non-directories, and access denial fail closed. Only temporary resource unavailability is retried when a later Disk Arbitration event reads the catalog; stale or identity-changing grants require explicit user reauthorization.
+
+`NativeMonitoringApplicationLifecycle` owns restoration and exactly one monitoring task. Zero persisted grants remains idle. One or more persisted grants starts volume observation even if every external scope is currently unavailable, allowing the matching volume to be restored after mount. Application termination cancels and awaits monitoring before releasing all access leases. Window/view lifecycle never owns this task. The detailed contract and current qualification boundary are recorded in [Security-Scoped Bookmark and Application Lifecycle](../engineering/security-scoped-bookmark-lifecycle.md).
+
+### 14.3 Degradation behavior
 
 - Permission denial marks a subtree inaccessible and preserves its previous complete value as stale.
-- Revocation during a scan prevents deletion inference under the affected parent.
+- Revocation during a scan prevents disappearance inference under the affected parent.
 - Findings spanning incomplete areas are downgraded or suppressed.
 - The health view identifies categories of unavailable locations without listing sensitive filenames.
 - FDA education is contextual: show expected benefit and exact System Settings steps only after meaningful blind spots are observed.
@@ -689,7 +747,7 @@ All recoverable failures are typed domain errors with a stable code, scope, retr
 
 | Error family | Examples | Default handling |
 | --- | --- | --- |
-| Access | `accessDenied`, `permissionChanged` | Partial coverage; contextual guidance; no zero/deletion |
+| Access | `accessDenied`, `permissionChanged` | Partial coverage; contextual guidance; no zero/disappearance inference |
 | Filesystem race | `itemVanished`, `metadataChanged`, `symlinkCyclePrevented` | Count and retry parent once; usually not user-visible |
 | Volume | `unmounted`, `identityChanged`, `capacityUnavailable` | Pause scope; revalidate; close generation |
 | Event journal | `streamStartFailed`, `historyLost`, `eventsDropped`, `idWrapped` | Durable degraded state and calibration |
@@ -746,6 +804,18 @@ Local storage is not encryption against another process running as the same user
 
 Export is user-initiated and previewed. Default redaction replaces the home directory with `$HOME`, omits file names below classified roots, strips bookmarks, hashes remaining path components with an export-specific random salt, and includes versions/coverage/counters. An explicit “include full paths” option requires a second confirmation.
 
+The sandbox uses `com.apple.security.files.user-selected.read-write` only so
+`NSSavePanel` can authorize the exact output selected by the user. Watched
+directory bookmarks remain explicitly read-only through
+`.securityScopeAllowOnlyReadAccess`, and monitoring ports expose no mutation
+operation. A schema-v1 JSON export is limited to 2 MiB and 100 selected
+findings, contains no file contents or upload action, writes through a private
+`0700`/`0600` staging area, and atomically commits only after cancellation is
+checked. Full-path consent is bound to one export UUID and is discarded after
+save, cancel, or failure. [ADR-007](decisions/ADR-007-user-initiated-diagnostic-export.md)
+freezes this deliberately narrow exception to the observed-data read-only
+boundary.
+
 ## 18. Local observability without telemetry
 
 - Use `os.Logger` categories for lifecycle, event stream, scan, database, attribution, permissions, and updates. Arguments are private by default; raw paths are never logged.
@@ -775,10 +845,11 @@ protocol RuleCatalog { /* versioned classification rules */ }
 ### 19.2 Test pyramid
 
 - **Domain unit tests:** comparability, unknown-not-zero, confidence, retention, coalescing, scan budgets, path normalization.
-- **State-machine/property tests:** arbitrary event/scan/crash sequences preserve cursor and deletion invariants.
+- **State-machine/property tests:** arbitrary event/scan/crash sequences preserve cursor and explicit-absence/disappearance invariants.
 - **Persistence tests:** every schema migration from supported fixtures; power-loss simulation around dirty-row/cursor transaction and finalization.
 - **Filesystem integration tests:** temporary trees containing hard links, symlinks, sparse files, Unicode/case variants, packages, permission failures, concurrent rename/delete, and mount boundaries.
 - **FSEvents integration tests:** create/rename/delete storms, replay after process restart, callback overflow, `MustScanSubDirs`, and synthetic flag injection through the fake client.
+- **Mount lifecycle qualification:** an opt-in, serialized APFS image test performs true detach, same-volume remount, and different-UUID same-name replacement at one controlled mount point; normal CI does not mount images.
 - **Cloud/APFS fixtures:** placeholders are manual/lab fixtures; clone and snapshot tests run on disposable APFS volumes, not general CI disks.
 - **Performance tests:** generated million-entry metadata fixture plus representative real APFS tree; measure throughput, energy, DB growth, and memory.
 - **UI tests:** first-run, no-FDA partial coverage, stale data, permission revocation, recovery mode, export redaction, and VoiceOver labels.
@@ -789,7 +860,7 @@ protocol RuleCatalog { /* versioned classification rules */ }
 1. Kill the app after dirty rows are committed but before cursor commit; restart replays safely.
 2. Kill after cursor commit but before scan; durable dirty rows remain.
 3. Change a file while its ancestor is scanning; the newer dirty ID survives finalization.
-4. Revoke FDA mid-scan; prior bytes remain stale and no deletion appears.
+4. Revoke FDA mid-scan; prior bytes remain stale and no disappearance finding appears.
 5. Replace a mounted volume with one of the same name but another UUID; old deltas are not applied.
 6. Lose event history; UI becomes stale until calibration, not falsely healthy.
 7. Fill the disk during a database write; enter recovery without deleting the database.
@@ -866,7 +937,7 @@ Release candidates additionally require clean-machine permission testing, oldest
 | Database grows with filesystem cardinality | Medium | Medium | Directory-first persistence, selected files, 30-day retention, 250 MB benchmark gate |
 | Unsandboxed update supply-chain compromise | Low | Critical | Developer ID, notarization, EdDSA updates, protected keys, SBOM |
 | System command output changes across OS versions | Medium | Medium | Optional adapter, structured output, versioned parser, unknown fallback |
-| Permission revocation looks like deletion | Medium | High | Unknown-not-zero and complete-parent deletion invariant |
+| Permission revocation looks like disappearance | Medium | High | Unknown-not-zero plus explicit absence and complete direct-parent evidence |
 | Small team overbuilds abstraction | Medium | Medium | One process/package graph, interfaces only at actual platform/test seams |
 
 ## 25. Open questions for product and engineering review

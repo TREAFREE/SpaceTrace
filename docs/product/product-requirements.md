@@ -6,11 +6,11 @@
 |---|---|
 | Document status | Draft for engineering review |
 | Version | 0.2.0 |
-| Last updated | 2026-07-18 |
+| Last updated | 2026-08-14 |
 | Product owner | TBD |
 | Engineering owner | TBD |
 | Target | Public Beta by the end of Week 8 (Assumption) |
-| License | MIT (Assumption) |
+| License | PolyForm Noncommercial License 1.0.0 (`PolyForm-Noncommercial-1.0.0`); source-available, not OSI open source. Noncommercial use, modification, and sharing are permitted; commercial use by ordinary recipients is not licensed. External PRs require the SpaceTrace CLA so the Project Owner retains commercial/relicensing rights. |
 | Platforms | macOS 15.6 or later on Apple Silicon. The deployment floor is accepted in ADR-001; Public Beta still requires runtime qualification on macOS 15.6 and the current stable macOS. Intel is unsupported until separately qualified. |
 | Related roadmap | [Product Roadmap](./product-roadmap.md) |
 | Research baseline | [macOS Opportunity Research 2026](../research/macos-opportunity-research-2026.md) |
@@ -98,7 +98,7 @@ KPI thresholds are initial targets (**Assumption**) and must be validated during
 | Stage | User intent | Required experience | Failure-safe behavior |
 |---|---|---|---|
 | Discover | Decide whether SpaceTrace is trustworthy | README/product page states “tracks change, does not clean”; license and privacy model are visible before install | No claim that SpaceTrace reproduces System Data exactly |
-| Install | Launch a verifiable app | App opens on macOS 15.6 or later on the qualified Apple Silicon matrix; signing/notarization status is clearly stated | Older macOS and Intel must not be presented as supported; Developer ID plan remains TBD |
+| Install | Launch a verifiable app | App opens on macOS 15.6 or later on the qualified Apple Silicon matrix; signing/notarization status is clearly stated | Older macOS and Intel must not be presented as supported; the accepted ad-hoc Public Beta requires a per-app trust warning, while Developer ID remains required for stable |
 | Onboard | Start useful observation with minimal access | User sees what will be scanned, what remains invisible, expected initial-scan cost, retention, and local-only guarantee | Declining Full Disk Access still permits user-selected folder monitoring |
 | Baseline | Establish a comparison point | Progress and current coverage are visible; user can pause or quit; partial results are labeled partial | Interrupted baseline resumes or restarts safely without corrupting previous data |
 | Observe | Continue normal work | Menu bar shows current free space and 24-hour change; observer remains quiet when no meaningful change occurs | Event gaps, unmounted volumes, and permission revocation create visible health states, not fabricated continuity |
@@ -340,7 +340,7 @@ KPI thresholds are initial targets (**Assumption**) and must be validated during
 
 ##### FR-104 — Community classification rule packs
 
-**Story:** As an open-source contributor, I want to add deterministic application classifications so that SpaceTrace recognizes more workflows without changing the core engine.
+**Story:** As a source-available project contributor, I want to add deterministic application classifications so that SpaceTrace recognizes more workflows without changing the core engine.
 
 **Acceptance criteria:**
 
@@ -513,8 +513,8 @@ Authentication is not applicable because SpaceTrace has no account or remote ser
 
 #### Distribution security
 
-- MIT licensing is assumed and must be reflected in repository metadata before Beta.
-- Developer ID signing and notarization are a release-preparation decision (**TBD**). If not available for public Beta, the release page must disclose unsigned status, checksums, installation steps, and associated macOS warnings.
+- On 2026-08-14, the owner approved the unmodified PolyForm Noncommercial License 1.0.0 and a contributor agreement that preserves contributor ownership while granting the Project Owner commercial and relicensing rights. Repository metadata, notices, SPDX, DMG instructions, and release qualification must use the exact `PolyForm-Noncommercial-1.0.0` identifier. SpaceTrace must be described as source-available rather than OSI open source; ordinary recipients are not licensed for commercial use.
+- The owner accepted an ad-hoc-signed, unnotarized Public Beta distribution policy on 2026-08-14. The release page must disclose that macOS cannot verify the publisher, provide checksums/provenance and exact per-app **Open Anyway** steps, disable automatic updates, and never describe the artifact as stable, notarized, or Apple-verified. Developer ID signing/notarization remains required for a future stable direct-distribution release.
 - Every published artifact requires a reproducible version, commit reference, checksum, and documented provenance.
 - App Store distribution is not committed.
 
@@ -683,12 +683,12 @@ No metric justifies adding silent analytics. Any future telemetry proposal requi
 | OD-01 | Initial audience | 256–512 GB Mac developers, creative professionals, and power users (Assumption) | End of Discovery |
 | OD-02 | Platform qualification | macOS 15.6+ on Apple Silicon is confirmed as the baseline. Runtime P0 qualification on 15.6 remains required; Intel and macOS 14 are unsupported. | Public Beta entry |
 | OD-03 | Implementation | Swift/SwiftUI with limited AppKit (Assumption) | Prototype exit |
-| OD-04 | License | MIT (Assumption) | Before first public source release |
+| OD-04 | License | Decided 2026-08-14 — PolyForm Noncommercial License 1.0.0 plus the SpaceTrace CLA; see ADR-010 | Any change requires maintainer, legal, PRD, metadata, and release-gate review |
 | OD-05 | Privacy | Local-first, no account, no telemetry; treated as a hard product constraint | Any change requires new PRD/security review |
 | OD-06 | Full Disk Access | Optional enhancement; useful selected-folder mode without it | Alpha exit |
 | OD-07 | Retention | 30-day default (Assumption) | Alpha usability/performance review |
 | OD-08 | Beta language(s) | TBD | Alpha exit |
-| OD-09 | Developer ID signing/notarization | TBD; must be resolved or explicitly risk-accepted before Public Beta | Beta entry |
-| OD-10 | Update mechanism | TBD; manual downloads are acceptable for early Alpha | Beta entry |
+| OD-09 | Developer ID signing/notarization | Ad-hoc, unnotarized Public Beta risk accepted on 2026-08-14; Developer ID/notarization remains mandatory for stable | Beta qualification; stable entry |
+| OD-10 | Update mechanism | Manual downloads only for the ad-hoc Public Beta; no automatic updater until a separately reviewed signed-update design | Before any automatic update channel |
 | OD-11 | 1.0 date | Not committed | After Public Beta evidence |
 | OD-12 | Intel support | P2 / TBD | After 1.0 scope review |

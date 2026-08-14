@@ -6,12 +6,34 @@
 |---|---|
 | Document status | Draft for product and engineering review |
 | Version | 0.1.0 |
-| Last updated | 2026-07-18 |
+| Last updated | 2026-08-14 |
 | Planning horizon | Eight weeks to Public Beta (Assumption); 1.0 date TBD |
 | Platform state | Accepted baseline: macOS 15.6+ on Apple Silicon. All Project/App/Unit Tests/UI Tests configurations are aligned; runtime qualification remains a Public Beta gate. |
 | Source of requirements | [Product Requirements Document](./product-requirements.md) |
 
 This roadmap is a sequencing and evidence plan, not a promise that every proposed feature will ship. Product scope and acceptance criteria remain authoritative in the PRD. A phase exits only when its evidence gate passes; reaching a calendar date is not sufficient.
+
+## Current Release Decision — NO-GO retained; evidence refreshed 2026-08-14
+
+**Public Beta and GitHub Release: NO-GO. Local engineering RC generation: CONDITIONAL GO.** No tag, GitHub Release, or artifact upload was created by this decision. The local RC channel exists only to continue controlled qualification with the [ad-hoc release candidate checklist](../engineering/release-candidate-checklist.md).
+
+| Gate | Status | Evidence / remaining condition |
+|---|---|---|
+| Current-stable-macOS endurance and process-resource evidence | Passed for current-host ad-hoc scope | Corrected 25-hour run and deterministic Instruments analysis are recorded in the [background soak protocol](../engineering/background-soak-qualification.md); this is not watt/joule, Apple-identity, or minimum-OS evidence |
+| Current-host controlled UI/accessibility tree | Passed for automated fixture scope | Fifteen authorization/history/finding/export scenarios passed; the real signed-sandbox save panel produced a bounded redacted JSON file and passed three consecutive repetitions. Manual VoiceOver, Full Keyboard Access, contrast/motion/larger-text review remains open in the [visual design system](./visual-design-system.md) |
+| Ad-hoc RC artifact contract | Passed | The retained `0.1.0-rc.7` artifact from pushed commit `a3b8b45` passed four-entry checksums, strict code signing, exact entitlements, final dependency audit, architecture, deployment target, read-only DMG, manifest, SPDX/notices, and quarantine-preserved copy checks; Gatekeeper and distribution policy rejected it exactly as disclosed, while exact disposable-container cleanup remained privacy-blocked |
+| Complete P0 product workflow | Passed for deterministic and current-host prototype scope; external qualification remains release-blocking | FR-002's safe restart/no-false-complete branch is implemented; in-enumerator midpoint continuation is a non-P0 performance enhancement, not a release requirement. The classifier corpus, immutable finding projection, schema-v13 ledger, complete-parent disappearance, APFS stable moves, append-only reconciliation revisions, registered correcting projections, versioned target-specific invalidation, durable status, Overview, and redacted export are implemented. The real 5 GiB gap→calibration→exact-subtree matrix passed 20 of 20 sequential APFS trials against the 19-of-20 threshold; macOS 15.6 and packaged permission/replacement qualification remain external gates |
+| macOS 15.6 Apple Silicon runtime | Blocked by unavailable qualified host | Compile/link target is 15.6, but no P0 runtime/benchmark evidence exists on that OS |
+| ADR-003, ADR-004, ADR-006, ADR-008, and ADR-009 | Open — release blocking | All remain Proposed. Genuine daemon drop/wrap, permission revocation, minimum-OS behavior, repeated correction KPI qualification, manual finding/reconciliation UI review, and maintainer review remain incomplete; automated versioned finding UI, explicit disappearance, APFS stable moves, correction chains, and target-specific invalidation pass current-host qualification |
+| Developer identity and notarization | Ad-hoc Public Beta policy accepted; qualification remains release-blocking | On 2026-08-14 the maintainer accepted an ad-hoc, unnotarized, manual-download Public Beta with explicit Gatekeeper warnings and no automatic updater. No stable Apple signing identity is installed; Developer ID/notarization remains mandatory for a future stable release |
+| Fresh quarantined clean-account install | Partial — release blocking | The `rc.7` DMG mounted read-only, copied correctly, retained strict code-sign validity under quarantine, and was rejected for the disclosed ad-hoc/notary reasons; a clean-account per-app Gatekeeper exception and first-launch journey remain open |
+| Update/replacement and bookmark continuity | Partial — release blocking | Non-quarantined `rc.6 → rc.7` and `rc.7 → rc.6` fresh/same-build/replacement process launches passed under disposable IDs. The qualifier rejects quarantined inputs before launch; no bookmark was created, so cross-build restore/reselection behavior remains open |
+| Migration, corruption, and retention | Partial | Deterministic current-schema/golden-fixture recovery and large-row benchmarks passed; packaged upgrade, downgrade, and rollback remain open |
+| Permission, stale, denial, and external-volume RC matrix | Partial | Deterministic and earlier sandbox/native rows exist; genuine stale/denial, different-UUID packaged UI, and active-scan revocation remain open |
+| License, notices, and SBOM | Passed for repository/tooling scope | ADR-010 accepts the exact official PolyForm Noncommercial License 1.0.0 plus a CLA. The official text is hash-frozen; SPDX `licenseDeclared`/`licenseConcluded`, notices, DMG instructions, README, contribution flow, and release readiness all enforce `PolyForm-Noncommercial-1.0.0`. No external Swift package or bundled third-party library was found. Final artifacts must still be regenerated from the selected release-source commit. |
+| Usability and severity gates | Open — release blocking | Required formative sessions, KPI review, and release-specific Sev-0/Sev-1 triage record are incomplete |
+
+The next release review may change `NO-GO` only after every release-blocking row has linked, current evidence. A paid signing identity alone is not sufficient because product-completeness, minimum-OS, usability, accessibility, repository-integration, and update/rollback gates are independent.
 
 ## Planning Rules
 
@@ -19,7 +41,7 @@ This roadmap is a sequencing and evidence plan, not a promise that every propose
 2. Work is organized around risk retirement: measurement semantics and overhead first; polish and scope expansion later.
 3. “Done” means code, tests, documentation, accessibility, privacy review, migration impact, and observable acceptance evidence are complete in the same change.
 4. Any feature that deletes user data, terminates a process, modifies a system database, uploads diagnostics, or depends on an opaque AI decision is out of scope.
-5. Developer ID signing/notarization, update delivery, Beta languages, Intel support, and 1.0 date remain TBD until their stated decision points.
+5. The ad-hoc, unnotarized, manual-download Public Beta distribution policy is accepted; Developer ID/notarization remains required for stable. PolyForm Noncommercial 1.0.0 plus the CLA is the accepted source-available licensing model. Beta languages, Intel support, and the 1.0 date remain TBD until their stated decision points.
 6. Discovery can invalidate or materially narrow the plan. A stop or pivot is a valid outcome when the core attribution cannot meet credibility and overhead gates.
 
 ## Milestone Summary
@@ -82,7 +104,7 @@ Convert the opportunity research into validated user problems, precise size sema
 - Representative users consistently want one-time cleanup rather than longitudinal explanation.
 - A useful selected-folder experience is impossible without mandatory Full Disk Access.
 - Public APIs cannot produce a credible delta after reconciliation on supported OS versions.
-- A direct maintained competitor already provides the same longitudinal evidence, privacy model, and open-source position with no meaningful differentiation.
+- A direct maintained competitor already provides the same longitudinal evidence, privacy model, and source-availability position with no meaningful differentiation.
 
 ### Dependencies
 
@@ -161,8 +183,8 @@ Build the complete P0 product behind an internal/pre-release channel and make it
 ### Week 4 — Explanation and Safe Interaction
 
 - Implement FR-006 through FR-011: ranked sources, deterministic classification, uncertainty, menu bar, safe actions, and blind spots.
-- Complete at least 60 known-path classification fixtures plus ambiguity/negative cases.
-- Add parent/child aggregation, move/delete treatment, stable sorting, and incomplete-window presentation.
+- **Completed 2026-08-13:** 64 known-path fixtures (eight per P0 category), 32 Unknown near misses, exact rule metadata contracts, and separate ambiguity cases pass the versioned corpus gate.
+- Manually qualify the implemented finding/History-Off Overview for keyboard navigation, VoiceOver, contrast, larger text, and uncertainty wording on macOS 15.6 and current stable macOS.
 - Run first keyboard/VoiceOver review and uncertainty-language review.
 - Conduct three formative usability walkthroughs with current build.
 
@@ -328,11 +350,11 @@ Each milestone produces an evidence pack containing:
 | Qualify the accepted macOS 15.6 Apple Silicon baseline on the minimum-runtime matrix | Engineering + Product owners (TBD) | Public Beta entry | Public compatibility claim and Beta release remain blocked |
 | Approve core architecture and persistence choice | Architecture owner (TBD) | Prototype exit | Alpha cannot start |
 | Approve size semantics and unknown/coverage language | Product + Engineering (TBD) | Prototype exit | No user-visible attribution |
-| Approve MIT license and repository notices | Project owner (TBD) | Before first public source release | No public release |
+| Preserve the accepted PolyForm/CLA contract and regenerate exact release metadata from the release-source commit | Project owner | Decided 2026-08-14; verify for every RC | Metadata mismatch blocks publication |
 | Confirm Full Disk Access UX and selected-folder fallback | Product + Security (TBD) | Alpha exit | Beta blocked |
 | Select Beta language(s) | Product owner (TBD) | Alpha exit | Localization/documentation freeze blocked |
-| Decide Developer ID signing/notarization | Project owner (TBD) | Beta entry | Public Beta blocked or requires explicit unsigned risk acceptance |
-| Decide update mechanism | Engineering + Security (TBD) | Beta entry | Manual updates only; must be documented |
+| Qualify the accepted ad-hoc, unnotarized Public Beta policy | Project owner + QA (TBD) | Beta entry | Public Beta remains blocked until clean-account and full readiness receipts pass; Developer ID remains required for stable |
+| Design any future automatic update mechanism | Engineering + Security (TBD) | After a signed-update proposal | Ad-hoc Public Beta remains manual-download only |
 | Secure supported-OS real-device matrix | QA owner (TBD) | Week 6 | Public Beta compatibility gate blocked |
 | Select 1.0 P1 scope and date | Product owner (TBD) | After Beta evidence | 1.0 remains uncommitted |
 

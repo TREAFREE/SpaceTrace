@@ -1,0 +1,137 @@
+SHELL := /bin/zsh
+
+PROJECT := SpaceTrace.xcodeproj
+SCHEME := SpaceTrace
+DESTINATION := platform=macOS,arch=arm64
+PACKAGE_PATH := Packages/SpaceTraceKit
+DERIVED_DATA_ROOT := build/DerivedData
+
+.PHONY: verify prerequisites verification-prerequisites-test hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy released-schema-fixtures release-metadata-test contribution-licensing-test pull-request-cla-test qualification-wrapper-test package-test package-concurrency-audit package-background-lifecycle-qualification package-background-soak-qualification package-apfs-image-qualification package-apfs-reconciliation-qualification package-apfs-reconciliation-matrix-test package-apfs-reconciliation-matrix-qualification persistence-benchmark package-release-candidate package-release-candidate-test qualify-release-candidate-test qualify-release-candidate user-selected-directory-preflight-test qualify-user-selected-directory public-beta-install-notice-test release-readiness-test verify-release-readiness xcode-list app-build-debug app-test-unit app-test-ui app-build-release
+
+verify: prerequisites verification-prerequisites-test hygiene architecture-check released-schema-fixtures historical-ledger-privacy-test historical-ledger-privacy release-metadata-test contribution-licensing-test pull-request-cla-test qualification-wrapper-test package-apfs-reconciliation-matrix-test qualify-release-candidate-test user-selected-directory-preflight-test public-beta-install-notice-test release-readiness-test package-test package-concurrency-audit xcode-list app-build-debug app-test-unit app-build-release
+
+prerequisites:
+	@command -v rg >/dev/null 2>&1 || { printf 'Missing required verification tool: rg\n' >&2; exit 69; }
+
+verification-prerequisites-test:
+	bash Scripts/Tests/verification-prerequisites-tests.sh
+
+hygiene: prerequisites
+	git diff --check
+	git diff-tree --check --root -r -m HEAD
+	! rg --line-number '[[:blank:]]+$$' --glob '!docs/research/*.html' .
+
+architecture-check: prerequisites
+	./Scripts/check-architecture.sh
+
+historical-ledger-privacy-test:
+	bash Scripts/Tests/check-historical-ledger-privacy-tests.sh
+
+historical-ledger-privacy:
+	./Scripts/check-historical-ledger-privacy.sh
+
+released-schema-fixtures:
+	/bin/bash Scripts/verify-released-schema-fixtures.sh
+
+release-metadata-test:
+	bash Scripts/Tests/generate-release-metadata-tests.sh
+
+contribution-licensing-test:
+	bash Scripts/Tests/verify-contribution-licensing-tests.sh
+
+pull-request-cla-test:
+	bash Scripts/Tests/check-pull-request-cla-tests.sh
+
+qualification-wrapper-test:
+	bash Scripts/Tests/qualification-wrapper-tests.sh
+
+package-test:
+	swift test --package-path "$(PACKAGE_PATH)"
+
+package-concurrency-audit:
+	swift test --package-path "$(PACKAGE_PATH)" -Xswiftc -strict-concurrency=complete -Xswiftc -warn-concurrency -Xswiftc -warnings-as-errors
+
+package-background-lifecycle-qualification:
+	swift test --package-path "$(PACKAGE_PATH)" --filter StorageHistoryBackgroundCoordinatorTests
+	swift test --package-path "$(PACKAGE_PATH)" --filter StartupVolume24HourStatusQueryTests
+
+package-background-soak-qualification:
+	swift test --package-path "$(PACKAGE_PATH)" --filter StorageHistorySoakDiagnosticsTests
+	swift test --package-path "$(PACKAGE_PATH)" --filter BoundedStorageHistorySoakLogWriterTests
+	swift test --package-path "$(PACKAGE_PATH)" --filter InstrumentsActivityMonitorReportTests
+	swift build --package-path "$(PACKAGE_PATH)" --product SpaceTraceSoakAnalyzer
+	swift build --package-path "$(PACKAGE_PATH)" --product SpaceTraceInstrumentsAnalyzer
+
+package-apfs-image-qualification:
+	SPACETRACE_RUN_APFS_IMAGE_TESTS=1 swift test --package-path "$(PACKAGE_PATH)" --filter APFSDiskImageLifecycleIntegrationTests
+
+package-apfs-reconciliation-qualification:
+	SPACETRACE_RUN_APFS_RECONCILIATION_TESTS=1 swift test --package-path "$(PACKAGE_PATH)" --filter ReconciliationKPIIntegrationTests
+
+package-apfs-reconciliation-matrix-test:
+	bash Scripts/Tests/qualify-apfs-reconciliation-matrix-tests.sh
+
+package-apfs-reconciliation-matrix-qualification:
+	./Scripts/qualify-apfs-reconciliation-matrix.sh --output "$(if $(REPORT),$(REPORT),build/Qualification/reconciliation-kpi-$$(git rev-parse --short HEAD).txt)"
+
+persistence-benchmark:
+	swift run --package-path "$(PACKAGE_PATH)" -c release SpaceTracePersistenceBenchmark 500000
+	swift run --package-path "$(PACKAGE_PATH)" -c release SpaceTracePersistenceBenchmark 1000000
+
+package-release-candidate:
+	@test -n "$(VERSION)" || (echo "VERSION is required" >&2; exit 64)
+	@test -n "$(OUTPUT)" || (echo "OUTPUT is required" >&2; exit 64)
+	./Scripts/package-release-candidate.sh --version "$(VERSION)" --output "$(OUTPUT)"
+
+package-release-candidate-test:
+	@test -n "$(VERSION)" || (echo "VERSION is required" >&2; exit 64)
+	./Scripts/test-release-candidate-packaging.sh "$(VERSION)"
+
+qualify-release-candidate-test:
+	bash Scripts/Tests/qualify-release-candidate-tests.sh
+
+qualify-release-candidate:
+	@test -n "$(PRIMARY_APP)" || (echo "PRIMARY_APP is required" >&2; exit 64)
+	@test -n "$(REPLACEMENT_APP)" || (echo "REPLACEMENT_APP is required" >&2; exit 64)
+	./Scripts/qualify-release-candidate.sh --primary "$(PRIMARY_APP)" --replacement "$(REPLACEMENT_APP)"
+
+user-selected-directory-preflight-test:
+	bash Scripts/Tests/qualify-user-selected-directory-tests.sh
+
+qualify-user-selected-directory:
+	@test -n "$(APP)" || (echo "APP is required" >&2; exit 64)
+	@test -n "$(MANIFEST)" || (echo "MANIFEST is required" >&2; exit 64)
+	@test -n "$(REPORT)" || (echo "REPORT is required" >&2; exit 64)
+	./Scripts/qualify-user-selected-directory.sh \
+		--app "$(APP)" \
+		--manifest "$(MANIFEST)" \
+		--distribution-mode adhoc-public-beta \
+		--accept-risk \
+		$(if $(filter 1,$(ALLOW_NEWER_HOST_SMOKE)),--allow-newer-host-smoke) \
+		--output "$(REPORT)"
+
+release-readiness-test:
+	bash Scripts/Tests/verify-release-readiness-tests.sh
+
+public-beta-install-notice-test:
+	bash Scripts/Tests/generate-public-beta-install-notice-tests.sh
+
+verify-release-readiness:
+	@test -n "$(QUALIFICATION)" || (echo "QUALIFICATION is required" >&2; exit 64)
+	@test -n "$(ARTIFACTS)" || (echo "ARTIFACTS is required" >&2; exit 64)
+	./Scripts/verify-release-readiness.sh --qualification "$(QUALIFICATION)" --artifacts "$(ARTIFACTS)"
+
+xcode-list:
+	xcodebuild -list -project "$(PROJECT)" -clonedSourcePackagesDirPath "$(DERIVED_DATA_ROOT)/SourcePackages"
+
+app-build-debug:
+	xcodebuild -quiet -project "$(PROJECT)" -scheme "$(SCHEME)" -configuration Debug -destination "$(DESTINATION)" -derivedDataPath "$(DERIVED_DATA_ROOT)/Debug" CODE_SIGNING_ALLOWED=NO build
+
+app-test-unit:
+	xcodebuild -quiet -project "$(PROJECT)" -scheme "$(SCHEME)" -destination "$(DESTINATION)" -derivedDataPath "$(DERIVED_DATA_ROOT)/Tests" CODE_SIGNING_ALLOWED=NO -only-testing:SpaceTraceTests test
+
+app-test-ui:
+	xcodebuild -quiet -project "$(PROJECT)" -scheme "$(SCHEME)" -destination "$(DESTINATION)" -derivedDataPath "$(DERIVED_DATA_ROOT)/UITests" -only-testing:SpaceTraceUITests/DirectoryAuthorizationUITests test
+
+app-build-release:
+	xcodebuild -quiet -project "$(PROJECT)" -scheme "$(SCHEME)" -configuration Release -destination "$(DESTINATION)" -derivedDataPath "$(DERIVED_DATA_ROOT)/Release" CODE_SIGNING_ALLOWED=NO build

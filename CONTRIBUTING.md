@@ -2,6 +2,8 @@
 
 感谢你帮助 SpaceTrace 更准确、更节能、更值得信任。SpaceTrace 会观察用户的磁盘元数据，因此一个看似普通的路径、日志或权限改动也可能产生隐私影响。请先阅读本指南，以及：
 
+- [PolyForm Noncommercial License 1.0.0](LICENSE.md)
+- [SpaceTrace Contributor License Agreement](CONTRIBUTOR_LICENSE_AGREEMENT.md)
 - [Development Process](docs/engineering/development-process.md)
 - [Quality Strategy](docs/engineering/quality-strategy.md)
 - [Privacy and Security Baseline](docs/security/privacy-and-security.md)
@@ -14,6 +16,7 @@
 - Feature：先描述用户问题和期望结果，不要只提交实现方案。超过 5 个工作日、引入权限/依赖/数据字段或改变核心架构的工作，必须先完成 RFC。
 - Security/privacy issue：不要公开 issue；使用仓库 GitHub Security 页的 private vulnerability reporting。
 - 小型文档/拼写修复可直接 PR；其余变更应先有关联 issue。
+- 你可以为非商业目的 fork、修改和分享仓库，也可以创建 PR。项目并未授予普通下载者商业使用权。
 
 维护者确认方向前，请不要投入大型实现。标记为 `help wanted` / `good first issue` 的 issue 已具备基本边界，但 acceptance criteria 仍是最终依据。
 
@@ -31,15 +34,29 @@ Clone 后先确认 scheme：
 xcodebuild -list -project SpaceTrace.xcodeproj
 ```
 
-当前基础验证命令：
+仓库的完整本地验证入口：
 
 ```bash
-xcodebuild -project SpaceTrace.xcodeproj -scheme SpaceTrace -configuration Debug -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
-xcodebuild -project SpaceTrace.xcodeproj -scheme SpaceTrace -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO test
-xcodebuild -project SpaceTrace.xcodeproj -scheme SpaceTrace -configuration Release -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+make verify
 ```
 
-仓库增加 `Makefile` 后，`make verify` 将成为与 CI 一致的唯一完整入口。签名、公证和 Sparkle 发布测试只在受保护 CI environment 中运行；普通贡献者不需要发布凭据。
+该命令与 CI 共用同一入口，依次执行仓库卫生和架构边界检查、`SpaceTraceKit` 测试、package 完整并发诊断与 warning-as-error 审计、scheme 发现、Debug 构建、应用单元测试和 Release 构建。也可用 `make package-concurrency-audit` 单独执行并发门槛。签名、公证和未来的更新发布测试只在受保护 CI environment 中运行；普通贡献者不需要发布凭据。
+
+目录授权 UI 成为有意义的用户旅程后，交互式 Mac 会话还需运行：
+
+```bash
+make app-test-ui
+```
+
+该命令使用 Xcode 的本机 “Sign to Run Locally” 配置；在当前 Xcode 26.1.1、macOS 26.5.2 主机上，即使钥匙串没有 Apple 开发签名身份，ad-hoc 签名的 UI test runner 与沙盒 App 也可完成受控 DEBUG fixture。该结果只验证确定性的界面状态、操作名称与可访问性树，不替代真实 Powerbox/bookmark/重启流程，也不替代 Apple 身份签名、Developer ID 分发或 macOS 15.6 运行门禁。若 runner 无法初始化，应把主机、Xcode、签名与 Developer Mode 状态记为环境证据，不能把 `build-for-testing` 当作通过。完整的真实权限矩阵见[用户选择目录 UI 与沙盒资格验证](docs/engineering/user-selected-directory-qualification.zh-CN.md)。
+
+FR-004 的真实 APFS 重复资格矩阵必须明确选择执行，不能进入普通并行 CI：
+
+```bash
+make package-apfs-reconciliation-matrix-qualification
+```
+
+该入口先构建并确认唯一的 5 GiB 测试标识，再顺序运行 20 个相互独立的临时夹具；至少 19 次成功才通过。任一时刻只保留一个 5 GiB 夹具，且每轮结束后由测试夹具删除。无路径、权限为 `0600` 的结果默认写入 `build/Qualification/`，相同 commit 的既有报告不会被覆盖。脚本契约本身由 `make verify` 使用 fake Swift 边界持续验证；真实 20 次矩阵仍需维护者在内部 APFS 卷、至少 8 GiB 可用空间的受控主机上主动执行。
 
 ## Branches and commits
 
@@ -83,10 +100,11 @@ docs/57-threat-model
 ## Pull request process
 
 1. 将 PR 标为 Draft，关联 issue，并完整填写模板。
-2. 自审整个 diff，包括生成物、日志、entitlement、依赖和失败路径。
-3. 确保 required checks 在最新 commit 全绿；不要用无说明 retry 掩盖 flaky test。
-4. 回应每条 blocking comment，说明如何解决；如果不同意，请提供契约、测试或数据依据。
-5. Maintainer squash merge。合并不保证立即发布。
+2. 明确勾选 PR 模板中的 CLA 同意项。PR 不得合并，除非所有贡献者都已明确接受当前 [SpaceTrace Contributor License Agreement](CONTRIBUTOR_LICENSE_AGREEMENT.md)。CLA 让贡献者保留版权，同时授予仓库所有者将贡献用于未来商业版及另行许可所需的附加权利。
+3. 自审整个 diff，包括生成物、日志、entitlement、依赖和失败路径。
+4. 确保 required checks 在最新 commit 全绿；不要用无说明 retry 掩盖 flaky test。
+5. 回应每条 blocking comment，说明如何解决；如果不同意，请提供契约、测试或数据依据。
+6. Maintainer squash merge。合并不保证立即发布。
 
 风险级别：
 
@@ -115,4 +133,4 @@ High-risk 改动原则上需要独立 reviewer；单维护者例外有 48 小时
 - 不公开上传 `.sqlite`、`.xcresult`、crash memory 或完整 Console log；
 - 通过 maintainer 指定的私密渠道提交诊断包，并说明删除期限。
 
-提交贡献即表示你有权提交相关内容并同意按仓库许可证分发；如果许可证尚未建立，请先等待 maintainer 完成许可基线，不要引入第三方代码片段。
+SpaceTrace 的公开代码按 PolyForm Noncommercial License 1.0.0 提供：允许非商业使用、修改和分享，不允许普通接收者商业使用。提交贡献还必须明确接受 CLA；这不会转让贡献者版权，但会单独授予项目所有者商业使用和再许可贡献的权利。不得引入权利不清或与这些条款不兼容的第三方代码片段。

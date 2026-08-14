@@ -1,0 +1,35 @@
+format=SpaceTraceReconciliationKPIMatrixV1
+sourceCommit=3fe1f6ac4c3a697f5f3352676fe66c89a3e5dac6
+hostOS=26.6.1
+architecture=arm64
+processor=Apple M5
+memoryBytes=17179869184
+xcode=Xcode 26.1.1 Build version 17B100
+filesystem=apfs
+thermalStateBefore=no-recorded-warning
+trials=20
+requiredPasses=19
+trial01=passed durationSeconds=2
+trial02=passed durationSeconds=2
+trial03=passed durationSeconds=4
+trial04=passed durationSeconds=23
+trial05=passed durationSeconds=6
+trial06=passed durationSeconds=4
+trial07=passed durationSeconds=1
+trial08=passed durationSeconds=2
+trial09=passed durationSeconds=9
+trial10=passed durationSeconds=6
+trial11=passed durationSeconds=5
+trial12=passed durationSeconds=13
+trial13=passed durationSeconds=18
+trial14=passed durationSeconds=4
+trial15=passed durationSeconds=2
+trial16=passed durationSeconds=1
+trial17=passed durationSeconds=7
+trial18=passed durationSeconds=4
+trial19=passed durationSeconds=6
+trial20=passed durationSeconds=8
+passed=20
+failed=0
+thermalStateAfter=no-recorded-warning
+result=passed

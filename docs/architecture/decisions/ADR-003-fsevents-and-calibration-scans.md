@@ -17,7 +17,7 @@ Crash consistency creates a second problem. If the application advances an event
 ## Decision
 
 1. FSEvents is an **invalidation journal**, never the source of storage-byte facts or process attribution.
-2. Maintain a stream per observed volume, preferring per-device persistence and binding all cursors to a stable volume UUID plus a mount/stream generation.
+2. Maintain a stream per observed volume, preferring per-device persistence. Bind every durable cursor to both the persistent filesystem volume UUID and the volume-local FSEvents journal UUID; never persist the ephemeral `dev_t`. Track each scope's active mount generation separately from its event-journal generation. If a mounted volume has no usable journal UUID, use an absolute-path host live stream with a mount-generation-scoped, non-replayable identity.
 3. Start monitoring before baseline/calibration enumeration so concurrent changes become dirty work.
 4. In one SQLite transaction, persist/coalesce dirty regions before advancing the corresponding durable cursor.
 5. Persist `FSEventStreamEventId` as the full `UInt64` value encoded in an eight-byte big-endian blob.
@@ -59,7 +59,7 @@ Crash consistency creates a second problem. If the application advances an event
 - `durable cursor ⇒ durable dirty coverage` for every event up to that cursor.
 - A scan cannot clear a dirty row newer than its leased high-water mark.
 - An incomplete scan cannot mark unseen descendants deleted.
-- A volume UUID/generation mismatch invalidates prior event continuity.
+- A volume UUID or FSEvents journal UUID mismatch invalidates prior event continuity.
 - Findings use comparable scan observations; event arrival alone never creates a byte delta.
 
 ## Validation plan
@@ -78,6 +78,25 @@ Create a deterministic fake `EventStreamClient` and a real APFS integration suit
 10. assertions that no finding names a process from FSEvents evidence.
 
 Release gates require property-based event/scan/crash sequences to preserve the listed invariants.
+
+### Validation evidence recorded on 2026-07-18
+
+- A public-API resolver obtains the persistent volume UUID, current `dev_t`, volume-relative paths, and FSEvents journal UUID without invoking commands or broadening the selected scope.
+- Durable stream IDs are deterministically derived from the volume UUID and journal UUID. Changing either identity produces a different stream generation.
+- Missing persistent identity permits only `sinceNow` monitoring; configuration rejects replay from a stored cursor.
+- A guarded disposable APFS integration suite uses `FSEventStreamCreateRelativeToDevice` and covers live delivery, cancellation cleanup, stop/restart, historical replay through `HistoryDone`, and real callback-buffer overflow.
+- The four-test native suite passed 100 consecutive runs after its asynchronous overflow assertion was hardened.
+- A read-only Disk Arbitration adapter copies appeared, disappeared, and mount-path-change callbacks into a bounded single-consumer stream; callback loss becomes an explicit continuity-loss marker.
+- The application mount state machine and SQLite schema v4 persist one active mount generation per scope, deduplicate repeated callbacks, conservatively close active rows on app restart, open a new generation after unmount, keep missing stable identity unknown, detect a different volume UUID reusing the same mount path, and conditionally reject late unmount callbacks for an older generation.
+- A non-UI composition runtime maps Disk Arbitration callbacks to application signals, matches the exact configured volume mount root, resolves a missing callback UUID through only the approved scope before activation, transactionally activates/closes generations, and owns one restartable FSEvents consumer per active scope. Callback overflow closes all correlated generations before recreating the Disk Arbitration session.
+- An opt-in controlled fixture created two 64 MiB APFS images with the same display name and proved normal detach, same-volume remount, different-UUID replacement at the same mount point, distinct generations/stream IDs, and live FSEvents delivery on both volumes. New images without a journal UUID exercised the host-live fallback instead of inventing durable replay continuity.
+- A protocol-backed deterministic client and fixed resolver inject both native creation and start rejection. When persistent replay is rejected, the supervisor atomically invalidates the stored checkpoint with scope-level calibration work before attempting exactly one `sinceNow` stream. A failed live recovery is never published as active and remains eligible for the non-UI runtime's bounded retry.
+- Post-start stream termination now enters an actor-owned recovery lifecycle: continuity loss becomes durable before reopening, current mount evidence is re-resolved, a known volume UUID cannot degrade to unknown or change identity, and the replacement stream starts at `sinceNow`. Deterministic tests cover successful recovery, start-failure exhaustion, repeated-terminal exhaustion, exponential-backoff cancellation on unmount, and recovery-policy validation. Recovery attempts reset only after a processed observation or a configured stable interval.
+- The application layer now owns a typed `inactive`/`active`/`recovering`/`failed` read model. The native supervisor publishes a bounded newest-state stream, including current-state replay for new observers, successful recovery, circuit-breaker failure, and generation-bound stop cleanup.
+- An exhaustive model test executes all 2,401 four-signal sequences formed from two stable volume identities, three runtime disk identities, unmounts, and callback continuity loss. Repository activity, coordinator bindings, restart uniqueness, and conditional stop ownership remain consistent for every sequence.
+- `UserDropped`, `KernelDropped`, event-ID wrap, and application callback overflow now have parameterized adapter-to-SQLite-to-calibration evidence. The separate [continuity-loss qualification protocol](../../engineering/fsevents-continuity-qualification.md) records why injected semantics cannot be presented as a genuine daemon trigger.
+
+ADR-003 remains **Proposed**. User-selected bookmark composition now supplies exact restored scopes to the native runtime, but genuine daemon drop/wrap conditions, live permission-revocation behavior, and oldest-supported-OS qualification are still open validation items.
 
 ## Revisit triggers
 

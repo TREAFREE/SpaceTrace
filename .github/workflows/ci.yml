@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Report toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+          sqlite3 --version
+          /bin/bash --version | head -n 1
+
+      - name: Install verification dependencies
+        run: brew install ripgrep
+
+      - name: Run repository verification
+        run: make verify

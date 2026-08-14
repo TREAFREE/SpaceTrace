@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — SQLite is selected; GRDB adoption is subject to dependency/licence/build validation in the architecture spike.
+Proposed — SQLite is selected. The 2026-07-20 evidence review found GRDB 7.10.0 viable, while phase one retains the raw SQLite adapter. Schema-v11 migration, transactions, retention, recovery fixtures, and current-host benchmarks now pass; GRDB parity, production integration, signed/notarized distribution, oldest-OS evidence, and maintainer acceptance remain open. The History Off clarification below does not accept the remaining release proposals.
 
 Date: 2026-07-18
 
@@ -19,7 +19,7 @@ The application has no backend, multi-user database, or cross-device synchroniza
 1. Use one SQLite database in the user's SpaceTrace Application Support directory as the durable source of truth.
 2. Enable WAL mode, foreign keys, bounded busy timeout, `synchronous=NORMAL` for routine operation, and an idle checkpoint policy. Migrations and critical recovery transitions may temporarily use stronger synchronization.
 3. Use one logical database writer behind an actor. Permit consistent read snapshots through a pool so UI queries do not share mutable persistence state with scan code.
-4. Implement persistence through repository/transaction ports. GRDB is the proposed adapter because it provides typed records, migrations, pooling, and transaction primitives; no GRDB type crosses into domain/application modules.
+4. Implement persistence through repository/transaction ports. Keep the raw SQLite adapter for phase one. GRDB 7.10.0 remains the preferred candidate when concurrent history reads justify a pool, but adoption requires the gates in the [adapter evidence review](../../engineering/sqlite-adapter-evidence-review.md). No adapter type crosses into domain/application modules.
 5. Use staging tables for long scans and short atomic finalization transactions. Incomplete stages never appear as current truth.
 6. Persist all directory aggregates but only selected files: pinned, classified roots, top contributors, or files above the default large-file threshold. Do not retain every small file indefinitely.
 7. Apply a **30-day maximum default for path-level history**: hourly samples for 7 days, daily samples/path-bearing findings/deleted-node history through day 30, then transactional deletion. Only the minimum path-free gap/health marker needed to explain a discontinuity may remain after expiry.
@@ -28,13 +28,53 @@ The application has no backend, multi-user database, or cross-device synchroniza
 10. Schema migrations are ordered, checksummed, forward-only, and tested from every released fixture. Migration failure enters read-only recovery rather than silently replacing the database.
 11. Protect the database directory/file with user-only modes, exclude it from SpaceTrace scans, and never include it in diagnostic export.
 12. Any option beyond 30 days requires a future RFC/PRD update. It must be user-visible, clearable, explicitly opt-in, default-off, and disclose estimated privacy/storage cost.
+13. Schema v5 stores user-selected watched-scope bookmarks as bounded opaque BLOBs together with the exact authorized root and volume UUID. Platform resolution, not persistence, derives the current mount path and activates access.
+14. Schema v9 stores startup-data-volume capacity observations with a
+    database-generated monotonic sequence, UTC wall time, optional volume
+    identity/metrics, and typed source. Baseline capacity is committed in the
+    same transaction as its roots; lifecycle capacity is sampled immediately
+    after launch and hourly while the app runs. Capacity history is path-free
+    and retained for at most 30 days.
+15. Storage reconciliation may compare startup-volume loss only with
+    allocated-size net growth from non-overlapping authorized roots whose
+    persisted volume UUID matches the startup volume. External, unknown, and
+    nested roots cannot be silently credited. Missing comparable directory
+    evidence remains unknown rather than becoming zero or a fabricated
+    unattributed value.
+16. Lifecycle capacity sampling and retention are serialized by one
+    application-owned coordinator. Launch, wake, and significant system-time
+    changes request immediate sampling; ordinary sampling remains hourly while
+    the process is awake. Sleep defers periodic and maintenance writes.
+17. Daily retention uses a deferrable `NSBackgroundActivityScheduler`
+    opportunity with single-flight execution. Menu-bar 24-hour changes require
+    a fresh, gap-bounded, same-volume, monotonic-time evidence window; any
+    discontinuity is displayed as incomplete evidence rather than zero or a
+    cached prior delta.
+18. Ordinary time- or size-based retention never silently removes the active
+    authorized baseline. An explicit, user-confirmed **History Off** setting is
+    the only retention-policy exception: it removes all authorized baseline
+    snapshots and roots together with the path-bearing history they support,
+    but does not revoke watched-scope authorization, remove monitored files, or
+    stop current-state scanning and publication. Persistence and presentation
+    then expose typed `historyDisabled` and `baselineUnavailable` states;
+    historical comparison remains unavailable until the user turns history on
+    and a fresh authorized baseline is committed.
+19. **Clear History** is a distinct full local-data reset governed by the
+    privacy baseline, not an alias for History Off. After explicit confirmation,
+    it stops related work within five seconds and removes the SQLite database,
+    checkpoints, and derived caches, including persisted authorization and
+    current-state records held in that database, without touching monitored
+    files. The app returns to an unconfigured state and cannot resume current or
+    historical claims until the user authorizes scopes and a fresh scan commits.
+    A new database is not silently created with monitoring or history enabled as
+    part of the reset.
 
 ## Options considered
 
 | Option | Benefits | Costs / failure modes | Assessment |
 | --- | --- | --- | --- |
-| SQLite + GRDB adapter | ACID, WAL, migrations, concurrent reads, mature Swift API | Third-party dependency and supply-chain review | Selected pending adapter validation |
-| Raw SQLite C API | Minimal dependencies and complete control | Significant statement/migration/concurrency boilerplate; higher defect risk | Viable fallback |
+| SQLite + GRDB adapter | ACID, WAL, migrations, concurrent reads, mature Swift API | Third-party dependency, adapter translation, and supply-chain review | Viable preferred candidate for the history phase; not yet adopted |
+| Raw SQLite C API | Minimal dependencies and complete control | Significant statement/migration/concurrency boilerplate; higher defect risk | Selected for phase one with repository isolation |
 | Core Data / SwiftData | Apple-integrated object graph and UI tooling | Less explicit transaction/cursor semantics; migration/debugging complexity; framework coupling | Rejected for core journal protocol |
 | JSON/plist files | Easy inspection | Weak atomic multi-entity updates, poor queries, corruption/rewrite risk | Rejected |
 | Embedded analytical DB | Powerful columnar history queries | Larger dependency/footprint and weak fit for durable work queue | Rejected |
@@ -56,6 +96,8 @@ The application has no backend, multi-user database, or cross-device synchroniza
 - WAL/checkpoint/vacuum need explicit energy and disk-full behavior.
 - Selected-file persistence means deep file detail may require an on-demand rescan.
 - Paths remain readable to other processes running as the same user; SQLCipher is not included in MVP.
+- Confirmed History Off intentionally makes historical comparison unavailable until a fresh authorized baseline is committed, while authorization and current-state operation continue.
+- Confirmed Clear History intentionally removes all database-backed authorization, current state, and history, returning the app to unconfigured state; it is not the retention-policy zero-day mode.
 
 ### Guardrails
 
@@ -64,21 +106,32 @@ The application has no backend, multi-user database, or cross-device synchroniza
 - Byte metrics use checked signed 64-bit values and typed wrappers; overflow becomes an error/unknown value.
 - Migration code cannot silently drop an unknown column/table or recreate the database.
 - Retention is deterministic, observable, and testable against a fixed clock.
+- Ordinary retention preserves the active authorized baseline. History Off's exceptional full-baseline deletion requires explicit user confirmation and cannot revoke authorization or erase current operational state.
+- Clear History follows the separate full-reset boundary in the privacy baseline: it stops work first, deletes the complete local database/checkpoint/cache set, reports failure without claiming success, and never touches monitored files.
 - The 250 MB value is a release gate for the benchmark workload, not permission to erase active state on a larger real scope. Settings exposes actual size and the estimated effect of retention.
 - The app pauses nonessential scans before compaction when its own database growth threatens available disk space.
 - Any persistence-library upgrade receives dependency diff, license, migration, performance, and notarized-build review.
 
 ## Validation plan
 
-1. Spike GRDB against the selected minimum OS and Swift toolchain; confirm static integration, license, signed/notarized build, and no domain leakage.
+1. GRDB 7.10.0 license, manifest, local exact-version SPM Release build, static/default-product linkage, system-SQLite linkage, and domain isolation are reviewed. Signed/notarized distribution and macOS 15.6 runtime evidence remain open.
 2. Simulate termination/power loss around every cursor, dirty-row, staging, and finalization boundary.
 3. Generate the PRD 30-day benchmark databases at 500,000 and 1,000,000 entries; verify the <250 MB gate and measure write latency, query p95, checkpoint, and retention time.
 4. Fill the volume during WAL growth, staging, migration backup, and finalization; verify read-only recovery.
 5. Migrate golden database fixtures from every released schema and compare semantic checksums.
 6. Corrupt WAL/main database fixtures and verify no silent rebuild or data disclosure.
 7. Prove day-30 retention deletes path-level samples, findings, expired deleted nodes, and aged dirty paths while preserving only the active baseline and a path-free calibration/gap requirement.
-8. Prove “Clear History” removes database/checkpoint/derived cache state without touching monitored files and reports deletion failure.
-9. Confirm permissions are `0700` for the directory and `0600` for database/export-temporary files.
+8. Prove explicit, confirmed History Off removes historical baseline snapshots,
+   roots, checkpoints, findings, and derived historical caches while preserving
+   watched-scope authorization and current-state operation; expose typed
+   `historyDisabled` and `baselineUnavailable`, require a fresh authorized
+   baseline after re-enabling history, and report deletion failure without
+   claiming success.
+9. Separately prove Clear History stops related work within five seconds,
+   removes the SQLite database, checkpoints, caches, persisted authorization,
+   current state, and history, never touches monitored files, does not silently
+   recreate an active store, and reports any incomplete reset.
+10. Confirm permissions are `0700` for the directory and `0600` for database/export-temporary files.
 
 ## Revisit triggers
 
@@ -88,3 +141,53 @@ The application has no backend, multi-user database, or cross-device synchroniza
 - Product requires cross-device sync, multi-user access, or concurrent writers in separate processes.
 - A validated threat model requires database encryption beyond FileVault/user permissions.
 - External volumes or removable database placement become requirements.
+
+## Evidence review
+
+The completed comparison, primary-source links, reproducible local spike, explicit non-claims, and GRDB adoption gates are recorded in [SQLite Adapter Evidence Review](../../engineering/sqlite-adapter-evidence-review.md). This review narrows the phase-one implementation choice but does not by itself accept this ADR.
+
+The 2026-07-23 schema-v8 implementation completed atomic migration backup,
+read-only recovery composition, v6/v7 golden fixtures, hourly/daily history,
+day-30 path-free dirty-work conversion, and the reproducible current-host
+500,000/1,000,000-row benchmark. Results are recorded in
+[SQLite History Benchmark](../../engineering/sqlite-history-benchmark.md).
+
+The 2026-07-24 application slice added an application-owned history read port,
+root-bounded growth queries, explicit missing-bucket coverage, and a
+coverage-aware Overview. The production root filter was included in a fresh
+500,000/1,000,000-row benchmark run; the current-host size, memory, write, and
+query gates still pass. Application and UI evidence is recorded in
+[Directory History Application Layer and Overview](../../engineering/directory-history-overview.md).
+
+The 2026-07-24 schema-v9 and Overview slice added monotonic startup-volume
+capacity history, atomic baseline/capacity publication, v8 golden migration,
+root-volume identity persistence, hourly lifecycle sampling, and conservative
+non-overlapping allocated-size reconciliation. Evidence and explicit non-claims
+are recorded in
+[Startup Volume History and Storage Reconciliation](../../engineering/startup-volume-history-and-reconciliation.md).
+
+The 2026-07-25 lifecycle slice added immediate wake/time-change sampling,
+single-flight automatic retention scheduling, bounded application health
+observation, a sequence-ordered 24-hour qualification query, and fail-closed
+menu-bar presentation. Deterministic 30-virtual-day evidence and the remaining
+real 24-hour/minimum-OS matrix are recorded in
+[Background Storage Sampling Lifecycle and Menu Bar](../../engineering/background-storage-sampling-lifecycle.md).
+
+The 2026-07-29 schema-v10 amendment added explicit persisted sleep and wake
+capacity boundaries. A long interval is accepted only for a strictly adjacent
+`sleep_boundary → wake_boundary` pair; ordinary, missing, one-sided, and
+process-termination gaps remain disqualifying. The table recreation is one
+transaction, preserves explicit commit sequences, has an injected pre-commit
+rollback test, and adds the reviewed schema-v9 SHA-256 golden fixture.
+
+The 2026-08-12 schema-v11 persistence slice added immutable observation
+frames/endpoints, deterministic projection work and checkpoints, frozen
+findings, evidence-invalidated retractions, persisted History Off, ordered
+graph retention, v10/v11 released recovery fixtures, and current-host 500k/1M
+repository benchmarks. All ten scale scenarios passed integrity, foreign-key,
+size, RSS, write-p95, and query-p95 gates. Exact transaction, privacy, recovery,
+benchmark, and non-claim evidence is recorded in
+[SQLite v11 Historical Ledger](../../engineering/sqlite-v11-historical-ledger.md).
+
+ADR acceptance still requires minimum-reference macOS 15.6 performance and
+distribution-signing evidence, production wiring, and maintainer review.

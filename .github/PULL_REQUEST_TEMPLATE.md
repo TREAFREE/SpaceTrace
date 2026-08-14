@@ -81,6 +81,7 @@ Commands and results:
 
 ## Author checklist
 
+- [ ] I have read and agree to the [SpaceTrace Contributor License Agreement](https://github.com/TREAFREE/SpaceTrace/blob/main/CONTRIBUTOR_LICENSE_AGREEMENT.md), version 1.0, SHA-256 `16990ce778b15efc0b60a51b54997a0fbb535cc3e4df85d97e3af2e80dc64bca`, and I have authority to submit every Contribution in this PR.
 - [ ] I linked an issue, or explained why this is an exempt small change.
 - [ ] The PR is <= 400 non-generated lines and <= 15 files, or includes a review map and split rationale.
 - [ ] I reviewed the complete diff, including generated files, lockfiles, entitlements, logs, and error paths.

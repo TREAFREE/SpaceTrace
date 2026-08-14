@@ -63,11 +63,20 @@ Coverage 不能替代场景测试。为达到数字而断言实现细节或大�
 - 文件创建、删除、重命名、硬链接、符号链接环、不可读目录、挂载点变化；
 - 稀疏文件、package、超长路径、组合/分解 Unicode、同名不同大小写；
 - 事件丢失/overflow 后触发受控 rescan，而不是静默继续；
+- FSEvents 启动后意外终止必须先持久化连续性丢失，再按 generation 有界恢复；连续失败触发熔断，卸载/替换必须取消退避任务；
+- 生命周期观测必须发布有界的 `inactive`、`active`、`recovering`、`failed` 应用状态；消费者压力可以合并中间快照，但不得丢失当前最终状态；
+- 真实守护进程 drop/wrap 只能按 [FSEvents 连续性丢失资格验证](./fsevents-continuity-qualification.zh-CN.md) 记录；注入标志与应用缓冲区溢出不得冒充系统守护进程证据；
 - 用户取消、系统睡眠/唤醒、应用终止后恢复 checkpoint；
+- 后台容量采样在睡眠期间不得写入，唤醒、系统时间或时区变化后必须立即请求采样；retention 必须 single-flight、可延后，并且失败后能够在后续机会恢复；
+- 菜单栏 24 小时结果必须由单调提交序号、同卷身份、新鲜端点和不超过 90 分钟的连续采样共同证明；缺口、回拨、换卷和不可用值必须降级为“证据不足”；
 - SQLite busy、磁盘空间不足、数据库损坏副本和只读文件系统；
 - 诊断包默认不包含原始路径、文件名或文件内容。
 
 CI 集成测试禁止扫描 runner 的真实主目录。任何测试 helper 若接收到 `/`、`$HOME` 或未解析的空路径 **MUST** fail closed。
+
+真实挂载生命周期使用显式 opt-in 的 `make package-apfs-image-qualification`。夹具只能在 UUID 命名的临时目录创建小型镜像，设备标识必须匹配受控 attach 响应和 `/dev/disk…` 白名单；正常路径使用普通 detach，强制 detach 仅可作为该临时设备的失败清理兜底。此测试不得进入通用并行 CI，也不得接触现有卷。
+
+FR-004 的 19/20 发布 KPI 使用显式 opt-in 的 `make package-apfs-reconciliation-matrix-qualification`。入口必须先确认唯一 SwiftPM 测试标识，再在 APFS 临时卷上顺序运行恰好 20 次生产校准链；同一时刻只允许一个 5 GiB 夹具，开始每轮前可用空间不得低于 8 GiB。19 次成功是最低门槛，失败轮次不能被自动重试或从分母移除。结果只保存 commit、主机/工具链/thermal 概况、每轮结果与有界耗时，不得保存测试路径或原始 Swift 输出；报告以 `0600` 创建并且不得覆盖已有证据。`make verify` 只验证这个 runner 的计数、阈值和 fail-closed 契约，不执行真实 100 GiB 累计分配工作。
 
 ### 2.3 UI and accessibility tests
 
@@ -87,6 +96,8 @@ Performance suite **MUST** 对 100k、1M 节点 fixture 记录 wall time、CPU t
 - 单次噪声不得直接更新基线，基线更新需要至少 5 次稳定样本和独立 PR。
 
 Nightly **MUST** 运行 24 小时事件风暴/空闲交替测试；内存线性增长、未关闭文件描述符或数据库持续膨胀均阻塞发布。
+
+提交前可以用 `make package-background-lifecycle-qualification` 执行 30 个虚拟日的确定性生命周期测试。它证明状态有界、操作串行以及睡眠/唤醒/时间变化/retention 分支，但不得替代 Nightly 的真实 24 小时进程、能耗、内存和系统调度证据。
 
 ### 2.5 Upgrade and migration tests
 
@@ -149,15 +160,15 @@ Golden 更新必须由语义变更驱动。PR **MUST** 同时给出 human-readab
 - 依赖方向和模块循环由架构检查约束；核心扫描/分类模块不得依赖 SwiftUI、Sparkle 或具体 OS 日志实现。
 - TODO/FIXME **MUST** 关联 issue；临时 suppressions 必须有 owner 与到期日期。
 
-本地与 CI **MUST** 暴露同一入口 `make verify`；在构建系统落地前，CI 配置是命令真相源。维护者不得让 README 与 CI 使用不同 flags。
+本地与 CI **MUST** 暴露同一入口 `make verify`；`Makefile` 是验证命令真相源，CI 只调用该入口。维护者不得让 README 与 CI 使用不同 flags。
 
-在 `make verify` 落地前，Xcode 工程的最低标准命令是：
+仓库和 CI 的完整验证入口是：
 
 ```bash
-xcodebuild -project SpaceTrace.xcodeproj -scheme SpaceTrace -configuration Debug -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
-xcodebuild -project SpaceTrace.xcodeproj -scheme SpaceTrace -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO test
-xcodebuild -project SpaceTrace.xcodeproj -scheme SpaceTrace -configuration Release -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
+make verify
 ```
+
+`make verify` 包含 `make package-concurrency-audit`，对 local-package 代码启用完整并发诊断并将 compiler warning 视为错误。该 package-only 审计不表示应用 target 已完成 ADR-001 所述的全仓 Swift 6 迁移。
 
 CI **MUST** 先执行 `xcodebuild -list -project SpaceTrace.xcodeproj` 验证 shared scheme 可发现，并使用独立 DerivedData 目录；测试结果和 coverage 以 `.xcresult` 归档，不解析易变化的控制台文本作为唯一证据。
 

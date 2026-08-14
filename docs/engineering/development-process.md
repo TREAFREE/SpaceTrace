@@ -6,7 +6,7 @@ Owners: Maintainers
 
 Last reviewed: 2026-07-18
 
-本文件定义 SpaceTrace 从问题发现到发布的最小、可审计工程流程。关键词 **MUST**、**SHOULD**、**MAY** 分别表示强制、默认应遵循、可选。流程服务于一个小型开源团队：降低错误和隐私风险，但不以会议或文档数量衡量质量。
+本文件定义 SpaceTrace 从问题发现到发布的最小、可审计工程流程。关键词 **MUST**、**SHOULD**、**MAY** 分别表示强制、默认应遵循、可选。流程服务于一个小型源码可见项目：降低错误和隐私风险，但不以会议或文档数量衡量质量。
 
 ## 1. Working model
 
@@ -140,7 +140,7 @@ ADR 记录已经作出的、未来难以逆转或会约束多个模块的技术�
 
 ### 5.3 Single-maintainer substitute for two-person review
 
-开源项目可能暂时没有第二位 maintainer。此时不得把“自己点 Approve”当作审查。
+源码可见项目可能暂时没有第二位 maintainer。此时不得把“自己点 Approve”当作审查。
 
 Low/Medium risk 可采用以下替代流程，且 **MUST** 全部满足：
 

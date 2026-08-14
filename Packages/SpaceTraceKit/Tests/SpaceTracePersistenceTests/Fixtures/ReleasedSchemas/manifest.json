@@ -1,0 +1,49 @@
+{
+  "formatVersion": 2,
+  "fixtures": [
+    {
+      "schemaVersion": 10,
+      "relativePath": "v10/SpaceTrace.sqlite",
+      "sha256": "f410f4d3aee861a09f1128661a98082cc19c53bc9662cbde761409506dfa5dec",
+      "generatorPath": "Scripts/Fixtures/generate-released-schema-v10-fixture.sh",
+      "generatorSHA256": "2145d8b0a04ee446be7072c26798ec4605122074d2b3a5c08e92c502a491eebe",
+      "generatorVersion": 1,
+      "seed": "spacetrace-released-v10-20260812",
+      "semanticSHA256": "9489396aeb50cf8c369a61051201078ce0f858033a4f66a46de6be3fe8356c5b",
+      "schemaObjectSHA256": "f9a79fcd1b5ad9912fb9e796ed7f66358c18092fb665071ec937283f050e02e3"
+    },
+    {
+      "schemaVersion": 11,
+      "relativePath": "v11/SpaceTrace.sqlite",
+      "sha256": "5a471cf3f76622411b8fed60043fe837b4bdc4f3a0b811a20818aa84b6ca2945",
+      "generatorPath": "Scripts/Fixtures/generate-released-schema-v11-fixture.sh",
+      "generatorSHA256": "4ad02a80505b0ccc00ea4998c3cea28d8589bf26044ec772e0b981b22c84abf8",
+      "generatorVersion": 1,
+      "seed": "spacetrace-released-v11-20260812",
+      "semanticSHA256": "f9b1394b6e1ee144548d8ad5179cd5ba8917891fe13064ab9493e463ed1a9414",
+      "schemaObjectSHA256": "8d5d1cb9d992ba944ad67c4100a56a6c8e521fe3bf6ef02b27a620f9e1ba08f7"
+    },
+    {
+      "schemaVersion": 12,
+      "relativePath": "v12/SpaceTrace.sqlite",
+      "sha256": "360a23821d8cb5b37a56047052b8d45ab0b80daae9d554d1f3aec0109bcb4e42",
+      "generatorPath": "Scripts/Fixtures/generate-released-schema-v12-fixture.sh",
+      "generatorSHA256": "b1c6c60d6c71bf57c0f96c4208fcf67945c42563d554f93119a8ea371541ac38",
+      "generatorVersion": 1,
+      "seed": "spacetrace-released-v12-20260813",
+      "semanticSHA256": "ac6fdb5e1edfaabce652bd3a67a180e2fa1d6a918d25d4b1277068816e48131f",
+      "schemaObjectSHA256": "9f401f317d53a3c9c8f71fc7e0afdd2bfe043604c720edacf83cfd4f5ecbee0f"
+    },
+    {
+      "schemaVersion": 13,
+      "relativePath": "v13/SpaceTrace.sqlite",
+      "sha256": "05e935c1b565e091c3c47853199a57d46cf5bf153f38f639e1d16eedc68423c7",
+      "generatorPath": "Scripts/Fixtures/generate-released-schema-v13-fixture.sh",
+      "generatorSHA256": "c15b0f1fd906012397c5623ffa9610376018394c964b1be68bc82247877c4e8d",
+      "generatorVersion": 1,
+      "seed": "spacetrace-released-v13-20260813",
+      "semanticSHA256": "b848f5eea5b5729284b328df90df144f9524eb43d908af398ef937c0dfefbe9d",
+      "schemaObjectSHA256": "e38248766b69ddd3605f0f08a213aafec9793d017354b0189b0777b0be4d4425"
+    }
+  ]
+}

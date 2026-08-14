@@ -6,16 +6,22 @@ DESTINATION := platform=macOS,arch=arm64
 PACKAGE_PATH := Packages/SpaceTraceKit
 DERIVED_DATA_ROOT := build/DerivedData
 
-.PHONY: verify hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy released-schema-fixtures release-metadata-test contribution-licensing-test pull-request-cla-test qualification-wrapper-test package-test package-concurrency-audit package-background-lifecycle-qualification package-background-soak-qualification package-apfs-image-qualification package-apfs-reconciliation-qualification package-apfs-reconciliation-matrix-test package-apfs-reconciliation-matrix-qualification persistence-benchmark package-release-candidate package-release-candidate-test qualify-release-candidate-test qualify-release-candidate user-selected-directory-preflight-test qualify-user-selected-directory public-beta-install-notice-test release-readiness-test verify-release-readiness xcode-list app-build-debug app-test-unit app-test-ui app-build-release
+.PHONY: verify prerequisites verification-prerequisites-test hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy released-schema-fixtures release-metadata-test contribution-licensing-test pull-request-cla-test qualification-wrapper-test package-test package-concurrency-audit package-background-lifecycle-qualification package-background-soak-qualification package-apfs-image-qualification package-apfs-reconciliation-qualification package-apfs-reconciliation-matrix-test package-apfs-reconciliation-matrix-qualification persistence-benchmark package-release-candidate package-release-candidate-test qualify-release-candidate-test qualify-release-candidate user-selected-directory-preflight-test qualify-user-selected-directory public-beta-install-notice-test release-readiness-test verify-release-readiness xcode-list app-build-debug app-test-unit app-test-ui app-build-release
 
-verify: hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy released-schema-fixtures release-metadata-test contribution-licensing-test pull-request-cla-test qualification-wrapper-test package-apfs-reconciliation-matrix-test qualify-release-candidate-test user-selected-directory-preflight-test public-beta-install-notice-test release-readiness-test package-test package-concurrency-audit xcode-list app-build-debug app-test-unit app-build-release
+verify: prerequisites verification-prerequisites-test hygiene architecture-check historical-ledger-privacy-test historical-ledger-privacy released-schema-fixtures release-metadata-test contribution-licensing-test pull-request-cla-test qualification-wrapper-test package-apfs-reconciliation-matrix-test qualify-release-candidate-test user-selected-directory-preflight-test public-beta-install-notice-test release-readiness-test package-test package-concurrency-audit xcode-list app-build-debug app-test-unit app-build-release
 
-hygiene:
+prerequisites:
+	@command -v rg >/dev/null 2>&1 || { printf 'Missing required verification tool: rg\n' >&2; exit 69; }
+
+verification-prerequisites-test:
+	bash Scripts/Tests/verification-prerequisites-tests.sh
+
+hygiene: prerequisites
 	git diff --check
 	git diff-tree --check --root -r -m HEAD
 	! rg --line-number '[[:blank:]]+$$' --glob '!docs/research/*.html' .
 
-architecture-check:
+architecture-check: prerequisites
 	./Scripts/check-architecture.sh
 
 historical-ledger-privacy-test:

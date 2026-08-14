@@ -2,6 +2,11 @@
 
 set -euo pipefail
 
+command -v rg >/dev/null 2>&1 || {
+    print -u2 "Missing required verification tool: rg"
+    exit 69
+}
+
 readonly forbidden_imports='^(import|@_exported import)[[:space:]]+(AppKit|CoreServices|DiskArbitration|GRDB|SQLite3|SwiftUI)([[:space:]]|$)'
 readonly core_directories=(
     "Packages/SpaceTraceKit/Sources/SpaceTraceDomain"

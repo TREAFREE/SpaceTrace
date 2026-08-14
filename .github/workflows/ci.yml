@@ -29,5 +29,8 @@ jobs:
           swift --version
           xcodebuild -version
 
+      - name: Install verification dependencies
+        run: brew install ripgrep
+
       - name: Run repository verification
         run: make verify

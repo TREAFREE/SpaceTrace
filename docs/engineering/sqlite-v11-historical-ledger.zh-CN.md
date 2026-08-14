@@ -44,7 +44,7 @@ V11 在既有当前状态和 v10 历史表旁增加一套不可变本地账本�
 
 History Off 与 Clear History 不同。History Off 会跨重启保持，删除带路径的历史图和基线，阻止新的 v10/v11 路径历史写入，同时保留 watched authorization、当前状态、监控、dirty operational truth 和允许保留的无路径容量历史。读取会暴露类型化的 `historyDisabled`；重新启用后，在新基线提交前暴露 `baselineUnavailable`。Clear History 仍是 ADR-004 与隐私基线中单独确认的完整本地重置。
 
-敏感字段包括原始路径、显示名、scope/subject/location 字节、稳定对象 token 与 birth time、分类决策、观测时间、bookmark、dirty path，以及由这些内容派生的摘要。它们只能为限定目的存在于受保护的本地存储中，不得进入 Release 诊断、日志、测试输出、fixture manifest 或导出。累计隐私检查器会扫描 v11 计划边界以来每个已提交文件，以及 index、工作树和未跟踪视图；SQLite released fixture 只有在确定性生成器、manifest、摘要、完整性与语义校验全部通过时才被允许。
+敏感字段包括原始路径、显示名、scope/subject/location 字节、稳定对象 token 与 birth time、分类决策、观测时间、bookmark、dirty path，以及由这些内容派生的摘要。它们只能为限定目的存在于受保护的本地存储中，不得进入 Release 诊断、日志、测试输出、fixture manifest 或导出。累计隐私检查器会扫描 v11 计划边界以来每个已提交文件，以及 index、工作树和未跟踪视图；SQLite released fixture 只有在确定性生成器、manifest、摘要、完整性与语义校验全部通过时才被允许。已提交 fixture 的物理字节继续由 SHA-256 冻结；重新生成时比较规范化语义摘要与 schema-object 摘要，因为 SQLite 3.50 与 3.51 可能把同一逻辑数据库编码为不同的物理页字节。
 
 ## 迁移、失败与恢复
 

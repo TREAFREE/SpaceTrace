@@ -117,8 +117,9 @@ truthfully and are not constrained by that long-lived storage gate.
   baseline; migration never re-labels them as immutable v12 revisions.
 - The deterministic released v12 fixture contains two complete paired
   observations, four revisions, one committed original projection, and one
-  checkpointed empty correcting projection. Its generator, bytes, semantics,
-  and schema-object digest are independently revalidated byte-for-byte.
+  checkpointed empty correcting projection. Its committed generator and fixture
+  bytes are frozen independently; regeneration must reproduce the exact semantic
+  and schema-object digests across supported SQLite runtimes.
 - Complete calibration publishes only present, completely measured directory
   revisions. Same-bucket successors retain their predecessor, database-derived
   order remains authoritative across wall-clock rollback, and ACK-loss retry

@@ -187,8 +187,10 @@ for version in 10 11 12 13; do
     "$generator" --output "$regenerated" --seed "$seed" >/dev/null || \
         fail "fixture regeneration failed"
     verify_sqlite "$regenerated" "$version"
-    cmp -s "$fixture" "$regenerated" || \
-        fail "fixture regeneration is not byte-identical"
+    [[ $(semantic_digest "$regenerated") == "$semantic" ]] || \
+        fail "regenerated fixture semantic digest mismatch"
+    [[ $(schema_digest "$regenerated") == "$schema" ]] || \
+        fail "regenerated fixture schema-object digest mismatch"
 done
 
 typeset -a legacy_digest

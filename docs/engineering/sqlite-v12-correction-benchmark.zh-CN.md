@@ -93,8 +93,9 @@ WAL 截断后为 0 字节。最大的最终场景为 237,035,520 字节，相对
 - 旧的 `directory_history_sample` 记录仍然是明确标记的有损旧基线；迁移不会
   把它们重新包装成不可变 v12 修订。
 - 确定性 released v12 fixture 包含两组完整双指标观测、4 条修订、1 个已提交原始投影
-  和 1 个已 checkpoint 的空结果更正投影。门禁会独立逐字节复核 generator、
-  fixture、语义与 schema-object digest。
+  和 1 个已 checkpoint 的空结果更正投影。门禁会分别冻结 generator 与已提交
+  fixture 的物理字节；跨受支持 SQLite 运行时重新生成时，必须复现完全相同的语义与
+  schema-object digest。
 - 完整校准只会为 present 且完整测量的目录发布修订。同桶 successor 保留前驱；
   即使墙钟回拨，也以数据库派生顺序为准；ACK 丢失重试会返回原修订身份，不会
   重复分配。

@@ -27,7 +27,7 @@ struct ReleasedSchemaGoldenFixtureTests {
         }
     }
 
-    @Test("Manifest v2 freezes exact types, paths, generator bytes and regeneration")
+    @Test("Manifest v2 freezes exact types, paths, generator bytes and logical regeneration")
     func manifestAndGeneratorsAreCanonical() throws {
         let root = try releasedFixtureRoot()
         let manifestURL = root.appendingPathComponent("manifest.json")
@@ -63,23 +63,17 @@ struct ReleasedSchemaGoldenFixtureTests {
 
             let generatorURL = repositoryRoot().appendingPathComponent(entry.generatorPath)
             #expect(try digest(generatorURL) == entry.generatorSHA256)
-            let generatedRoot = FileManager.default.temporaryDirectory.appendingPathComponent(
-                "SpaceTrace-released-regeneration-\(UUID().uuidString)",
-                isDirectory: true
-            )
-            defer { try? FileManager.default.removeItem(at: generatedRoot) }
-            try FileManager.default.createDirectory(at: generatedRoot, withIntermediateDirectories: true)
-            let regenerated = generatedRoot.appendingPathComponent("SpaceTrace.sqlite")
-            let process = Process()
-            process.executableURL = generatorURL
-            process.arguments = ["--output", regenerated.path, "--seed", entry.seed]
-            try process.run()
-            process.waitUntilExit()
-            #expect(process.terminationStatus == 0)
-            #expect(try Data(contentsOf: regenerated) == Data(
-                contentsOf: root.appendingPathComponent(entry.relativePath)
-            ))
         }
+
+        let verifier = repositoryRoot().appendingPathComponent(
+            "Scripts/verify-released-schema-fixtures.sh"
+        )
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = [verifier.path]
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
     }
 
     @Test("A populated v10 fixture migrates atomically to empty v11/v12 evidence")

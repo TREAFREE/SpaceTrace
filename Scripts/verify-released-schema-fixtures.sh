@@ -119,8 +119,8 @@ verify_sqlite() {
     [[ "$actual_version" == "$version" ]] || fail "fixture version disagrees with manifest"
 }
 
-typeset -A expected_byte_digest expected_generator_digest expected_seed
-typeset -A expected_semantic_digest expected_schema_digest
+typeset -a expected_byte_digest expected_generator_digest expected_seed
+typeset -a expected_semantic_digest expected_schema_digest
 expected_byte_digest[10]=f410f4d3aee861a09f1128661a98082cc19c53bc9662cbde761409506dfa5dec
 expected_byte_digest[11]=5a471cf3f76622411b8fed60043fe837b4bdc4f3a0b811a20818aa84b6ca2945
 expected_byte_digest[12]=360a23821d8cb5b37a56047052b8d45ab0b80daae9d554d1f3aec0109bcb4e42
@@ -191,7 +191,7 @@ for version in 10 11 12 13; do
         fail "fixture regeneration is not byte-identical"
 done
 
-typeset -A legacy_digest
+typeset -a legacy_digest
 legacy_digest[6]=5a5bbe6cdf57ac6c5e4398a771b6505e29e4775b4f321fd5ed1097ff30bae528
 legacy_digest[7]=beccfcbf1bf40ad2f3f89997d58f61aeacb7b0126ed9a4c813b9448a3cdfb95c
 legacy_digest[8]=8d2d9468362f685e8e485ae291d007c0b70aaf06d691dd8ff2f50c2de506eeb5

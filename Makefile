@@ -31,7 +31,7 @@ historical-ledger-privacy:
 	./Scripts/check-historical-ledger-privacy.sh
 
 released-schema-fixtures:
-	bash Scripts/verify-released-schema-fixtures.sh
+	/bin/bash Scripts/verify-released-schema-fixtures.sh
 
 release-metadata-test:
 	bash Scripts/Tests/generate-release-metadata-tests.sh

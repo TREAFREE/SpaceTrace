@@ -889,7 +889,7 @@ if [[ -f "$released_fixture_manifest" && ! -L "$released_fixture_manifest" ]]; t
     if [[ "$current_manifest_format" == 2 ]]; then
         [[ -f "$released_fixture_verifier" && ! -L "$released_fixture_verifier" ]] || \
             report_violation "format-2 fixture verifier is absent"
-        bash "$released_fixture_verifier" >/dev/null 2>&1 || \
+        /bin/bash "$released_fixture_verifier" >/dev/null 2>&1 || \
             report_violation "format-2 fixture verifier rejected the current closure"
     fi
 fi
